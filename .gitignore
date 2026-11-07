@@ -1,0 +1,44 @@
+# WorkBuddy 工作区元数据 / 会话记忆（本地状态，不纳入版本控制，不得删除）
+# 如需纳入版本控制，请先征得同意再移除本行，并单独提交说明
+.workbuddy/
+
+# 编辑器与操作系统
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# 临时与构建产物
+*.tmp
+*.temp
+*.log
+*.out
+dist/
+build/
+coverage/
+node_modules/
+__pycache__/
+*.pyc
+
+# 密钥、证书与本地配置（严禁提交）
+.env
+.env.*
+!.env.example
+*.key
+*.pem
+*.p12
+*.pfx
+*_keyring
+credentials.local.*
+secrets/
+
+# 离线制品与压缩包（走制品库，不进 git）
+*.tar
+*.tar.gz
+*.tgz
+*.zip
+offline-images-*
+platform-bundle-*
