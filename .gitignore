@@ -22,6 +22,23 @@ coverage/
 node_modules/
 __pycache__/
 *.pyc
+*.tsbuildinfo
+
+# 语言 / 工具缓存与虚拟环境
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.tox/
+.cache/
+.next/
+.venv/
+venv/
+
+# 备份与冲突残留（防止提交前顺手带上）
+*.bak
+*.orig
+*.rej
+*~
 
 # 密钥、证书与本地配置（严禁提交）
 .env
