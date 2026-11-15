@@ -34,7 +34,7 @@
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
 - 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)；**任务队列不引入独立 MQ，用 PG 任务表**（[ADR-36](ADR-36-任务队列去MQ.md)，取代 ADR-12）。
 - 未定项：**无**。组件与目标层均已收敛（ADR-11~ADR-21）；剩余为实现层细节 D2 / D6 / D10。
-- 假设规模：20 集群 / 500 节点（PRD §2.1）。
+- 假设规模：**基线 20 集群 / 500 节点（PRD §2.1）**；**设计上限 10,000 节点 / 100 集群 / 单 Region**（[ADR-37](ADR-37-容量模型与规模上限.md)）。超上限需重新设计控制面分片。
 
 ---
 
@@ -209,7 +209,7 @@ sequenceDiagram
 
 - **通信**：Agent 主动向 Server 发起 mTLS 长连接（或按配置轮询拉取），Server 不反向连节点 → 天然适配 NAT / 内网 / 防火墙单向放行。
 - **派单与租约**：无独立 MQ（ADR-36）。Server 用 `SELECT ... FOR UPDATE SKIP LOCKED` 取 `PENDING` 任务，派单时写 `leased_until`；Agent 心跳续租，超时未续则回收重派并 `attempt_count++`；**派单与状态迁移在同一事务**。
-- **心跳**：Agent 10s 心跳，上报在线状态、版本、能力集；离线 30s 标记 `offline`，任务留在表里不派发。
+- **心跳**：Agent 10s 心跳，上报在线状态、版本、能力集。**心跳只更新内存，30s 批量落库一次**（1,000 msg/s 时约 333 行/s）；离线判定也走内存分片扫描（每秒 1/30），不查库（[ADR-37](ADR-37-容量模型与规模上限.md)）。
 - **幂等**：每个步骤带 `idempotency_key = cluster_fsid + task_type + normalized_params`，Agent 本地记录最近执行结果，重复投递直接返回上次结果。
 - **互斥**：同一集群同一资源类别的变更任务用 PostgreSQL advisory lock 加集群级互斥，避免并发改 OSD。
 - **超时 / 取消**：每步有超时；取消只作用于 `PENDING/RUNNING` 中尚未提交不可逆动作的步骤，已提交步骤不回滚。
@@ -521,13 +521,14 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | 长事务失败 | **补偿式 Saga**，不做分布式事务；不可逆步骤标记 `compensable=false`，只允许人工清理后重跑 |
 | DB 与 Ceph 漂移 | Reconciler 定时对账，UI 以 Ceph 实际状态为准 |
 | Agent 上报丢包 | 步骤状态带单调递增 `seq`，Server 按序合并，乱序丢弃 |
-| 队列积压 | 按集群分片 + 并发上限 + 死信告警 |
+| 任务积压 | `PENDING` 数与最老任务年龄双指标；超阈值（5,000 / 10min）拒绝新批量提交；派发限速默认 100 任务/s（ADR-37） |
 
 ---
 
 ## 10. 高可用与容错小结
 
 - Server 无状态 → 水平扩展；**access 为 JWT（15 分钟）+ refresh 存 PG**（[ADR-34](ADR-34-会话JWT方案.md)），撤销靠 `token_version` 与 jti 黑名单，踢人有 ≤30s 缓存窗口。
+- **容量**：单副本连接上限 5,000，10k 节点需 3 副本；多副本时任务按「本地连接优先」领取，Agent 迁移后由租约回收兜底（[ADR-37](ADR-37-容量模型与规模上限.md)）。
 - PG 主从 + 定期备份 + 恢复演练（DBA 职责）。
 - 任务表在 PG 中，**重启不丢任务**；靠 `leased_until` 租约回收僵尸任务（[ADR-36](ADR-36-任务队列去MQ.md)）。PG 单点故障期间无法接收新任务。
 - Agent 断线重连、本地缓存结果、任务不丢。
@@ -559,7 +560,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 | 信号 | 内容 |
 | --- | --- |
-| 指标 | API QPS/延迟/错误率、任务成功率与耗时分布、Agent 在线率、对账漂移次数、队列积压 |
+| 指标 | API QPS/延迟/错误率、任务成功率与耗时分布、Agent 在线率、对账漂移次数、`PENDING` 数与最老任务年龄、副本连接数偏差 |
 | 日志 | 结构化 JSON，带 `trace_id / task_id / cluster_id` 贯穿全链路 |
 | 健康 | `/healthz`（进程）、`/readyz`（依赖检查，区分核心/可降级依赖） |
 | 告警 | Agent 大面积离线、任务失败率突增、对账漂移持续、凭据即将过期 |
@@ -619,6 +620,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-34](ADR-34-会话JWT方案.md) | 会话：JWT + 版本号/黑名单（取代 ADR-26） | Accepted（2026-11-15） | ADR-34 §2 |
 | [ADR-35](ADR-35-Agent预装与零SSH.md) | Agent 交付期预装、运行期零 SSH、Server 不碰 Ceph、纳管单位=cluster | Accepted（2026-11-15） | ADR-35 §1 |
 | [ADR-36](ADR-36-任务队列去MQ.md) | 取消 RabbitMQ：PG 任务表 + SKIP LOCKED + 租约（取代 ADR-12） | Accepted（2026-11-15） | ADR-36 §2 |
+| [ADR-37](ADR-37-容量模型与规模上限.md) | 容量模型与规模上限：单副本 5k 连接、10k 需 3 副本 | Accepted（2026-11-15） | ADR-37 §1 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
