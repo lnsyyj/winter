@@ -506,4 +506,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 部署框架定案：**Ansible，结构对齐 kolla-ansible，不 fork**，落成 `ADR-17`。阶段 C 由 `deploy/` 分阶段 playbook 驱动（bootstrap-servers / prechecks / pull / deploy / post-deploy / reconfigure / upgrade / destroy）；手册升 v0.3（C1~C8）；新增不变量 I16 与 TC-26（prechecks 只读、deploy 幂等）；目录约定登记 `deploy/` | `c07d334` |
 | 2026-11-15 | 四项决策关闭：**D4/D5 可观测性**（VictoriaLogs + 自带全套，`ADR-18`）、**D9 Agent 权限**（专用账号 + sudo 白名单，`ADR-19`）、**D11 适用下限**（≥3 集群或 ≥20 节点，`ADR-20`）。I4 增加「Agent 一律非 root」；新增 TC-27（提权边界）；架构设计 §1.2/§3/§4.1/§6.1/§11/§14、权衡 §8、PRD D4/D5/FR-09/§2.1、安全设计、部署资源表、手册 C5 与前置表同步 | `7f94f30` |
 | 2026-11-15 | D7 关闭：认证源定为**本地账号 + V1 预留 LDAP/OIDC**（`ADR-21`）。组件层选型全部收敛；架构设计 §1.2/§4.1/§11/§14、权衡 §8、PRD D7 同步 | `fe4a2b0` |
-| 2026-11-15 | 落地 `deploy/` 骨架与 prechecks role（ADR-17 首批代码）：`deploy.sh` 阶段分发、inventory 双形态、单一 `group_vars`、只读预检（OS/资源/时间/内核/网络/端口/制品）；`.gitignore` 排除 `passwords.yml`；§1 目录约定与 §4.4 补充 ansible 约定 | 本次提交 |
+| 2026-11-15 | 落地 `deploy/` 骨架与 prechecks role（ADR-17 首批代码）：`deploy.sh` 阶段分发、inventory 双形态、单一 `group_vars`、只读预检（OS/资源/时间/内核/网络/端口/制品）；`.gitignore` 排除 `passwords.yml`；§1 目录约定与 §4.4 补充 ansible 约定 | `ea0dff0` |
+| 2026-11-15 | **D7 改判**：LDAP 从「V1 预留」改为「MVP 可配置项」，落成 `ADR-22` 并取代 `ADR-21`（原文保留）。新增 TC-28（LDAP 五场景 + 明文拒绝）；安全设计 §3/§8、PRD D7、架构设计 §4.1/§11/§14、权衡 §8、手册 C6、`deploy/group_vars` 的 `platform.auth` 同步 | 本次提交 |
