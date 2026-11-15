@@ -119,7 +119,7 @@ graph TB
 | Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账（driver：agent / ceph_api，ADR-27）、凭据加解密、告警关联 | 不执行任何节点命令 |
 | 任务队列 | RabbitMQ（ADR-12） | 任务派发、重试、持久化、死信 | 不承载业务状态 |
 | PostgreSQL | PG 16+ | 集群/主机/用户/角色/任务/审计/凭据密文 | 不存指标、不存大段日志 |
-| Agent | Golang 单二进制双模式 | 心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态 | 不接受任意命令、不主动连 DB、**不负责节点纳管前的自检**（那时它还不存在） |
+| Agent | Golang 单二进制双模式 | 心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态、**本地生成密钥与轮换证书**（私钥不出节点，ADR-28） | 不接受任意命令、不主动连 DB、**不负责节点纳管前的自检**（那时它还不存在） |
 | 管理面 Runner | ansible（复用 `deploy/`） | **仅**在节点尚未纳管时执行预检与初始化（SSH，`executor=runner`） | 不参与运行期调度；不得执行日常运维任务（ADR-23） |
 | cephadm | Ceph 官方 | 集群 bootstrap、服务编排、OSD 部署、升级 | 不作为常驻中心服务 |
 | 镜像仓库 | Harbor / registry | Ceph 镜像、Agent 镜像、离线制品 | 不承担业务制品 |
@@ -324,6 +324,35 @@ flowchart TD
 
 **硬约束**（[ADR-27](ADR-27-纳管双通道.md)）：limited 只能用只读 key（禁 `client.admin`）；写任务在 API 层双重拒绝；**拿不到 mgr API 就不支持纳管，不允许偷偷退回 SSH**——否则 I3 的边界会被悄悄突破。两种 driver 必须产出同一套 DTO，靠契约测试对拍。
 
+### 5.7 Agent 证书生命周期
+
+```mermaid
+sequenceDiagram
+    participant R as 管理面 Runner
+    participant N as 被管节点
+    participant S as Server
+    participant DB as PostgreSQL
+
+    Note over R,N: 纳管窗口内（SSH 可用）
+    R->>N: 下发一次性注册令牌（绑定 cluster+node，TTL 30m）
+    R->>N: 节点本地生成密钥对 + CSR（私钥不出节点）
+    N->>S: 提交 CSR + 令牌
+    S->>S: 校验令牌（单次/未过期/绑定一致）→ intermediate 签发
+    S->>DB: 写 agent_certs（serial / 指纹 / 有效期）
+    S-->>N: 返回证书链
+    Note over N,S: 此后全部走 mTLS
+
+    Note over N,S: 轮换不再需要 SSH
+    N->>S: 到期前 30 天重新生成密钥 + CSR
+    S->>DB: 旧证标 superseded，新证入库
+
+    Note over S,DB: 吊销
+    S->>DB: status=revoked + 断开现有连接
+    Note over S: 后续握手：链有效但 DB 已 revoked → 拒绝
+```
+
+**关键**：私钥**在节点本地生成**，平台只签发证书；吊销靠「证书链 + DB 状态」双校验，**不依赖 CRL 分发**——空气隔离环境里 CRL 分发经常不成立（[ADR-28](ADR-28-Agent证书体系.md)）。CA 为两层：root 离线、intermediate 在线签发。
+
 ---
 
 ## 6. 部署拓扑
@@ -396,7 +425,9 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | `credentials` | id, cluster_id, type(ceph/ceph_key/dashboard), cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 凭据，不含 SSH 登录凭据**（ADR-24）；limited 用 `ceph_key` 只读（ADR-27） |
 | `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
 | `task_steps` | id, task_id, seq, name, status, attempt_count, last_error_code, next_retry_at, compensable, log_ref, output_jsonb | DAG 步骤；`compensable=false` 禁止自动补偿 |
-| `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, created_at | 只追加，按月分区 |
+| `agent_certs` | id, node_id, serial(uk), fingerprint, not_before, not_after, status(active/superseded/revoked), issued_by, revoked_at, revoke_reason | 握手时双校验：链 + DB 状态（ADR-28） |
+| `ca_state` | id, kind(root/intermediate), cert_pem, key_cipher, not_after, rotated_at | 私钥只存密文；root 离线保存 |
+| `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, **trace_id**, created_at | 只追加，按月分区 |
 | `users` | id, username, password_hash(Argon2id), idp, subject, external_id, status, last_login_at | 本地账号 + LDAP 用户共存；`(idp, subject)` 唯一（ADR-22） |
 | `sessions` | id, session_hash(uk), user_id, idp, created_at, last_seen_at, expires_at, revoked_at, revoke_reason, client_fp | 只存哈希；撤销即时生效（ADR-26） |
 | `roles` / `grants` | 标准 RBAC + scope(region/az/cluster) | 三级授权 |
@@ -443,6 +474,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 7. **Grafana 隔离**：禁止直连，经 Nginx 反代注入身份，按 cluster 过滤数据源查询。
 8. **认证**：本地账号（Argon2id + HttpOnly 会话 + 登录限流）+ **可选 LDAP**（配置文件开启，强制 TLS、`default_role: none`、本地管理员保留为 break-glass）；**认证与 RBAC 分离**（ADR-22）。
 9. **临时凭据**：SSH 登录凭据只存活于任务会话内存，终态即擦除；不走队列、不入日志、页面不回显；多副本用一次性 token 领取（ADR-24）。
+10. **节点身份**：Agent 私钥本地生成、永不外传；证书 90 天自动轮换；吊销靠「证书链 + DB 状态」双校验，不依赖 CRL（ADR-28）。
 
 ---
 
@@ -499,6 +531,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-25](ADR-25-任务状态机.md) | 自动重试不动任务号，人工重跑开新单 | Accepted（2026-11-15） | ADR-25 §2 |
 | [ADR-26](ADR-26-会话存储.md) | 会话存 PG 表，不透明 Session ID（非 JWT） | Accepted（2026-11-15） | ADR-26 §2 |
 | [ADR-27](ADR-27-纳管双通道.md) | 纳管双通道：Agent 托管（managed）/ 只读 mgr API（limited） | Accepted（2026-11-15） | ADR-27 §2 |
+| [ADR-28](ADR-28-Agent证书体系.md) | Agent 证书：内置两层 CA，私钥不出节点，DB 状态双校验吊销 | Accepted（2026-11-15） | ADR-28 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
