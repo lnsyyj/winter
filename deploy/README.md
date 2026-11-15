@@ -13,6 +13,31 @@
 
 未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
 
+## 离线制品源（ADR-15）
+
+现场三种源都不可靠（实测：PGDG 官方站超时、EPEL 无 PG17/etcd、pip 的文件站超时），因此所有包**随代码入库**，由管理节点的 Nginx 发布，节点从内网拉取。
+
+```
+deploy/artifacts/repo/
+├── rpm/pgdg17/   PG 17 的 4 个 RPM（server / libs / client；不含 contrib，见下）
+├── rpm/base/     haproxy、perl-libs 等基础依赖
+├── tarball/      etcd 官方静态包
+└── pip/          patroni 及其依赖 wheel
+```
+
+| 环节 | 做法 |
+| --- | --- |
+| 发布 | `./deploy.sh deploy --tags repo`（`roles/local_repo`）：把 artifacts 复制到 `/var/lib/winter/www/repo`，Nginx 明文监听 **8082**，防火墙只放行内网网段 |
+| 拉取 | 角色内用 `get_url` 取 `{{ platform.repo_base_url }}/...`，RPM 用 `dnf --disablerepo='*'` 本地安装，**不触发任何远端仓库元数据刷新** |
+| 新增包 | 下载到对应子目录 → 提交 → 重跑 `--tags repo` → 目标机再跑对应角色 |
+
+**已实测**（2026-11-15）：在 `.197`、`.198` 两台**无 PGDG 源的精简系统**上，PG 17 完全从内网源装成（`ok=23 failed=0`），应用账号 `winter` 连接正常。
+
+**两个坑，记下来**：
+
+1. `postgresql17-contrib` 依赖 `libperl` → `perl-libs` → `perl(Carp)/perl(Encode)…` 一整条 perl 链，精简系统上要多拉十几个包。**HA 用不到 contrib，故不纳入**；需要时再补。
+2. `dnf download --resolve` 在**已经装过依赖的机器**上会跳过这些依赖（本次就漏了 `perl-libs`）。做法是最后一次 `rpm -qa` 比对，或用干净容器生成闭包。
+
 ## 实机验证记录（2026-11-15 · CentOS Stream 9）
 
 在 M0 环境跑通 `./deploy.sh deploy`，`ok=25 changed=2 failed=0`；二次运行 `changed=0`（幂等）。
