@@ -14,9 +14,12 @@
 - name: 从内网源安装 patroni（离线 wheel，不访问 PyPI）
   ansible.builtin.shell: |
     set -o pipefail
-    pip3 install --no-index --trusted-host $(echo {{ platform.repo_base_url }} | sed -E 's#https?://([^:/]+).*#\1#') \
+    # python-etcd 是 Patroni etcd3 实现的依赖（没有它 patroni 只会认出 consul/kubernetes）
+    # 该包只有 sdist，必须 --no-build-isolation，否则 pip 会尝试联网下 setuptools
+    pip3 install --no-index --no-build-isolation \
+      --trusted-host $(echo {{ platform.repo_base_url }} | sed -E 's#https?://([^:/]+).*#\1#') \
       --find-links {{ platform.repo_base_url }}/{{ patroni.pip_subdir }}/ \
-      patroni psycopg2-binary 2>&1 | tail -3
+      patroni psycopg2-binary python-etcd 2>&1 | tail -3
   args:
     executable: /bin/bash
   register: patroni_pip
