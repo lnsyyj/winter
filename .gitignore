@@ -53,6 +53,11 @@ venv/
 credentials.local.*
 secrets/
 
+# 部署机密：secrets 只允许出现在 deploy/passwords.yml（ADR-17），该文件永不入库
+deploy/passwords.yml
+passwords.yml
+*.vault
+
 # 离线制品与压缩包（走制品库，不进 git）
 *.tar
 *.tar.gz

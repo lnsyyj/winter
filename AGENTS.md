@@ -43,7 +43,7 @@ README.md            仓库门面
 docs/                按《软件行业岗位全景图》七条线 / 24 个岗位归档的全部文档
   ├── README.md      文档总览与索引（唯一索引入口）
   └── 岗位映射与变更记录.md   岗位体系变更时的旧→新对照（体系变了必须更新）
-deploy/              平台部署框架：inventory / group_vars / roles / playbooks（ADR-17，规划中，M0 后创建）
+deploy/              平台部署框架：inventory / group_vars / roles / playbooks（ADR-17；当前仅 prechecks 已实现）
 .workbuddy/          工作区元数据 / 会话记忆（不纳入版本控制，不得删除）
 ```
 
@@ -245,6 +245,10 @@ git reflog                            # 兜底：找回误操作前的 HEAD
 
 - Python 3.11+，类型注解，`ruff` / `black` 风格；脚本必须有 `if __name__ == "__main__":`。
 - ansible playbook 使用 **FQCN**（`ansible.builtin.*`），任务写 `name`，全部幂等，禁止在 playbook 里写业务逻辑分支。
+- 部署框架（`deploy/`）遵循 ADR-17：`roles/<组件>/{tasks,defaults,README.md}`，配置只在 `group_vars/all.yml`，任务按类别拆文件并打 `prechecks.<类别>` 之类 tag。
+- **`prechecks` 类任务必须只读**：所有 `command` / `shell` 带 `changed_when: false`；不得装包、写 sysctl、改防火墙。
+- **`fail_msg` 必须可操作**：写清「期望值 / 实际值 / 怎么修」，只写「检查失败」视为未完成。
+- 敏感值只出现在 `passwords.yml`（已被 `.gitignore` 排除），role 内用变量引用，禁止写默认口令。
 - playbook 版本受控，与平台版本对应；变更需回归 3 节点 e2e。
 - Shell 脚本首行 `set -euo pipefail`，变量加引号，路径用绝对路径或基于脚本位置推导；不使用 `rm -rf`、不写含非 ASCII 路径的 `.bat`/`.ps1`。
 
@@ -500,4 +504,6 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 安装通道定案：**Nginx 只读内网源 + ansible 批量安装**，落成 `ADR-15`。明确两条边界——镜像走不了 yum（registry 或静态 tar，成为 D3 新候选）、明文 HTTP 必须配包与 repodata 双重签名；手册阶段 C 重排为 C1~C10（起源→前置检查→装包→镜像→配置→启动→Agent→初始化→纳管→验收），验收新增源签名与限网段检查；同步架构设计 §6.1、PRD FR-10、TC-22、权衡 D3、I14 | `7a812b0` |
 | 2026-11-15 | D3 关闭：**自建 Harbor，节点统一经仓库拉取**（ansible 下发 CA 与只读 robot 凭据），落成 `ADR-16`；静态 tar 降级为应急路径。新增不变量 I15（镜像唯一来源、禁 insecure-registry）；部署资源 11C/16G/220G → 14C/22G/300G；手册 BOM/C4/验收、TC-25、架构设计 §4.1/§6.1/§6.2/§14、权衡 §8、部署方案同步 | `dba8bc5` |
 | 2026-11-15 | 部署框架定案：**Ansible，结构对齐 kolla-ansible，不 fork**，落成 `ADR-17`。阶段 C 由 `deploy/` 分阶段 playbook 驱动（bootstrap-servers / prechecks / pull / deploy / post-deploy / reconfigure / upgrade / destroy）；手册升 v0.3（C1~C8）；新增不变量 I16 与 TC-26（prechecks 只读、deploy 幂等）；目录约定登记 `deploy/` | `c07d334` |
-| 2026-11-15 | 四项决策关闭：**D4/D5 可观测性**（VictoriaLogs + 自带全套，`ADR-18`）、**D9 Agent 权限**（专用账号 + sudo 白名单，`ADR-19`）、**D11 适用下限**（≥3 集群或 ≥20 节点，`ADR-20`）。I4 增加「Agent 一律非 root」；新增 TC-27（提权边界）；架构设计 §1.2/§3/§4.1/§6.1/§11/§14、权衡 §8、PRD D4/D5/FR-09/§2.1、安全设计、部署资源表、手册 C5 与前置表同步 | 本次提交 |
+| 2026-11-15 | 四项决策关闭：**D4/D5 可观测性**（VictoriaLogs + 自带全套，`ADR-18`）、**D9 Agent 权限**（专用账号 + sudo 白名单，`ADR-19`）、**D11 适用下限**（≥3 集群或 ≥20 节点，`ADR-20`）。I4 增加「Agent 一律非 root」；新增 TC-27（提权边界）；架构设计 §1.2/§3/§4.1/§6.1/§11/§14、权衡 §8、PRD D4/D5/FR-09/§2.1、安全设计、部署资源表、手册 C5 与前置表同步 | `7f94f30` |
+| 2026-11-15 | D7 关闭：认证源定为**本地账号 + V1 预留 LDAP/OIDC**（`ADR-21`）。组件层选型全部收敛；架构设计 §1.2/§4.1/§11/§14、权衡 §8、PRD D7 同步 | `fe4a2b0` |
+| 2026-11-15 | 落地 `deploy/` 骨架与 prechecks role（ADR-17 首批代码）：`deploy.sh` 阶段分发、inventory 双形态、单一 `group_vars`、只读预检（OS/资源/时间/内核/网络/端口/制品）；`.gitignore` 排除 `passwords.yml`；§1 目录约定与 §4.4 补充 ansible 约定 | 本次提交 |
