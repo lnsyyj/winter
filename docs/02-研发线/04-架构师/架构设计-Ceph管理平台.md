@@ -33,7 +33,7 @@
 - 操作系统基线：CentOS Stream 9；容器运行时：podman；Ceph 编排：cephadm；**平台部署编排：Ansible（结构对齐 kolla-ansible，[ADR-17](ADR-17-部署框架.md)）**。
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
 - 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，消息队列见 [ADR-12](ADR-12-消息队列选型.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)。
-- 未定项：认证源（PRD §11.1 的 D7）；其余组件选型均已确认，见 ADR-11~ADR-20。
+- 未定项：**无**。组件与目标层均已收敛（ADR-11~ADR-21）；剩余为实现层细节 D2 / D6 / D10。
 - 假设规模：20 集群 / 500 节点（PRD §2.1）。
 
 ---
@@ -151,6 +151,7 @@ graph TB
 | 初始化 | ansible | ✅ 已确认 | 图中既定，幂等、易审计 | SaltStack | playbook 版本管理 |
 | OS | CentOS Stream 9 | ✅ 已确认（锁定 minor） | 图中既定 | Rocky / Alma | Stream 滚动更新带来兼容风险 |
 | 部署框架 | Ansible，结构对齐 kolla-ansible | ✅ 已确认（ADR-17） | inventory 表达拓扑、单一 group_vars、分阶段 playbook、role 粒度=组件；prechecks 只读 | 零散手写 playbook、Terraform、K8s Operator | 自建框架易退化成脚本；须守住「幂等 + 配置单一入口」 |
+| 认证源 | 本地账号（Argon2id + 服务端会话），V1 预留 LDAP/OIDC | ✅ 已确认（ADR-21） | 零外部依赖、离线可用；认证与 RBAC 分离 | LDAP/AD 优先、OIDC 优先、三者全做 | 企业客户早期要 SSO 时需提前实现；多租户不支持 |
 
 > 已确认项的版本策略、放弃项与推翻条件全部记录在 [ADR-11](ADR-11-技术栈基线.md)，本节只保留摘要，避免两处各自演化。
 
@@ -347,6 +348,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 5. **审计**：只追加、独立存储、含执行前后状态快照；审计写入失败则任务拒绝执行（fail-closed）。
 6. **最小权限**：Agent **一律不以 root 运行**——专用账号常驻，特权动作经 sudo 精确白名单（绝对路径 + 参数形态），禁止 `ALL` 与解释器（ADR-19）。
 7. **Grafana 隔离**：禁止直连，经 Nginx 反代注入身份，按 cluster 过滤数据源查询。
+8. **认证**：MVP 本地账号（Argon2id + HttpOnly 会话 + 登录限流），**认证与 RBAC 分离**；V1 预留 LDAP/OIDC 字段与接口但不实现（ADR-21）。
 
 ---
 
@@ -396,7 +398,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-18](ADR-18-可观测性栈.md) | 可观测性：VictoriaLogs + 自带 VM/vmalert/Alertmanager/Grafana | Accepted（2026-11-15） | ADR-18 §1 |
 | [ADR-19](ADR-19-Agent权限模型.md) | Agent 非 root：专用账号 + sudo 精确白名单 | Accepted（2026-11-15） | ADR-19 §1 |
 | [ADR-20](ADR-20-适用下限.md) | 适用下限：≥3 集群或 ≥20 节点（推荐，非门禁） | Accepted（2026-11-15） | ADR-20 §1 |
+| [ADR-21](ADR-21-认证源.md) | 认证源：MVP 本地账号，V1 预留 LDAP/OIDC | Accepted（2026-11-15） | ADR-21 §1 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
-> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12）、D3 以 **自建 Harbor** 关闭（ADR-16），ADR-07 标记为 `Rejected` 保留理由不删。**组件层选型只剩认证源（D7）待定**，其余均已收敛。
+> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12）、D3 以 **自建 Harbor** 关闭（ADR-16），ADR-07 标记为 `Rejected` 保留理由不删。**组件层选型已全部关闭**（最后一项 D7 由 ADR-21 关闭），剩余仅 D2 / D6 / D10 的实现层细节。
