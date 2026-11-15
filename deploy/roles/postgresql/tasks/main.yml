@@ -67,10 +67,12 @@
   tags: [postgresql]
 
 - name: 等待实例可接受连接
+  # 不用 pg_isready：PGDG 装的二进制在 /usr/pgsql-<ver>/bin，postgres 用户的 PATH 里没有，
+  # 只有 psql 做了 /usr/bin 软链。用 psql 探活最稳。
   ansible.builtin.shell: |
     set -o pipefail
     for i in $(seq 1 20); do
-      sudo -u postgres pg_isready -q && exit 0
+      sudo -u postgres psql -tAc "select 1" >/dev/null 2>&1 && exit 0
       sleep 1
     done
     echo "postgres 未就绪" >&2; exit 1
