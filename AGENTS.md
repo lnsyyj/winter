@@ -518,4 +518,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 镜像拉取定案：**Ceph 镜像由 cephadm 直拉，平台不预拉**（`ADR-30`）；管理面组件仍走 `pull` 阶段。补三件兜底：digest 引用禁裸 tag、`image_pull_failed` 错误码、拉取专用超时；`image_inventory` 表与 `clusters.image_digest`；新增 §5.9 链路与 TC-36 | `d0ba3ac` |
 | 2026-11-15 | 备份恢复定案：**备数据/密钥/CA/配置，不备镜像与日志**（`ADR-31`，RPO ≤15min / RTO ≤2h）。硬约束：密钥与备份包**物理分离**、备份包加密、每季演练、连续失败升级告警；新增 §5.10 链路、备份卷 ≥100G（不计入 350G）、TC-37 | `e139d5f` |
 | 2026-11-15 | 保留期定案：**可配置 + 审计 180 天硬下限 + 容量校验**（`ADR-32`）。默认 30/30/90/180/7；`clusters` 补 `drift_state`/`last_drift_at`；`group_vars` 增 `platform.retention`；分区 DROP 与元审计；新增 TC-38 | `e346102` |
-| 2026-11-15 | 日志与告警链路定案：**Agent 直推 VictoriaLogs（mTLS 鉴权）+ 告警 HMAC webhook 回流**（`ADR-33`）。Server 不代理日志字节；**日志不可用不阻塞任务**；告警可丢、审计不可丢；§5.4 重写为指标/日志/告警/面板四段；新增 TC-39 | 本次提交 |
+| 2026-11-15 | 日志与告警链路定案：**Agent 直推 VictoriaLogs（mTLS 鉴权）+ 告警 HMAC webhook 回流**（`ADR-33`）。Server 不代理日志字节；**日志不可用不阻塞任务**；告警可丢、审计不可丢；§5.4 重写为指标/日志/告警/面板四段；新增 TC-39 | `05f784c` |
+| 2026-11-15 | 复核 6 处矛盾：①②③ 维持（单进程 / 经 Server 写库 / Runner 预检），④ 确认不设 TIMEOUT 状态并**补两个必配项**（显示最后进展时间、告警阈值按任务类型分级），⑤ 维持开新单；⑥ 改为 **JWT + 版本号/黑名单**，落成 `ADR-34` 取代 `ADR-26`（踢人 ≤30s 窗口，可配 0 换即时）。`sessions` 表改为 `refresh_tokens` + `token_blacklist` + `users.token_version`；`group_vars` 增 `auth.session`；TC-32 重写 | 本次提交 |
