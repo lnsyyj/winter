@@ -2,11 +2,14 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | **Accepted（已确认）** |
+| 状态 | **Superseded**（由 [ADR-35](ADR-35-Agent预装与零SSH.md) 取代：Agent 改为交付期预装，Runner/SSH 窗口取消） |
 | 决策日期 | 2026-11-15 |
 | 决策人 | 项目负责人 |
 | 影响范围 | 架构设计 §3 / §5.1 / §8 / §9 / §11、安全与审计设计、安装手册、TC-29、AGENTS.md I3 |
 | 关联 | [ADR-03 Agent 拉模式](架构设计-Ceph管理平台.md) · [ADR-17 部署框架](ADR-17-部署框架.md) · [ADR-14 离线交付](ADR-14-离线交付模型.md) |
+
+> **本 ADR 已被 [ADR-35](ADR-35-Agent预装与零SSH.md) 取代**。它赖以成立的前提——「bootstrap 之前节点上没有 Agent」——已被推翻：Agent 改为**交付期由 ansible 预装**，纳管时节点上早有 Agent。因此 Runner、SSH 窗口、`executor=runner` 全部取消，预检改由 Agent 本地执行（Go 实现）。
+> 仍然有效的观察：预检必须只读、失败信息要可操作、检查项要与 `deploy/roles/prechecks` 保持一致——只是执行者换了。
 
 ---
 

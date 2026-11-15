@@ -313,7 +313,7 @@ git reflog                            # 兜底：找回误操作前的 HEAD
 | --- | --- |
 | I1 | 业务 IO 直连 Ceph，**绝不经过控制面**；平台全停不影响数据面 |
 | I2 | 所有变更走异步任务（返回 `task_id`），禁止同步长调用；任务有状态机、幂等键、超时、死信 |
-| I3 | Agent **主动拉取**任务 + 双向 mTLS；中心不直连 SSH，不集中保存节点私钥。**唯一例外**：「节点尚未纳管」窗口内的 Runner（预检/初始化/装 Agent，ADR-23）；Agent 上线后必须关闭 SSH 通道（TC-29） |
+| I3 | Agent **主动拉取**任务 + 双向 mTLS；**运行期零 SSH**：平台不持 SSH 凭据、不建 SSH 通道；SSH 只存在于交付期 ansible（实施人员执行，ADR-35）。**Server 不直连任何 Ceph 端点**（mgr/cephadm/CLI 都不碰），唯一执行面是 Agent |
 | I4 | 命令白名单 + 强类型参数校验 + `exec argv`；禁止自由 shell、禁止 `bash -c` 拼接。**Agent 一律非 root**：专用账号常驻，特权动作经 sudo 白名单（绝对路径 + 参数形态，禁 `ALL` 与解释器）（ADR-19） |
 | I5 | 凭据静态加密，明文不出现在 API 响应、日志、审计、前端、错误堆栈。**SSH 登录凭据仅存内存、不落库不入队列**，任务终态即擦除（ADR-24） |
 | I6 | 审计只追加 + fail-closed（审计写失败则任务拒绝执行）；存在全局「停止任务下发」熔断开关 |
@@ -519,4 +519,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 备份恢复定案：**备数据/密钥/CA/配置，不备镜像与日志**（`ADR-31`，RPO ≤15min / RTO ≤2h）。硬约束：密钥与备份包**物理分离**、备份包加密、每季演练、连续失败升级告警；新增 §5.10 链路、备份卷 ≥100G（不计入 350G）、TC-37 | `e139d5f` |
 | 2026-11-15 | 保留期定案：**可配置 + 审计 180 天硬下限 + 容量校验**（`ADR-32`）。默认 30/30/90/180/7；`clusters` 补 `drift_state`/`last_drift_at`；`group_vars` 增 `platform.retention`；分区 DROP 与元审计；新增 TC-38 | `e346102` |
 | 2026-11-15 | 日志与告警链路定案：**Agent 直推 VictoriaLogs（mTLS 鉴权）+ 告警 HMAC webhook 回流**（`ADR-33`）。Server 不代理日志字节；**日志不可用不阻塞任务**；告警可丢、审计不可丢；§5.4 重写为指标/日志/告警/面板四段；新增 TC-39 | `05f784c` |
-| 2026-11-15 | 复核 6 处矛盾：①②③ 维持（单进程 / 经 Server 写库 / Runner 预检），④ 确认不设 TIMEOUT 状态并**补两个必配项**（显示最后进展时间、告警阈值按任务类型分级），⑤ 维持开新单；⑥ 改为 **JWT + 版本号/黑名单**，落成 `ADR-34` 取代 `ADR-26`（踢人 ≤30s 窗口，可配 0 换即时）。`sessions` 表改为 `refresh_tokens` + `token_blacklist` + `users.token_version`；`group_vars` 增 `auth.session`；TC-32 重写 | 本次提交 |
+| 2026-11-15 | 复核 6 处矛盾：①②③ 维持（单进程 / 经 Server 写库 / Runner 预检），④ 确认不设 TIMEOUT 状态并**补两个必配项**（显示最后进展时间、告警阈值按任务类型分级），⑤ 维持开新单；⑥ 改为 **JWT + 版本号/黑名单**，落成 `ADR-34` 取代 `ADR-26`（踢人 ≤30s 窗口，可配 0 换即时）。`sessions` 表改为 `refresh_tokens` + `token_blacklist` + `users.token_version`；`group_vars` 增 `auth.session`；TC-32 重写 | `07d0e2f` |
+| 2026-11-15 | **架构简化**：定「Agent 交付期预装 + 运行期零 SSH + Server 不碰 Ceph + 纳管单位=cluster」，落成 `ADR-35`，取代 `ADR-23`/`ADR-27`、缩小 `ADR-24` 范围。取消 Runner 与 `executor=runner`；`limited` 改为「只读 Agent」（不再需要 mgr dashboard）；`hosts.cluster_id` 允许空（未分配池）；删除 `clusters.collector`；预检改由 Agent 本地实现并与 deploy prechecks 对齐；架构设计 §3/§5.1/§5.6/§5.7/§7/§8/§11、安全设计 §1、全景与图册、TC-29/TC-33、I3 同步 | 本次提交 |

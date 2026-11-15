@@ -41,7 +41,7 @@ ADR-03 定了「Agent ↔ Server 双向 mTLS，证书按节点签发、可轮换
 
 ```mermaid
 sequenceDiagram
-    participant R as 管理面 Runner
+    participant AN as ansible（交付期）
     participant N as 被管节点
     participant S as Server
     participant DB as PostgreSQL

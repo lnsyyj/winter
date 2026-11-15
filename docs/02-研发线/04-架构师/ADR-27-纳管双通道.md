@@ -2,11 +2,14 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | **Accepted（已确认）** |
+| 状态 | **Superseded**（由 [ADR-35](ADR-35-Agent预装与零SSH.md) 取代：limited 改为「只读 Agent」，不再由 Server 直连 mgr） |
 | 决策日期 | 2026-11-15 |
 | 决策人 | 项目负责人 |
 | 影响范围 | 架构设计 §3 / §5.6 / §8、PRD FR-01、API 纳管接口、安全与审计设计、TC-33 |
 | 关联 | [ADR-03 Agent 拉模式](架构设计-Ceph管理平台.md) · [ADR-23 预检执行者](ADR-23-建集群预检执行者.md) · [ADR-24 SSH 凭据](ADR-24-SSH凭据管理.md) · [权衡分析 B7](架构决策与权衡分析.md) |
+
+> **本 ADR 已被 [ADR-35](ADR-35-Agent预装与零SSH.md) 取代**。核心变化：Server 不得与 Ceph 有任何直接关系（不连 mgr REST），因此 limited 通道改为「**同一 Agent 通道、只授只读权限**」（只读 cephx key + 只采集）。副作用是好的：不再要求客户启用 mgr dashboard，也不需要「管理面 → 集群」的反向网络。代价是**放弃「完全不装 Agent」的客户**——这条边界要写进售前清单。
+> 仍然有效的部分：`managed / limited` 两档、写任务双重拒绝、凭据只用只读 key。
 
 ---
 

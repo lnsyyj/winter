@@ -6,11 +6,15 @@
 
 | 阶段 | 命令 | 状态 |
 | --- | --- | --- |
-| 部署前检查 | `./deploy.sh prechecks -i inventory/multinode` | ✅ **已实现**（只读） |
+| 部署前检查 | `./deploy.sh prechecks -i inventory/multinode` | ✅ **已实现**（只读，交付期用） |
 | bootstrap-servers | — | ⬜ 未实现 |
 | pull / deploy / post-deploy / reconfigure / upgrade / destroy | — | ⬜ 未实现 |
 
 未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
+
+> **交付期 vs 运行期**（ADR-35）：本目录是**交付期**工具，用 ansible 装 Agent、注册证书、下发配置。
+> 平台**运行期不持 SSH 凭据**，所有节点操作经 Agent；因此 `prechecks` 只用于装机前确认，
+> 纳管与运维时的预检由 Agent 本地执行（Go 实现，检查项与本 role 保持一致）。
 
 ## 目录
 

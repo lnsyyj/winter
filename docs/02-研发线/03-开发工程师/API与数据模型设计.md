@@ -57,7 +57,7 @@
 ```mermaid
 stateDiagram-v2
   [*] --> PENDING: 任务落库
-  PENDING --> RUNNING: Runner / Agent 领取
+  PENDING --> RUNNING: Agent 领取
   PENDING --> CANCELED: 未开始即取消
   RUNNING --> SUCCEEDED: 全部步骤成功
   RUNNING --> FAILED: 步骤确定性失败

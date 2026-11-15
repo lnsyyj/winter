@@ -116,11 +116,11 @@ graph TB
 | 组件 | 技术 | 职责 | 不负责 |
 | --- | --- | --- | --- |
 | Web | React + TS | 控制台、向导、任务进度、Grafana 面板承载 | 不直连 Ceph、不直连 DB |
-| Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账（driver：agent / ceph_api，ADR-27）、凭据加解密、告警关联 | 不执行任何节点命令 |
+| Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账（唯一 driver：agent，ADR-35）、凭据加解密、告警关联 | 不执行任何节点命令、**不直连任何 Ceph 端点**（不碰 mgr REST / cephadm / ceph CLI） |
 | 任务队列 | RabbitMQ（ADR-12） | 任务派发、重试、持久化、死信 | 不承载业务状态 |
 | PostgreSQL | PG 16+ | 集群/主机/用户/角色/任务/审计/凭据密文 | 不存指标、不存大段日志 |
-| Agent | Golang 单二进制双模式 | 心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态、**本地生成密钥与轮换证书**（私钥不出节点，ADR-28） | 不接受任意命令、不主动连 DB、**不负责节点纳管前的自检**（那时它还不存在） |
-| 管理面 Runner | ansible（复用 `deploy/`） | **仅**在节点尚未纳管时执行预检与初始化（SSH，`executor=runner`） | 不参与运行期调度；不得执行日常运维任务（ADR-23） |
+| Agent | Golang 单二进制双模式 | **交付期预装**；心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态、本地跑预检、本地生成密钥与轮换证书（私钥不出节点，ADR-28） | 不接受任意命令、不主动连 DB、不负责自身安装（由交付期 ansible 完成） |
+| ansible（交付期） | ansible-core（`deploy/`） | 交付阶段预装 Agent、批量注册证书、下发 registry CA 与配置 | **不参与运行期**；平台不持有其 SSH 凭据（ADR-35） |
 | cephadm | Ceph 官方 | 集群 bootstrap、服务编排、OSD 部署、升级 | 不作为常驻中心服务 |
 | 镜像仓库 | Harbor / registry | Ceph 镜像、Agent 镜像、离线制品 | 不承担业务制品 |
 | VictoriaMetrics | VM + vmalert | 指标存储、PromQL 查询、告警规则求值 | 不做业务数据存储 |
@@ -172,26 +172,25 @@ graph TB
 sequenceDiagram
     participant W as Web
     participant S as Server
-    participant R as 管理面 Runner<br/>(ansible)
     participant DB as PostgreSQL
     participant Q as RabbitMQ
-    participant A as Agent<br/>(system / ceph 双模式)
+    participant A as Agent（交付期已预装）
     participant C as cephadm / Ceph
 
-    W->>S: POST /v1/clusters（主机/网络/版本/仓库 + 一次性 SSH 凭据）
-    S->>DB: 集群 + 任务 DAG 落库(PENDING) + 审计（记录凭据来源与用途）
-    Note over S,R: 节点此时还没有 Agent，step-1/2 只能由管理面推过去
-    S->>Q: 发布 step-1 主机预检（executor=runner）
-    Q->>R: 领取任务
-    R->>R: 执行 deploy/roles/prechecks（复用，只读）
-    R-->>S: 检查结果（不改系统）
-    S->>DB: 步骤状态 + 日志回写
-    S->>Q: 发布 step-2 系统初始化（executor=runner）
-    Q->>R: 装 podman / 分发 Agent / 签发 mTLS 证书
-    R-->>S: 完成
-    S->>Q: 发布 step-3 bootstrap（executor=agent）
-    Q->>A: Agent 拉取（自此不再使用 SSH）
-    A->>C: cephadm bootstrap
+    W->>S: POST /v1/clusters（选池中节点 / 网络 / 版本 / 仓库）
+    S->>DB: 集群 + 任务 DAG 落库(PENDING) + 审计
+    Note over S,A: 节点已在未分配池（Agent 常驻），纳管时绑定到 cluster
+    S->>Q: step-1 主机预检（executor=agent）
+    Q->>A: Agent 拉取
+    A->>A: 本地跑 precheck（OS / NTP / 磁盘 / podman / 源可达，只读）
+    A-->>S: 检查结果
+    S->>DB: 步骤状态 + hosts.cluster_id 绑定
+    S->>Q: step-2 系统初始化（executor=agent）
+    Q->>A: 装 podman / 下发 registry CA 与凭据 / 写集群配置
+    A-->>S: 完成
+    S->>Q: step-3 bootstrap（executor=agent）
+    Q->>A: 拉取
+    A->>C: cephadm bootstrap（自行 pull 镜像）
     C-->>A: FSID
     A-->>S: FSID + 步骤日志
     S->>DB: 回写 fsid / 凭据密文
@@ -202,17 +201,15 @@ sequenceDiagram
     A-->>S: SUCCEEDED
     S->>Q: step-7 验收 HEALTH_OK
     S-->>W: WS 推送进度 → 完成
-    Note over S,A: 任一步失败 → FAILED + 保留现场 + 支持从该步重试
+    Note over S,A: 任一步失败 → FAILED + 保留现场 + 人工重跑开新单
 ```
 
-**执行者有两种，互斥**（ADR-23）：
+**只有一个执行者：Agent**（[ADR-35](ADR-35-Agent预装与零SSH.md)）
 
-| executor | 谁执行 | 适用 |
-| --- | --- | --- |
-| `runner` | 管理面 Runner（ansible，SSH） | 节点尚未纳管：预检、初始化、装 Agent |
-| `agent` | 目标节点 Agent（拉模式） | Agent 上线后的全部步骤与日常运维 |
-
-同一集群同一时刻只允许一种执行者，由集群级 advisory lock 保证。**Agent 上线后 SSH 通道即可关闭，平台不再依赖它**（验收见 TC-29）。
+- 节点在**交付期**已由 ansible 装好 Agent 并完成注册，因此纳管时**不存在「节点还没有 Agent」的窗口**；
+- 原 `executor=runner`（管理面 SSH）**已取消**，`tasks.executor` 只取 `agent`；
+- 平台运行期**不持有任何 SSH 凭据**、不建立 SSH 通道（TC-29 验收）；
+- 预检改由 Agent 本地执行（Go 实现），检查项与 `deploy/roles/prechecks` 保持一致，用契约测试防漂移。
 
 ### 5.2 任务下发与执行语义
 
@@ -228,7 +225,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
     [*] --> PENDING
-    PENDING --> RUNNING: Runner / Agent 领取
+    PENDING --> RUNNING: Agent 领取
     PENDING --> CANCELED: 未开始即取消
     RUNNING --> SUCCEEDED: 全部步骤成功
     RUNNING --> FAILED: 步骤确定性失败
@@ -321,48 +318,50 @@ sequenceDiagram
 
 **要点**：access 是 JWT（**不查会话表**），refresh 是不透明串（存哈希）。撤销靠 **`token_version`（全员）+ jti 黑名单（单会话）**，两者都可缓存，因此**踢人有 ≤30s 窗口**——可配置为 0 换取即时，但那就退化成每请求查库（[ADR-34](ADR-34-会话JWT方案.md)）。角色放在 JWT 里，改角色时靠 `ver` 强制失效，**这是唯一防线**。
 
-### 5.6 纳管已有集群（双通道）
+### 5.6 纳管已有集群（同一通道，两种权限档）
 
 ```mermaid
 flowchart TD
-  A[纳管向导：集群地址 / 版本 / 凭据] --> B{客户允许装 Agent？}
-  B -- 是 --> C[SSH 窗口：预检 → 装 Agent → 签发 mTLS]
-  C --> D[capability = managed<br/>collector = agent]
-  B -- 否 --> E[前置检查：mgr dashboard 已启用<br/>导入只读 cephx 凭据]
-  E --> F[capability = limited<br/>collector = ceph_api]
-  D --> G[统一 DTO 入库 → 对账 / 展示]
-  F --> G
-  G --> H{收到写任务？}
-  H -- limited --> I[拒绝：模板级 + 集群级双重校验]
-  H -- managed --> J[正常进任务队列]
+  A[纳管向导：从未分配池选节点 + 选 cluster] --> B{授予哪种权限档？}
+  B -- "读写" --> C[capability = managed<br/>Agent 可执行写任务]
+  B -- "只读" --> D[capability = limited<br/>Agent 只给只读 cephx key + 采集能力]
+  C --> E[step-1 预检 → step-2 绑定 hosts.cluster_id]
+  D --> E
+  E --> F{收到写任务？}
+  F -- limited --> G[拒绝：模板级 + 集群级双重校验]
+  F -- managed --> H[正常进任务队列]
 ```
 
-| 通道 | 前置条件 | 能力 | 采集 |
+| 权限档 | 前置条件 | 能力 | 采集 |
 | --- | --- | --- | --- |
-| `managed` | 可 SSH + 允许装 Agent | 全写（白名单任务） | Agent 拉模式 |
-| `limited` | 启用 mgr dashboard + 只读 cephx key + 网络可达 mgr | **只读** | Server 直连 mgr REST API |
+| `managed` | 节点已预装 Agent（交付期完成） | 全写（白名单任务） | Agent |
+| `limited` | 同上 + 只给只读 cephx key | **只读**（写任务在模板级与集群级双重拒绝） | Agent |
 
-**硬约束**（[ADR-27](ADR-27-纳管双通道.md)）：limited 只能用只读 key（禁 `client.admin`）；写任务在 API 层双重拒绝；**拿不到 mgr API 就不支持纳管，不允许偷偷退回 SSH**——否则 I3 的边界会被悄悄突破。两种 driver 必须产出同一套 DTO，靠契约测试对拍。
+**关键变化**（[ADR-35](ADR-35-Agent预装与零SSH.md)）：`limited` 不再依赖 mgr dashboard，也**不再由 Server 直连 mgr**——它是「同一通道、只给只读权限」的档位。代价是**放弃「完全不装 Agent」的客户**，这是明确的能力边界，必须写进售前清单。
+
+**硬约束**：limited 只能配只读 cephx key（禁 `client.admin`）；Server **不接触任何 Ceph 端点**，凭据只下发给 Agent。
 
 ### 5.7 Agent 证书生命周期
 
 ```mermaid
 sequenceDiagram
-    participant R as 管理面 Runner
+    participant AN as ansible（交付期）
     participant N as 被管节点
     participant S as Server
     participant DB as PostgreSQL
 
-    Note over R,N: 纳管窗口内（SSH 可用）
-    R->>N: 下发一次性注册令牌（绑定 cluster+node，TTL 30m）
-    R->>N: 节点本地生成密钥对 + CSR（私钥不出节点）
+    Note over AN,N: 交付期（一次性，由实施人员执行 ansible）
+    AN->>S: 批量申请注册令牌（绑定 node，TTL 30m）
+    S-->>AN: 令牌列表
+    AN->>N: 装 podman/Agent + 下发令牌
+    N->>N: 本地生成密钥对 + CSR（私钥不出节点）
     N->>S: 提交 CSR + 令牌
     S->>S: 校验令牌（单次/未过期/绑定一致）→ intermediate 签发
     S->>DB: 写 agent_certs（serial / 指纹 / 有效期）
     S-->>N: 返回证书链
-    Note over N,S: 此后全部走 mTLS
+    Note over N,S: 此后全部走 mTLS，运行期无 SSH
 
-    Note over N,S: 轮换不再需要 SSH
+    Note over N,S: 轮换（运行期，无需 SSH）
     N->>S: 到期前 30 天重新生成密钥 + CSR
     S->>DB: 旧证标 superseded，新证入库
 
@@ -371,7 +370,7 @@ sequenceDiagram
     Note over S: 后续握手：链有效但 DB 已 revoked → 拒绝
 ```
 
-**关键**：私钥**在节点本地生成**，平台只签发证书；吊销靠「证书链 + DB 状态」双校验，**不依赖 CRL 分发**——空气隔离环境里 CRL 分发经常不成立（[ADR-28](ADR-28-Agent证书体系.md)）。CA 为两层：root 离线、intermediate 在线签发。
+**关键**：注册发生在**交付期**（ansible 批量完成），因此运行期不需要 SSH 窗口；私钥**在节点本地生成**，平台只签发证书；吊销靠「证书链 + DB 状态」双校验，**不依赖 CRL 分发**——空气隔离环境里 CRL 分发经常不成立（[ADR-28](ADR-28-Agent证书体系.md)、[ADR-35](ADR-35-Agent预装与零SSH.md)）。CA 为两层：root 离线、intermediate 在线签发。
 
 ### 5.8 审计写入（独立库，两段式）
 
@@ -483,7 +482,7 @@ Server 多副本 + PG 主从 + RabbitMQ 3 节点集群（quorum queue）+ VM 双
 | --- | --- | --- |
 | Web ↔ Server | HTTPS REST + WebSocket | 页面数据、任务进度推送 |
 | Server ↔ Agent | mTLS + gRPC 双向流 / HTTPS 长轮询 | 注册、心跳、任务派发、日志与状态回报 |
-| Server ↔ Ceph（只读） | ceph-mgr RESTful / Agent 转发 `ceph -s` | 状态采集（优先经 Agent，避免中心直连） |
+| Agent ↔ Ceph | 本地进程调用（cephadm / ceph CLI / podman） | 全部集群读写，**Server 不参与**（ADR-35） |
 | 监控采集 | Prometheus remote_write / scrape | 指标 |
 | 告警 | Alertmanager Webhook → Server | 告警入库与关联 |
 
@@ -499,9 +498,9 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `regions` / `azs` | id, name, parent_id | 自定义三级模型前两级 |
-| `clusters` | id, fsid(uk), az_id, name, deploy_mode, capability(managed/limited), collector(agent/ceph_api), ceph_version, image_digest, drift_state(ok/drift), last_drift_at, health, last_sync_at | 集群主表；`drift_state` 对应 §5.3 的对账结果（ADR-32） |
+| `clusters` | id, fsid(uk), az_id, name, deploy_mode, capability(managed/limited), ceph_version, image_digest, drift_state(ok/drift), last_drift_at, health, last_sync_at | 集群主表；`capability` = Agent 权限档（ADR-35），`drift_state` 对应 §5.3 |
 | `image_inventory` | id, image, digest(uk), ceph_version, source, added_at | 「用过哪些镜像」的追溯表，对应 FR-10（ADR-30） |
-| `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；指纹是公钥信息，允许持久化（ADR-24） |
+| `hosts` | id, cluster_id(**可空 = 未分配池**), hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；交付期预装 Agent 后入池，纳管时绑定 cluster（ADR-35）；指纹是公钥信息，允许持久化（ADR-24） |
 | `credentials` | id, cluster_id, type(ceph/ceph_key/dashboard), cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 凭据，不含 SSH 登录凭据**（ADR-24）；limited 用 `ceph_key` 只读（ADR-27） |
 | `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
 | `task_steps` | id, task_id, seq, name, status, attempt_count, last_error_code, next_retry_at, compensable, log_ref, output_jsonb | DAG 步骤；`compensable=false` 禁止自动补偿 |
@@ -540,7 +539,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 - RabbitMQ durable queue + publisher confirm + manual ack，重启不丢任务；单节点故障期间无法接收新任务（不承诺零丢失，见 ADR-12 §6）。
 - Agent 断线重连、本地缓存结果、任务不丢。
 - 监控/日志/仓库属于**可降级组件**：全挂时控制台仍应能展示最近一次同步状态并允许执行预定义任务。
-- 管理面整体不可用时，保留 Ceph Dashboard 与 SSH 作为最终兜底（PRD §2.2 第 2 条）。
+- 管理面整体不可用时，保留 Ceph Dashboard 与 SSH 作为最终兜底（PRD §2.2 第 2 条）——**这是平台外的通道，平台自身不持有 SSH 凭据**（ADR-35）。
 - **备份**：数据库（业务 + 审计）+ 密钥 + CA + 配置；镜像/指标/日志不备。密钥与备份包物理分离（[ADR-31](ADR-31-备份与恢复.md)）。
 
 ---
@@ -559,6 +558,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 8. **认证**：本地账号（Argon2id + HttpOnly 会话 + 登录限流）+ **可选 LDAP**（配置文件开启，强制 TLS、`default_role: none`、本地管理员保留为 break-glass）；**认证与 RBAC 分离**（ADR-22）。
 9. **临时凭据**：SSH 登录凭据只存活于任务会话内存，终态即擦除；不走队列、不入日志、页面不回显；多副本用一次性 token 领取（ADR-24）。
 10. **节点身份**：Agent 私钥本地生成、永不外传；证书 90 天自动轮换；吊销靠「证书链 + DB 状态」双校验，不依赖 CRL（ADR-28）。
+11. **单通道**：**只有 Agent 能触达 Ceph**；Server 不直连 mgr / 不调 cephadm / 不持 SSH 凭据；运行期零 SSH（ADR-35）。
 
 ---
 
@@ -612,11 +612,11 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-20](ADR-20-适用下限.md) | 适用下限：≥3 集群或 ≥20 节点（推荐，非门禁） | Accepted（2026-11-15） | ADR-20 §1 |
 | [ADR-21](ADR-21-认证源.md) | 认证源：MVP 本地账号，V1 预留 LDAP/OIDC | **Superseded**（→ ADR-22） | ADR-21 §1 |
 | [ADR-22](ADR-22-LDAP接入.md) | 认证源：本地账号 + LDAP 可配置（客户自行对接） | Accepted（2026-11-15） | ADR-22 §2 |
-| [ADR-23](ADR-23-建集群预检执行者.md) | 建集群预检由管理面 Runner 复用 deploy prechecks 执行 | Accepted（2026-11-15） | ADR-23 §2 |
+| [ADR-23](ADR-23-建集群预检执行者.md) | 建集群预检由管理面 Runner 复用 deploy prechecks 执行 | **Superseded**（→ ADR-35） | ADR-23 §2 |
 | [ADR-24](ADR-24-SSH凭据管理.md) | SSH 凭据仅内存态：不落库、不走队列、终态擦除 | Accepted（2026-11-15） | ADR-24 §1 |
 | [ADR-25](ADR-25-任务状态机.md) | 自动重试不动任务号，人工重跑开新单 | Accepted（2026-11-15） | ADR-25 §2 |
 | [ADR-26](ADR-26-会话存储.md) | 会话存 PG 表，不透明 Session ID（非 JWT） | **Superseded**（→ ADR-34） | ADR-26 §2 |
-| [ADR-27](ADR-27-纳管双通道.md) | 纳管双通道：Agent 托管（managed）/ 只读 mgr API（limited） | Accepted（2026-11-15） | ADR-27 §2 |
+| [ADR-27](ADR-27-纳管双通道.md) | 纳管双通道：Agent 托管（managed）/ 只读 mgr API（limited） | **Superseded**（→ ADR-35） | ADR-27 §2 |
 | [ADR-28](ADR-28-Agent证书体系.md) | Agent 证书：内置两层 CA，私钥不出节点，DB 状态双校验吊销 | Accepted（2026-11-15） | ADR-28 §2 |
 | [ADR-29](ADR-29-审计落点.md) | 审计独立库：intent 同步必达、result 幂等补写 | Accepted（2026-11-15） | ADR-29 §2 |
 | [ADR-30](ADR-30-镜像拉取方式.md) | Ceph 镜像由 cephadm 直拉，平台不预拉（digest 固定 + 错误码兜底） | Accepted（2026-11-15） | ADR-30 §1 |
@@ -624,6 +624,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-32](ADR-32-数据保留与清理.md) | 保留期可配置，审计 180 天硬下限，改动需容量校验 | Accepted（2026-11-15） | ADR-32 §1 |
 | [ADR-33](ADR-33-日志与告警链路.md) | 日志由 Agent 直推 VL，告警经 HMAC webhook 回流 | Accepted（2026-11-15） | ADR-33 §1 |
 | [ADR-34](ADR-34-会话JWT方案.md) | 会话：JWT + 版本号/黑名单（取代 ADR-26） | Accepted（2026-11-15） | ADR-34 §2 |
+| [ADR-35](ADR-35-Agent预装与零SSH.md) | Agent 交付期预装、运行期零 SSH、Server 不碰 Ceph、纳管单位=cluster | Accepted（2026-11-15） | ADR-35 §1 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 

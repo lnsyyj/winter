@@ -33,7 +33,7 @@
 | **tag 漂移** | 镜像引用**必须用 digest**（`image@sha256:...`），禁止裸 tag；`clusters.image_digest` 记录实际使用的 digest |
 | **拉取很慢被判超时** | `image_pull` 步骤单独设超时（默认 30 分钟），不套用普通步骤的 5 分钟 |
 
-## 4. 前置条件（由 Runner 在纳管窗口内完成）
+## 4. 前置条件（交付期 ansible / Agent 初始化时完成）
 
 | 条件 | 落点 |
 | --- | --- |
