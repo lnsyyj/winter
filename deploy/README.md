@@ -14,6 +14,54 @@
 
 未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
 
+## PostgreSQL 高可用（etcd + Patroni + HAProxy）
+
+```bash
+./deploy.sh pg-ha -i inventory/pgha                  # 全量
+./deploy.sh pg-ha -i inventory/pgha --tags etcd      # 只做 DCS
+./deploy.sh pg-ha -i inventory/pgha --tags patroni   # 只做 PG 集群
+./deploy.sh pg-ha -i inventory/pgha --tags haproxy   # 只做入口
+```
+
+| 组件 | 作用 | 端口（`group_vars.pg_cluster`） |
+| --- | --- | --- |
+| etcd ×3 | 存集群状态、Raft 选主（必须奇数） | 2379 / 2380 |
+| Patroni ×3 | 管理 PG 进程、复制、切换、rewind | REST 8008 |
+| PostgreSQL ×3 | 一主两从 | **5433** |
+| HAProxy ×3 | 应用唯一入口，按 Patroni `/primary` 选主 | **5434** |
+
+> 5433/5434 而非 5432：`.194` 上 5432 已被既有业务（argus）占用，端口一律在
+> `group_vars` 的 `pg_cluster` 里改，role 内不硬编码。
+
+### 实测结果（2026-11-15，三节点）
+
+| 场景 | 结果 |
+| --- | --- |
+| bootstrap | pg-b 成为 Leader，另两台 `streaming`，Lag 0 |
+| 计划切换 | `patronictl switchover` → pg-a 接任，TL+1，入口自动跟随 |
+| **节点失联**（停 patroni + `kill -9 postgres`） | **10 秒内自动切换**到 pg-c，HAProxy 无缝指向新主 |
+| 故障节点恢复 | 重启后自动 `rewind` 并以 streaming 副本回归，Lag 0 |
+| 写入校验 | 经 5434 建表插入成功，副本同步 |
+
+### 三条必须知道的坑（都是实机踩出来的）
+
+1. **`listen_addresses` / `port` 不能写在 `bootstrap.dcs.postgresql.parameters`**：Patroni 会校验失败并忽略，
+   表现是主库只监听 localhost、副本 `pg_basebackup` 挂住。监听地址与端口由 `postgresql.listen/port` 决定。
+2. **`bootstrap.users` 与 `post_bootstrap` 脚本执行顺序不保证**：脚本里必须幂等建角色（含 `replicator`）与应用库。
+3. **SELinux Enforcing 的机器上要两步**：`semanage port -a -t http_port_t -p tcp 5434`（能绑端口）+
+   `setsebool -P haproxy_connect_any on`（能连后端 5433/8008）。缺任一个的表现分别是
+   `cannot bind socket` 与 `server closed the connection unexpectedly`。
+
+### 常用运维命令
+
+```bash
+export PATH=/usr/pgsql-17/bin:$PATH
+patronictl -c /etc/patroni/patroni.yml list            # 看拓扑
+patronictl -c /etc/patroni/patroni.yml switchover      # 计划内切换
+patronictl -c /etc/patroni/patroni.yml failover        # 强制切主
+etcdctl --endpoints=http://127.0.0.1:2379 endpoint health --cluster
+```
+
 ## 离线制品源（ADR-15）
 
 现场三种源都不可靠（实测：PGDG 官方站超时、EPEL 无 PG17/etcd、pip 的文件站超时），因此所有包**随代码入库**，由管理节点的 Nginx 发布，节点从内网拉取。
