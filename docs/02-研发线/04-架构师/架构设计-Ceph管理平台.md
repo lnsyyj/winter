@@ -116,7 +116,7 @@ graph TB
 | 组件 | 技术 | 职责 | 不负责 |
 | --- | --- | --- | --- |
 | Web | React + TS | 控制台、向导、任务进度、Grafana 面板承载 | 不直连 Ceph、不直连 DB |
-| Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账、凭据加解密、告警关联 | 不执行任何节点命令 |
+| Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账（driver：agent / ceph_api，ADR-27）、凭据加解密、告警关联 | 不执行任何节点命令 |
 | 任务队列 | RabbitMQ（ADR-12） | 任务派发、重试、持久化、死信 | 不承载业务状态 |
 | PostgreSQL | PG 16+ | 集群/主机/用户/角色/任务/审计/凭据密文 | 不存指标、不存大段日志 |
 | Agent | Golang 单二进制双模式 | 心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态 | 不接受任意命令、不主动连 DB、**不负责节点纳管前的自检**（那时它还不存在） |
@@ -301,6 +301,29 @@ sequenceDiagram
 
 **要点**：Session ID 是不透明随机串，**不用 JWT 装身份**——JWT 无法即时撤销；DB 只存哈希，拖库也不能冒用（[ADR-26](ADR-26-会话存储.md)）。LDAP 不可用不影响本地管理员登录（break-glass，ADR-22）。
 
+### 5.6 纳管已有集群（双通道）
+
+```mermaid
+flowchart TD
+  A[纳管向导：集群地址 / 版本 / 凭据] --> B{客户允许装 Agent？}
+  B -- 是 --> C[SSH 窗口：预检 → 装 Agent → 签发 mTLS]
+  C --> D[capability = managed<br/>collector = agent]
+  B -- 否 --> E[前置检查：mgr dashboard 已启用<br/>导入只读 cephx 凭据]
+  E --> F[capability = limited<br/>collector = ceph_api]
+  D --> G[统一 DTO 入库 → 对账 / 展示]
+  F --> G
+  G --> H{收到写任务？}
+  H -- limited --> I[拒绝：模板级 + 集群级双重校验]
+  H -- managed --> J[正常进任务队列]
+```
+
+| 通道 | 前置条件 | 能力 | 采集 |
+| --- | --- | --- | --- |
+| `managed` | 可 SSH + 允许装 Agent | 全写（白名单任务） | Agent 拉模式 |
+| `limited` | 启用 mgr dashboard + 只读 cephx key + 网络可达 mgr | **只读** | Server 直连 mgr REST API |
+
+**硬约束**（[ADR-27](ADR-27-纳管双通道.md)）：limited 只能用只读 key（禁 `client.admin`）；写任务在 API 层双重拒绝；**拿不到 mgr API 就不支持纳管，不允许偷偷退回 SSH**——否则 I3 的边界会被悄悄突破。两种 driver 必须产出同一套 DTO，靠契约测试对拍。
+
 ---
 
 ## 6. 部署拓扑
@@ -368,9 +391,9 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `regions` / `azs` | id, name, parent_id | 自定义三级模型前两级 |
-| `clusters` | id, fsid(uk), az_id, name, deploy_mode, ceph_version, capability(managed/limited), health, last_sync_at | 集群主表 |
+| `clusters` | id, fsid(uk), az_id, name, deploy_mode, capability(managed/limited), collector(agent/ceph_api), ceph_version, health, last_sync_at | 集群主表；非 cephadm 只能 limited（ADR-27） |
 | `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；指纹是公钥信息，允许持久化（ADR-24） |
-| `credentials` | id, cluster_id, type, cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 接入凭据，不含 SSH 登录凭据**（ADR-24） |
+| `credentials` | id, cluster_id, type(ceph/ceph_key/dashboard), cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 凭据，不含 SSH 登录凭据**（ADR-24）；limited 用 `ceph_key` 只读（ADR-27） |
 | `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
 | `task_steps` | id, task_id, seq, name, status, attempt_count, last_error_code, next_retry_at, compensable, log_ref, output_jsonb | DAG 步骤；`compensable=false` 禁止自动补偿 |
 | `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, created_at | 只追加，按月分区 |
@@ -475,6 +498,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-24](ADR-24-SSH凭据管理.md) | SSH 凭据仅内存态：不落库、不走队列、终态擦除 | Accepted（2026-11-15） | ADR-24 §1 |
 | [ADR-25](ADR-25-任务状态机.md) | 自动重试不动任务号，人工重跑开新单 | Accepted（2026-11-15） | ADR-25 §2 |
 | [ADR-26](ADR-26-会话存储.md) | 会话存 PG 表，不透明 Session ID（非 JWT） | Accepted（2026-11-15） | ADR-26 §2 |
+| [ADR-27](ADR-27-纳管双通道.md) | 纳管双通道：Agent 托管（managed）/ 只读 mgr API（limited） | Accepted（2026-11-15） | ADR-27 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
