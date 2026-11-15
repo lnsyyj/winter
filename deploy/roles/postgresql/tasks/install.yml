@@ -24,13 +24,25 @@
   register: pg_rpm_fetch
   tags: [postgresql]
 
-- name: 本地安装 RPM（不访问任何远端仓库）
-  ansible.builtin.dnf:
-    name: "{{ pg_rpm_fetch.results | map(attribute='dest') | list }}"
-    state: present
-    disable_gpg_check: true
-    # 关键：只用本地文件，不触发元数据刷新（现场第三方源经常不可达）
-    disablerepo: "*"
+- name: 从内网源取额外依赖（如 perl-libs，极简系统常缺）
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ postgresql.rpm_deps_subdir }}/{{ item }}"
+    dest: "{{ postgresql.rpm_stage_dir }}/{{ item }}"
+    mode: "0644"
+    timeout: 60
+  loop: "{{ postgresql.rpm_deps }}"
+  when: postgresql.rpm_deps | length > 0
+  tags: [postgresql]
+
+- name: 本地安装暂存目录下的全部 RPM（不访问任何远端仓库）
+  # 用 shell 而非 dnf 模块：模块不展开通配符，而这里要「暂存目录里有什么就装什么」
+  ansible.builtin.shell: |
+    set -o pipefail
+    dnf -y --disablerepo='*' --nogpgcheck install {{ postgresql.rpm_stage_dir }}/*.rpm
+  args:
+    executable: /bin/bash
+  register: pg_rpm_install
+  changed_when: "'Nothing to do' not in pg_rpm_install.stdout"
   tags: [postgresql]
 
 - name: 探测新装实例的主版本

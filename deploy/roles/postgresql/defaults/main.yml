@@ -42,6 +42,10 @@ postgresql_defaults:
     - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
+  # 额外依赖（目标机可能缺，已一并入库到 rpm/base）
+  rpm_deps_subdir: rpm/base
+  rpm_deps:
+    - perl-libs-5.32.1-484.el9.x86_64.rpm
   # 本地暂存目录
   rpm_stage_dir: /var/tmp/winter-pg17
 
