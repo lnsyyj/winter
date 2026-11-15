@@ -4,14 +4,14 @@
 | --- | --- |
 | 状态 | **草案 · 待评审** |
 | 日期 | 2026-11-15 |
-| 依据 | [ADR-03 拉模式](../../02-研发线/04-架构师/架构设计-Ceph管理平台.md) · [ADR-28 证书](../../02-研发线/04-架构师/ADR-28-Agent证书体系.md) · [ADR-33 日志直推](../../02-研发线/04-架构师/ADR-33-日志与告警链路.md) · [ADR-37 容量](../../02-研发线/04-架构师/ADR-37-容量模型与规模上限.md) · [ADR-38 通信分片](../../02-研发线/04-架构师/ADR-38-Agent通信分片.md) |
+| 依据 | [ADR-03 拉模式](../../02-研发线/04-架构师/架构设计-Ceph管理平台.md) · [ADR-28 证书](../../02-研发线/04-架构师/ADR-28-Agent证书体系.md) · [ADR-33 日志直推](../../02-研发线/04-架构师/ADR-33-日志与告警链路.md) · [ADR-37 容量](../../02-研发线/04-架构师/ADR-37-容量模型与规模上限.md) |
 | 适用 | Agent 与 Server 之间的唯一通道（运行期） |
 
 ---
 
 ## 1. 范围
 
-**定义**：Agent 如何连上 Server、如何报活、如何收任务、如何回报结果、如何被迁移到别的分片。
+**定义**：Agent 如何连上 Server、如何报活、如何收任务、如何回报结果、断线后如何重连。
 
 **不定义**：Agent 与 Ceph 的交互（本地进程调用）、日志上报（Agent 直推 VictoriaLogs，ADR-33）、证书签发（交付期 ansible，ADR-35）。
 
@@ -35,7 +35,7 @@
 | --- | --- |
 | 证书主体 | `CN=<node_id>`，`SAN URI = spiffe://winter/node/<node_id>` |
 | 私钥 | **节点本地生成，永不出节点**（ADR-28） |
-| Server 校验 | ① 证书链到 intermediate CA；② `agent_certs.status = active`；③ 证书里 `node_id` 与 HELLO 中的一致；④ 该 node 的 `shard_id` 与本 Server 所属分片一致 |
+| Server 校验 | ① 证书链到 intermediate CA；② `agent_certs.status = active`；③ 证书里的 `node_id` 与 HELLO 中的一致 |
 | 失败处理 | 任一条不满足 → 关闭连接 + 错误码（见 §10） |
 
 **第 ③ 条必须有**：否则任何一台失陷节点都能用「B 的证书 + A 的 agent_id」冒充其他节点上报假状态。
@@ -48,11 +48,11 @@ sequenceDiagram
     participant S as Server
 
     A->>S: TCP + TLS1.3（客户端证书）
-    S->>S: 链校验 + DB status + node_id 绑定 + shard 匹配
+    S->>S: 链校验 + DB status + 证书与 HELLO 的 node_id 一致
     alt 校验失败
         S-->>A: 关闭 + ERROR(code, retryable)
     else 通过
-        A->>S: HELLO{agent_version, protocol_version, shard_id, capabilities[], boot_id}
+        A->>S: HELLO{agent_version, protocol_version, capabilities[], boot_id}
         S->>S: 版本协商（支持 N 与 N-1）
         S-->>A: HELLO_ACK{server_time, protocol_version, heartbeat_interval_s, task_window, max_message_bytes}
         Note over A,S: 之后开 3 条逻辑流：control / task / result
@@ -65,7 +65,7 @@ sequenceDiagram
 
 | 流 | 方向 | 承载 | 特征 |
 | --- | --- | --- | --- |
-| `control` | 双向 | HELLO、HEARTBEAT、REDIRECT、CERT_ROTATE_HINT、ERROR | 高频小包；**拥塞时可丢/可合并** |
+| `control` | 双向 | HELLO、HEARTBEAT、CERT_ROTATE_HINT、ERROR | 高频小包；**拥塞时可丢/可合并** |
 | `task` | 双向 | TASK_ASSIGN、TASK_ACK、TASK_PROGRESS | 中频；**不可丢** |
 | `result` | Agent→Server | TASK_RESULT | 低频大包（含 output）；与 task 分离避免阻塞派发 |
 
@@ -75,7 +75,7 @@ sequenceDiagram
 
 | 消息 | 方向 | 流 | 关键字段 | 幂等 | 说明 |
 | --- | --- | --- | --- | --- | --- |
-| `HELLO` | A→S | control | `agent_version` `protocol_version` `shard_id` `capabilities[]` `boot_id` | — | 连接后第一帧 |
+| `HELLO` | A→S | control | `agent_version` `protocol_version` `capabilities[]` `boot_id` | — | 连接后第一帧 |
 | `HELLO_ACK` | S→A | control | `server_time` `heartbeat_interval_s` `task_window` `max_message_bytes` | — | 下发运行参数，Agent 不得硬编码 |
 | `HEARTBEAT` | A→S | control | `sent_at` `inflight_tasks` `load{cpu,mem}` `cert_expires_at` | 幂等 | 默认 10s |
 | `HEARTBEAT_ACK` | S→A | control | `server_time` | — | 可用于估算时钟偏差 |
@@ -83,7 +83,6 @@ sequenceDiagram
 | `TASK_ACK` | A→S | task | `task_id` `accepted` `reason_code` | 幂等 | 10s 内未 ACK → 服务端重派 |
 | `TASK_PROGRESS` | A→S | task | `task_id` `step_id` `percent` `message` | 幂等（覆盖） | 仅用于 UI 与 `last_progress_at` |
 | `TASK_RESULT` | A→S | result | `task_id` `status` `error_code` `error_message` `output` `log_ref` `started_at` `finished_at` | 按 `task_id` | **落库成功才 ack** |
-| `REDIRECT` | S→A | control | `target_shard_id` `new_endpoints[]` `deadline_s` `reason` | — | 优雅迁移；Agent **持久化新 shard_id 与 endpoint 列表**后再断开，见 §8 |
 | `CERT_ROTATE_HINT` | S→A | control | `not_after` | — | 提示轮换；Agent 自己也会按时轮换 |
 | `ERROR` | 双向 | control | `code` `message` `retryable` `retry_after_ms` | — | 见 §10 |
 
@@ -131,41 +130,14 @@ sequenceDiagram
 | 落库 | **30s 批量 flush 一次**（不是每拍写库） | Server 内部（ADR-37） |
 | 时钟 | 偏差 >5s 告警；>30s 拒绝派发新任务 | Server 比对 `HEARTBEAT_ACK` |
 
-## 8. 迁移（REDIRECT）
-
-```mermaid
-sequenceDiagram
-    participant S as Server（旧片）
-    participant A as Agent
-    participant N as Server（新片）
-
-    S->>A: REDIRECT{target_shard_id=11, new_endpoints[主,备1,备2], deadline_s=300}
-    A->>A: 持久化新配置（shard_id + endpoints）
-    Note over A: 进入 draining：不再领新任务
-    A->>A: 完成在途任务（≤4 个）并回报
-    A-->>S: TASK_RESULT × N
-    A->>S: 关闭连接（deadline 前）
-    A->>N: 连接新 endpoint（带抖动）
-    N-->>A: HELLO_ACK
-    Note over A,N: 若 deadline 到期仍有任务未完成 → 带进度迁移，未完成步骤交回旧片重派
-```
-
-| 规则 | 值 |
-| --- | --- |
-| 宽限期 | 默认 **300s**，可随 `REDIRECT` 下发 |
-| 迁移限速 | **50 次/s per shard**（服务端控制） |
-| 新任务 | draining 期间**不再派发** |
-| 配置落盘 | 新 `shard_id` 与 endpoint 列表必须先写入本地配置再断开；重启后仍生效 |
-| 超时 | 到期仍连不上新片 → 回退旧片重试（避免节点变砖） |
-
-## 9. 重连与备用 endpoint
+## 8. 重连与故障转移
 
 | 项 | 规则 |
 | --- | --- |
 | 抖动 | 重连前等待 `random(0, 300s)`；**不允许固定间隔** |
 | 退避 | 1s→2s→4s→…→上限 300s，每次 ±30% 抖动 |
 | 轮转 | 主 endpoint 失败 → 备用 1 → 备用 2 → 回主 |
-| **禁止** | 备用不得指向同一分片（否则片级故障时全部回撞） |
+| 备用选择 | 备用 endpoint 必须是**不同机器**（最好不同机房）；不允许与主入口指向同一台机 |
 | 连接上限 | 服务端 accept 限速 **200/s per 副本**，超出排队不拒绝 |
 
 ## 10. 错误码
@@ -174,7 +146,6 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `CERT_REVOKED` | 证书已吊销 | ✗ | 停止重连，等待人工介入（交付期工具） |
 | `CERT_EXPIRED` | 证书过期 | ✗（先轮换） | 触发轮换流程 |
-| `SHARD_MISMATCH` | 连到了不属于自己的分片 | ✗ | 按配置重试主/备用 endpoint |
 | `VERSION_UNSUPPORTED` | 协议版本不兼容 | ✗ | 升级 Agent |
 | `RATE_LIMITED` | accept 或派发限速 | ✓ | 按 `retry_after_ms` 退避 |
 | `BACKPRESSURE` | 派发窗口/队列已满 | ✓ | 稍后重试（任务仍在表里） |
@@ -206,12 +177,11 @@ sequenceDiagram
 
 | 指标 | 说明 |
 | --- | --- |
-| `agent_conn_total` / `agent_conn_active` | 连接数与分布（按 shard / 副本） |
+| `agent_conn_total` / `agent_conn_active` | 连接数与分布（按副本） |
 | `agent_handshake_duration_ms` | 握手耗时 p99 |
 | `task_assign_latency_ms` | 派发到 ACK 的延迟 |
 | `task_result_ack_missing` | 落库未确认的结果数（应恒为 0） |
 | `heartbeat_gap_ms` | 心跳间隔分布（发现卡顿） |
-| `redirect_total` / `redirect_failed` | 迁移成功率 |
 | 错误码计数 | 按 code 分标签 |
 
 **trace_id 贯穿**：`TASK_ASSIGN.trace_id` 由 Server 生成，Agent 在 `TASK_RESULT` 与本地日志中原样带回，日志侧按此关联（ADR-33）。
@@ -224,3 +194,4 @@ sequenceDiagram
 | 结果消息是否压缩 | 1 MiB 上限下暂不压缩；若 `output` 常见 >100 KB 再议 |
 | 批量结果上报 | 现为逐条；批量可省 RTT，但增加丢失面 |
 | Agent 侧本地队列上限 | 断连期间缓冲多少条结果（建议 100 条 / 或按 24h） |
+| 超出单套实例上限时的接入方式 | 架构层不做分片；由部署层以「多套独立实例」解决，跨实例的 Agent 选路未在本协议定义 |

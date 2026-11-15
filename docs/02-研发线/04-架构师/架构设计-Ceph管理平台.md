@@ -34,7 +34,7 @@
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
 - 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)；**任务队列不引入独立 MQ，用 PG 任务表**（[ADR-36](ADR-36-任务队列去MQ.md)，取代 ADR-12）。
 - 未定项：**无**。组件与目标层均已收敛（ADR-11~ADR-21）；剩余为实现层细节 D2 / D6 / D10。
-- 假设规模：**基线 20 集群 / 500 节点（PRD §2.1）**；**单控制面设计上限 10,000 节点 / 100 集群 / 单 Region**（[ADR-37](ADR-37-容量模型与规模上限.md)）；**更大规模（如 100,000 节点）按机房分片为 20 个 shard，每片 ≤5,000 连接、2 个对等副本**（[ADR-38](ADR-38-Agent通信分片.md)）。
+- 假设规模：**基线 20 集群 / 500 节点（PRD §2.1）**；**单套实例设计上限 10,000 节点 / 100 集群 / 单 Region**（[ADR-37](ADR-37-容量模型与规模上限.md)）。**超出上限不在架构层分片，而是部署多套独立实例**（实例之间不共享数据库与连接）；分片方案曾设计后被撤回，见 [ADR-38](ADR-38-Agent通信分片.md)。
 
 ---
 
@@ -207,7 +207,7 @@ sequenceDiagram
 
 ### 5.2 任务下发与执行语义
 
-- **通信**：Agent 主动向 Server 发起 mTLS 长连接，Server 不反向连节点 → 天然适配 NAT / 内网 / 防火墙单向放行。大规模下 Agent **静态归属某个 shard**（交付期写入主 endpoint + 2 个备用），副本只派发「本片 + 本地有连接」的任务（[ADR-38](ADR-38-Agent通信分片.md)）。
+- **通信**：Agent 主动向 Server 发起 mTLS 长连接，Server 不反向连节点 → 天然适配 NAT / 内网 / 防火墙单向放行。多副本时任务按「本地连接优先」领取，Agent 迁移后由租约回收兜底（[ADR-37](ADR-37-容量模型与规模上限.md)）。
 - **派单与租约**：无独立 MQ（ADR-36）。Server 用 `SELECT ... FOR UPDATE SKIP LOCKED` 取 `PENDING` 任务，派单时写 `leased_until`；Agent 心跳续租，超时未续则回收重派并 `attempt_count++`；**派单与状态迁移在同一事务**。
 - **心跳**：Agent 10s 心跳，上报在线状态、版本、能力集。**心跳只更新内存，30s 批量落库一次**（1,000 msg/s 时约 333 行/s）；离线判定也走内存分片扫描（每秒 1/30），不查库（[ADR-37](ADR-37-容量模型与规模上限.md)）。
 - **幂等**：每个步骤带 `idempotency_key = cluster_fsid + task_type + normalized_params`，Agent 本地记录最近执行结果，重复投递直接返回上次结果。
@@ -495,7 +495,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | `image_inventory` | id, image, digest(uk), ceph_version, source, added_at | 「用过哪些镜像」的追溯表，对应 FR-10（ADR-30） |
 | `hosts` | id, cluster_id(**可空 = 未分配池**), hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；交付期预装 Agent 后入池，纳管时绑定 cluster（ADR-35）；指纹是公钥信息，允许持久化（ADR-24） |
 | `credentials` | id, cluster_id, type(ceph/ceph_key/dashboard), cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 凭据，不含 SSH 登录凭据**（ADR-24）；limited 用 `ceph_key` 只读（ADR-27） |
-| `tasks` | id, cluster_id, **shard_id**, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
+| `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
 | `task_steps` | id, task_id, seq, name, status, attempt_count, last_error_code, next_retry_at, compensable, log_ref, output_jsonb | DAG 步骤；`compensable=false` 禁止自动补偿 |
 | `agent_certs` | id, node_id, serial(uk), fingerprint, not_before, not_after, status(active/superseded/revoked), issued_by, revoked_at, revoke_reason | 握手时双校验：链 + DB 状态（ADR-28） |
 | `ca_state` | id, kind(root/intermediate), cert_pem, key_cipher, not_after, rotated_at | 私钥只存密文；root 离线保存 |
@@ -621,7 +621,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-35](ADR-35-Agent预装与零SSH.md) | Agent 交付期预装、运行期零 SSH、Server 不碰 Ceph、纳管单位=cluster | Accepted（2026-11-15） | ADR-35 §1 |
 | [ADR-36](ADR-36-任务队列去MQ.md) | 取消 RabbitMQ：PG 任务表 + SKIP LOCKED + 租约（取代 ADR-12） | Accepted（2026-11-15） | ADR-36 §2 |
 | [ADR-37](ADR-37-容量模型与规模上限.md) | 容量模型与规模上限：单副本 5k 连接、10k 需 3 副本 | Accepted（2026-11-15） | ADR-37 §1 |
-| [ADR-38](ADR-38-Agent通信分片.md) | 10 万连接的通信分片：20 片 × 2 对等副本、静态归属、REDIRECT 迁移 | Accepted（2026-11-15） | ADR-38 §2 |
+| [ADR-38](ADR-38-Agent通信分片.md) | 10 万连接的通信分片：20 片 × 2 对等副本 | **Withdrawn**（改为部署多套实例，保留作参考） | ADR-38 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
