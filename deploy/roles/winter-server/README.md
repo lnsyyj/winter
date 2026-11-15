@@ -14,7 +14,8 @@
 ## 幂等与不停机覆盖
 
 `install` 直接覆盖正在执行的二进制会触发 `ETXTBSY`，所以先把新包下载到
-`/var/tmp/winter-server/winter-server.new`，`cmp` 比对内容后用 `mv` **原子替换 inode**：
+`/var/tmp/winter-server/winter-server.new`，`cmp` 比对内容后复制到目标目录、
+再用**同目录 `mv` 原子替换 inode**（保留下载源文件，让 `get_url` 保持幂等）：
 内容不变则完全不改动、不重启；内容变化才 notify 重启。
 
 ## 前置

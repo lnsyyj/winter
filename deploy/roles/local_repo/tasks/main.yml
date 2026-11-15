@@ -51,10 +51,21 @@
 
 - name: 放行防火墙端口（仅内网网段）
   ansible.builtin.shell: |
-    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ local_repo.allow_cidr }} port port={{ local_repo.listen_port }} protocol=tcp accept' 2>/dev/null
-    firewall-cmd --reload
+    set -euo pipefail
+    rule='rule family=ipv4 source address={{ local_repo.allow_cidr }} port port={{ local_repo.listen_port }} protocol=tcp accept'
+    # 用 --query-rich-rule 判定，而不是把 --reload 的 "success" 当成变更：
+    # 后者会让每次 deploy 都报 changed（TC-26 要求二次运行 changed=0）。
+    if firewall-cmd --permanent --query-rich-rule="$rule" >/dev/null 2>&1; then
+      echo unchanged
+    else
+      firewall-cmd --permanent --add-rich-rule="$rule" >/dev/null
+      firewall-cmd --reload >/dev/null
+      echo added
+    fi
+  args:
+    executable: /bin/bash
   register: repo_fw
-  changed_when: "'success' in repo_fw.stdout or 'ALREADY' not in repo_fw.stdout"
+  changed_when: "'added' in repo_fw.stdout"
   failed_when: false
   tags: [repo]
 

@@ -45,6 +45,7 @@
     - "{{ observability.data_dir }}/grafana/log"
     - /var/tmp/winter-observability
     - /opt/winter
+    - "{{ observability.components.grafana.install_dir }}"
   tags: [observability]
 
 - name: 每个组件的解压目录

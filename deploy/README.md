@@ -86,8 +86,8 @@ deploy/artifacts/repo/
 - `observability.enabled: false` 或单个组件 `enabled: false` 可裁剪（ADR-18 打包分层）。
 - Server 的 `DATABASE_URL` / `JWT_SECRET` / 管理员口令全部来自 `deploy/passwords.yml`
   （模板见 `passwords.yml.example`），role 显式 assert，不生成默认弱口令。
-- 覆盖正在运行的二进制会触发 `ETXTBSY`，Server role 用 `mv` 原子替换 inode，
-  内容不变则不重启。
+- 覆盖正在运行的二进制会触发 `ETXTBSY`，Server role 在目标目录 `cp` + 同目录 `mv`
+  原子替换 inode，保留下载源文件以保证幂等；内容不变则不重启。
 
 ## PostgreSQL 高可用（etcd + Patroni + HAProxy）
 
@@ -148,7 +148,28 @@ etcdctl --endpoints=http://127.0.0.1:2379 endpoint health --cluster
 | Nginx 叠加 | `winter.local` 站点 200、`/healthz` 返回 ok；**同机既有站点（argus）80/443 仍为 200** |
 | 密码来源 | `deploy/passwords.yml`（gitignore），未进入版本库 |
 
-实机暴露并修复的五个问题（都是「纸面看不出、跑起来才炸」的）：
+### 监控栈与 Server（同日新增）
+
+| 验证项 | 结果 |
+| --- | --- |
+| 全量收敛 | `./deploy.sh deploy` → `ok=65 changed=22 failed=0` |
+| 幂等（TC-26） | 修复后连续两次重跑均 `changed=0` |
+| 6 个服务 | `winter-{victoriametrics,vmalert,victorialogs,alertmanager,grafana,server}` 全部 active running + 开机自启 |
+| 监听面 | 8428/8880/9093/9428/3000/8081 全部只绑 `127.0.0.1`，只有制品源 8082 对外 |
+| 本机健康端点 | 6 个端点全部 200 |
+| 内网源 | 8082 上 Grafana 包与 Server 二进制 HEAD 200 |
+| 反代 | `/grafana/api/health`、`/api/healthz` 均 200；**既有站点按 IP 访问仍 200** |
+| 登录 | systemd 实例登录成功，`/v1/me` 返回 admin |
+
+实机暴露并修复的三个问题：
+
+1. `unarchive` 要求 `dest` 目录**已存在**：Grafana 只建了父目录 `/opt/winter` → 补建安装目录；
+2. `local_repo` 把每次 `firewall-cmd --reload` 输出的 `success` 当成变更 →
+   改用 `--query-rich-rule` 判定，只在新增加规则时报 changed；
+3. `winter-server` 的 `mv` 消耗了下载源文件，导致每次重跑都重新 `get_url` →
+   改为复制到目标目录 + 同目录 `mv` 原子替换，源文件保留。
+
+### 基础层实机暴露并修复的五个问题（都是「纸面看不出、跑起来才炸」的）：
 
 1. `deploy/passwords.yml` 不在 Ansible 自动加载路径 → 改为 pre_tasks 显式 `include_vars`；
 2. `deploy.sh` 在 clone 后无执行位 → `git update-index --chmod=+x`；

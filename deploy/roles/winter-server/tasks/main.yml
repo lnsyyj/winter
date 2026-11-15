@@ -42,7 +42,7 @@
     timeout: 120
   tags: [server]
 
-- name: 安装二进制（内容不变则跳过；mv 避开 ETXTBSY）
+- name: 安装二进制（内容不变则跳过；同目录 mv 避开 ETXTBSY）
   ansible.builtin.shell: |
     set -euo pipefail
     src=/var/tmp/winter-server/winter-server.new
@@ -50,8 +50,11 @@
     if [ -x "$dst" ] && cmp -s "$src" "$dst"; then
       echo unchanged
     else
-      mv "$src" "$dst"
-      chmod 0755 "$dst"
+      # 先复制到目标目录再原子替换：保留源文件让 get_url 幂等，
+      # 同时不直接写正在执行的二进制（那样会触发 ETXTBSY）。
+      cp "$src" "$dst.new"
+      chmod 0755 "$dst.new"
+      mv "$dst.new" "$dst"
       echo installed
     fi
   args:
