@@ -1,7 +1,11 @@
 ---
 # Nginx role 默认值
 # 原则：叠加式接入。不改别人的 server block、不抢 default_server。
-nginx:
+#
+# 合并规则：group_vars 写 nginx_overrides（只写差异），不要直接写 nginx:，
+# 否则会整块替换本字典。
+
+nginx_defaults:
   # 对外域名（与证书 CN 一致）；默认取平台域名
   server_name: "{{ platform.domain }}"
 
@@ -19,3 +23,5 @@ nginx:
 
   # 自签证书有效期（天）
   tls_days: 825
+
+nginx: "{{ nginx_defaults | combine(nginx_overrides | default({}, true), recursive=True) }}"

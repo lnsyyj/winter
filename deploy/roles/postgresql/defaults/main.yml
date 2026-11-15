@@ -1,7 +1,12 @@
 ---
 # PostgreSQL role 默认值
 # 原则：优先「收敛已有实例」，没有才安装；不覆盖别人的库与配置。
-postgresql:
+#
+# 合并规则：group_vars 里写 postgresql_overrides（只写差异），
+# 由下面的 combine 与默认值合并 —— 不要直接在 group_vars 里写 postgresql:，
+# 那会整块替换本字典，导致未覆盖的键变成 undefined。
+
+postgresql_defaults:
   # 目标主版本。留空 = 自动探测（已在跑的实例优先）
   major: ""
 
@@ -27,5 +32,7 @@ postgresql:
   maintenance_work_mem: 64MB
   max_connections: 100
 
-  # 本 role 自分发时的日志行数上限（避免 no_log 掩盖排障信息时输出过大）
-  service_name: ""   # 空 = postgresql-{{ major }}
+  # 空 = postgresql-{{ major }}
+  service_name: ""
+
+postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"

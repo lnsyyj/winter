@@ -77,9 +77,11 @@ prechecks:
   # 阶段 C1 起完内网源后置 true，才检查源与 Harbor 可达
   check_artifacts: false
 
-# 数据库（role 默认值在 roles/postgresql/defaults；这里放与部署环境相关的）
+# 数据库（role 默认值在 roles/postgresql/defaults；这里只写差异）
+# 注意：必须用 postgresql_overrides —— 直接写 postgresql: 会整块替换 role 默认字典，
+#      导致未覆盖的键（如 data_dir）变成 undefined。
 # 密码不在此文件：见 deploy/passwords.yml 的 vault_pg_password（已 gitignore）
-postgresql:
+postgresql_overrides:
   # 已在运行的实例优先（留空 = 自动探测）。全新机器会自动装 PGDG 的 17
   major: ""
   db_name: winter
@@ -94,7 +96,8 @@ postgresql:
   max_connections: 100
 
 # 接入层（叠加式：不改 nginx.conf、不抢 default_server）
-nginx:
+# 同上：用 nginx_overrides，只写差异
+nginx_overrides:
   server_name: "{{ platform.domain }}"
   # 8080 可能被同机其他服务占用（本机是 argus），平台 API 默认走 8081
   api_upstream: "http://127.0.0.1:8081"
