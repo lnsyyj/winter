@@ -1,0 +1,42 @@
+---
+# 预检入口：按类别拆分，便于用 --tags 单独排障。
+# 所有子任务必须保持只读（changed_when: false），否则检查本身就变成变更。
+- name: 预检 | 分组合法性
+  ansible.builtin.assert:
+    that:
+      - group_names | length > 0
+      - not ('management' in group_names and 'ceph_nodes' in group_names)
+    fail_msg: >-
+      主机 {{ inventory_hostname }} 的分组不合法：必须属于 management 或 ceph_nodes 之一，
+      且不能同时属于两者（管理面与被管节点角色互斥，同机部署请只用 management）。
+    success_msg: "分组校验通过：{{ group_names | join(', ') }}"
+    quiet: true
+  tags: [prechecks, prechecks.groups]
+
+- name: 预检 | 操作系统基线
+  ansible.builtin.import_tasks: os.yml
+  tags: [prechecks, prechecks.os]
+
+- name: 预检 | 资源与磁盘
+  ansible.builtin.import_tasks: resources.yml
+  tags: [prechecks, prechecks.resources]
+
+- name: 预检 | 时间同步
+  ansible.builtin.import_tasks: time.yml
+  tags: [prechecks, prechecks.time]
+
+- name: 预检 | 内核参数
+  ansible.builtin.import_tasks: kernel.yml
+  tags: [prechecks, prechecks.kernel]
+
+- name: 预检 | 网络与解析
+  ansible.builtin.import_tasks: network.yml
+  tags: [prechecks, prechecks.network]
+
+- name: 预检 | 端口占用
+  ansible.builtin.import_tasks: ports.yml
+  tags: [prechecks, prechecks.ports]
+
+- name: 预检 | 制品可达性（可选）
+  ansible.builtin.import_tasks: artifacts.yml
+  tags: [prechecks, prechecks.artifacts]

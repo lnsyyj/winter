@@ -1,0 +1,60 @@
+# deploy · 平台部署框架
+
+按 [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.md) 建立：结构对齐 kolla-ansible，代码独立，不 fork、不依赖其 Python 包。
+
+## 当前状态
+
+| 阶段 | 命令 | 状态 |
+| --- | --- | --- |
+| 部署前检查 | `./deploy.sh prechecks -i inventory/multinode` | ✅ **已实现**（只读） |
+| bootstrap-servers | — | ⬜ 未实现 |
+| pull / deploy / post-deploy / reconfigure / upgrade / destroy | — | ⬜ 未实现 |
+
+未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
+
+## 目录
+
+```
+deploy/
+├── deploy.sh              # 阶段分发（对齐 kolla-ansible 的 CLI 形态）
+├── ansible.cfg
+├── inventory/
+│   ├── all-in-one         # 单机（本机 localhost）
+│   └── multinode          # 分组：management / ceph_nodes / monitor
+├── group_vars/all.yml     # 唯一配置入口（对应 kolla 的 globals.yml）
+├── playbooks/prechecks.yml
+└── roles/prechecks/       # 只读检查，不修改系统
+```
+
+## 快速开始
+
+```bash
+# 1. 准备：控制机需有 ansible-core（版本见 docs BOM 约定，勿用发行版自带的过旧版本）
+ansible-playbook --version
+
+# 2. 按现场改 inventory 与 group_vars/all.yml
+vi inventory/multinode
+vi group_vars/all.yml
+
+# 3. 跑检查
+./deploy.sh prechecks -i inventory/multinode
+
+# 4. 只跑某一类检查（排障时用）
+./deploy.sh prechecks -i inventory/multinode --tags prechecks.time
+```
+
+可用的 tag：`prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`。
+
+## 设计约束（改动前必读）
+
+1. **prechecks 必须只读**：所有 `command` 都要 `changed_when: false`；不得安装包、不得写 sysctl、不得改防火墙。检查本身要是改了系统，排障时就无法信任它。
+2. **配置只在 `group_vars/all.yml`**：不要在 playbook 或 role 里硬编码 IP、端口、路径。
+3. **不写 hostname 判断**：用 inventory 分组（`management` / `ceph_nodes`），不要 `when: inventory_hostname == ...`。
+4. **失败信息必须可操作**：`fail_msg` 要包含「期望值 / 实际值 / 怎么修」，只写「检查失败」等于没写。
+5. **敏感信息不进仓库**：密码、密钥只放 `passwords.yml`（后续阶段引入，`.gitignore` 已排除）。
+
+## 与文档的关系
+
+- 手册阶段 C 的命令与此处一致：`docs/07-新兴与稀缺线/20-技术文档工程师/安装部署手册.md`
+- 检查项与验收口径：`docs/03-测试线/06-测试工程师/测试策略与验收用例.md`（TC-26 要求 `prechecks` 不改动系统、`deploy` 二次 `changed=0`）
+- 前置条件来源：`docs/04-运维线/09-SRE-DevOps/部署与监控告警方案.md` §1 / §2

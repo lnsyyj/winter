@@ -1,0 +1,13 @@
+# 单机（M0 先在本机跑通，对应 kolla-ansible 的 all-in-one）
+# 用法：./deploy.sh prechecks            （未传 -i 时默认用本文件）
+
+[management]
+localhost ansible_connection=local
+
+[monitor:children]
+management
+
+[ceph_nodes]
+
+[all:vars]
+ansible_python_interpreter=/usr/bin/python3

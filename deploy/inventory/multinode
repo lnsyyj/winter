@@ -1,0 +1,23 @@
+# 多节点（现场形态）。分组语义：management=管理面，ceph_nodes=被管节点，monitor=可观测性
+#
+# 约定：
+# - 不要在 playbook 里判断 hostname，一律用分组表达拓扑（ADR-17 / I16）
+# - ansible_host 优先写 IP；域名仅用于证书与 registry，见 group_vars/prechecks.required_hosts
+
+[management]
+mgr01 ansible_host=10.0.0.11
+
+[monitor:children]
+management
+
+[ceph_nodes]
+node01 ansible_host=10.0.0.21
+node02 ansible_host=10.0.0.22
+node03 ansible_host=10.0.0.23
+
+[all:vars]
+ansible_user=root
+ansible_python_interpreter=/usr/bin/python3
+# 如改用普通账号 + sudo，请显式声明，不要依赖默认值：
+#ansible_become=true
+#ansible_become_method=sudo

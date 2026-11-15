@@ -1,0 +1,58 @@
+---
+- name: 预检 | 读取根分区可用空间
+  ansible.builtin.set_fact:
+    prechecks_root_available_bytes: >-
+      {{ (ansible_facts.mounts | selectattr('mount', 'equalto', '/')
+          | map(attribute='size_available') | list | first | default(0)) | int }}
+
+- name: 预检 | 管理面最低配置
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.processor_vcpus | int >= prechecks.management_min_vcpus | int
+      - ansible_facts.memtotal_mb | int >= prechecks.management_min_memory_mb | int
+      - (prechecks_root_available_bytes | int) >= (prechecks.management_min_root_free_gb | int) * 1073741824
+    fail_msg: >-
+      管理节点资源不足：CPU {{ ansible_facts.processor_vcpus }} 核（需 ≥{{ prechecks.management_min_vcpus }}）、
+      内存 {{ ansible_facts.memtotal_mb }} MB（需 ≥{{ prechecks.management_min_memory_mb }} MB）、
+      根分区可用 {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB
+      （需 ≥{{ prechecks.management_min_root_free_gb }} GB）。
+      见部署方案 §1：Harbor 与可观测性栈占大头，其中 Harbor 的镜像存储最先被吃满。
+    success_msg: "管理面资源满足最低要求"
+    quiet: true
+  when: "'management' in group_names"
+
+- name: 预检 | 统计整盘
+  ansible.builtin.command: lsblk -dn -o NAME,TYPE,SIZE
+  register: prechecks_lsblk
+  changed_when: false
+  failed_when: false
+  when: "'ceph_nodes' in group_names"
+
+- name: 预检 | 解析整盘列表
+  ansible.builtin.set_fact:
+    prechecks_disks: "{{ (prechecks_lsblk.stdout_lines | default([])) | select('search', ' disk ') | list }}"
+  when: "'ceph_nodes' in group_names"
+
+- name: 预检 | 数据盘数量（严格模式）
+  ansible.builtin.assert:
+    that:
+      - ((prechecks_disks | length) - 1) >= (prechecks.ceph_node_min_data_disks | int)
+    fail_msg: >-
+      检测到整盘 {{ prechecks_disks | length }} 块，扣除系统盘后约
+      {{ (prechecks_disks | length) - 1 }} 块可用于 OSD，需 ≥{{ prechecks.ceph_node_min_data_disks }} 块。
+      OSD 需要独立数据盘（PRD FR-05）；请补盘或调整该主机角色。
+    success_msg: "数据盘数量满足要求（{{ (prechecks_disks | length) - 1 }} 块可用）"
+    quiet: true
+  when:
+    - "'ceph_nodes' in group_names"
+    - prechecks.strict_data_disks | bool
+
+- name: 预检 | 数据盘数量（提示模式）
+  ansible.builtin.debug:
+    msg: >-
+      WARN 检测到整盘 {{ prechecks_disks | length }} 块（扣除系统盘约
+      {{ (prechecks_disks | length) - 1 }} 块可作 OSD，要求 ≥{{ prechecks.ceph_node_min_data_disks }}）。
+      当前为提示模式；正式交付请把 group_vars 的 prechecks.strict_data_disks 设为 true。
+  when:
+    - "'ceph_nodes' in group_names"
+    - not (prechecks.strict_data_disks | bool)

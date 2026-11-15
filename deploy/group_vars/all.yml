@@ -1,0 +1,42 @@
+# 唯一配置入口（对应 kolla-ansible 的 globals.yml，ADR-17 §2.1）
+#
+# 规则：
+# - 所有可变配置写在这里，playbook / role 内不得硬编码
+# - 密码、密钥不进本文件；后续阶段引入 passwords.yml（已被 .gitignore 排除）
+# - 改这里之后重跑对应阶段即可（reconfigure / deploy 收敛到新状态）
+
+platform:
+  # 平台对外域名（证书与访问入口）
+  domain: winter.local
+  # 管理面 API 监听端口（唯一对外开放端口，见部署方案 §2）
+  https_port: 443
+
+  # 内网软件源（ADR-15）：由安装机/管理节点的 Nginx 提供
+  repo_base_url: ""
+
+  # 镜像仓库（ADR-16）：自建 Harbor，全部镜像经此拉取
+  registry_host: ""
+  registry_ca_path: ""
+
+  # 数据目录：数据卷与离线包分离存放，避免升级时被清理
+  data_dir: /var/lib/winter
+
+# 部署前检查阈值（与部署方案 §1 的资源估算对齐；Harbor 与可观测性栈占大头）
+prechecks:
+  management_min_vcpus: 14
+  management_min_memory_mb: 22528        # 22G
+  management_min_root_free_gb: 300       # 含 Harbor 镜像存储，Harbor 最先被吃满
+  ceph_node_min_data_disks: 3
+  # M0 阶段用 false：虚拟机常见单盘，先提示不拦截；正式交付改 true
+  strict_data_disks: false
+  # 内核参数由 bootstrap-servers 设置，M0 手工阶段先只报告
+  enforce_kernel: false
+  max_clock_offset_seconds: 1.0
+  # 需要能解析的域名（证书 / registry / 源），留空则跳过
+  required_hosts: []
+  # 管理节点部署前必须空闲的端口
+  required_free_ports:
+    - 80
+    - 443
+  # 阶段 C1 起完内网源后置 true，才检查源与 Harbor 可达
+  check_artifacts: false

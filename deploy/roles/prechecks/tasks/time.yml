@@ -1,0 +1,25 @@
+---
+# 时间漂移会让 cephadm 直接失败（手册 §5.0），因此这一项必须硬校验。
+- name: 预检 | 读取 chrony 状态
+  ansible.builtin.command: chronyc tracking
+  register: prechecks_chrony
+  changed_when: false
+  failed_when: false
+
+- name: 预检 | 计算时间偏移
+  ansible.builtin.set_fact:
+    prechecks_clock_offset: >-
+      {{ ((prechecks_chrony.stdout_lines | default([]) | select('search', 'System time') | list
+           | first | default('System time : 999 seconds fast')).split())[3] | default('999') }}
+
+- name: 预检 | 时间同步与偏移
+  ansible.builtin.assert:
+    that:
+      - prechecks_chrony.rc | default(1) == 0
+      - (prechecks_clock_offset | float) <= (prechecks.max_clock_offset_seconds | float)
+    fail_msg: >-
+      chronyd 未就绪或偏移过大（要求 ≤{{ prechecks.max_clock_offset_seconds }}s，
+      实测 {{ prechecks_clock_offset }}s）。chronyc 输出：{{ prechecks_chrony.stdout | default('不可用') | trim }}。
+      修复：systemctl enable --now chronyd；确认 NTP 源可达；必要时 chronyc makestep。
+    success_msg: "时间同步正常（偏移 {{ prechecks_clock_offset }}s）"
+    quiet: true

@@ -1,0 +1,21 @@
+---
+# 部署前管理节点上的对外端口必须空闲，否则 deploy 阶段会冲突。
+- name: 预检 | 读取监听端口
+  ansible.builtin.command: ss -H -ltn
+  register: prechecks_ss
+  changed_when: false
+  failed_when: false
+  when: "'management' in group_names"
+
+- name: 预检 | 管理面端口空闲
+  ansible.builtin.assert:
+    that:
+      - "prechecks_ss.stdout is not search(':' ~ (item | string) ~ '\\s')"
+    fail_msg: >-
+      端口 {{ item }} 已被占用。查看占用者：ss -ltnp 'sport = :{{ item }}'。
+      常见原因：已有 nginx/httpd、上一版平台残留实例、被其他服务复用。
+      部署前必须空闲，否则起不来且错误信息会指向下游组件。
+    success_msg: "端口 {{ item }} 可用"
+    quiet: true
+  loop: "{{ prechecks.required_free_ports }}"
+  when: "'management' in group_names"

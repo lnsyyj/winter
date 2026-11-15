@@ -1,0 +1,21 @@
+---
+# role 默认值。优先级低于 group_vars/all.yml（后者会整体覆盖同名 dict），
+# 这里只是为了「脱离 group_vars 单独引用 role」时也能跑。
+prechecks:
+  management_min_vcpus: 14
+  management_min_memory_mb: 22528
+  management_min_root_free_gb: 300
+  ceph_node_min_data_disks: 3
+  strict_data_disks: false
+  enforce_kernel: false
+  max_clock_offset_seconds: 1.0
+  required_hosts: []
+  required_free_ports:
+    - 80
+    - 443
+  check_artifacts: false
+
+platform:
+  repo_base_url: ""
+  registry_host: ""
+  registry_ca_path: ""

@@ -1,0 +1,10 @@
+---
+# 部署前检查（ADR-17）：只读、不修改系统。
+# 对应安装部署手册阶段 C3 与测试用例 TC-26。
+- name: 部署前检查（只读）
+  hosts: all
+  gather_facts: true
+  become: true
+  roles:
+    - role: prechecks
+      tags: [prechecks]

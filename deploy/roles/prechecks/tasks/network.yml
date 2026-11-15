@@ -1,0 +1,43 @@
+---
+- name: 预检 | 读取默认路由
+  ansible.builtin.command: ip -4 route show default
+  register: prechecks_route
+  changed_when: false
+  failed_when: false
+
+- name: 预检 | 默认路由校验
+  ansible.builtin.assert:
+    that:
+      - (prechecks_route.stdout | default('')) | trim | length > 0
+    fail_msg: >-
+      没有 IPv4 默认路由。被管节点必须能**出站**访问管理面 443 与内网源/仓库（部署方案 §2），
+      否则 Agent 无法注册、镜像无法拉取。请检查网关与网卡配置。
+    success_msg: "默认路由存在"
+    quiet: true
+
+- name: 预检 | 域名解析
+  ansible.builtin.command: "getent hosts {{ item }}"
+  register: prechecks_getent
+  changed_when: false
+  failed_when: false
+  loop: "{{ prechecks.required_hosts }}"
+  when: prechecks.required_hosts | length > 0
+
+- name: 预检 | 解析结果校验
+  ansible.builtin.assert:
+    that:
+      - item.rc | default(1) == 0
+    fail_msg: >-
+      无法解析 {{ item.item }}。请写入 /etc/hosts 或修正 DNS；
+      registry 证书与访问入口都依赖这个名字（ADR-16）。
+    success_msg: "解析 {{ item.item }} 正常"
+    quiet: true
+  loop: "{{ prechecks_getent.results | default([]) }}"
+  when: prechecks.required_hosts | length > 0
+
+- name: 预检 | SELinux 状态（仅报告）
+  ansible.builtin.debug:
+    msg: >-
+      SELinux={{ ansible_facts.selinux.status | default('未知') }}
+      （{{ ansible_facts.selinux.mode | default('-') }}）。
+      若为 enforcing，内网源目录需要 httpd_sys_content_t 上下文，否则 Nginx 直接 403（ADR-15）。
