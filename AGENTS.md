@@ -31,7 +31,7 @@
 | 主题 | Ceph 集群管理平台（控制面）：多集群纳管/新建、可视化运维、RBAC、审计、监控告警 |
 | 主分支 | `main` |
 | 关键入口 | [文档总览](docs/README.md) · [PRD](docs/01-产品线/01-产品经理/PRD-Ceph管理平台.md) · [架构设计](docs/02-研发线/04-架构师/架构设计-Ceph管理平台.md) · [权衡分析](docs/02-研发线/04-架构师/架构决策与权衡分析.md) |
-| 技术栈 | **已确认**（`ADR-11` / `ADR-12` / `ADR-16`，2026-11-15）：React + TypeScript / Golang / PostgreSQL / **RabbitMQ** / **Harbor** / cephadm + podman / ansible / CentOS Stream 9。**待定**：日志（D4）、监控告警栈（D5） |
+| 技术栈 | **已确认**（`ADR-11` / `12` / `16` / `18`，2026-11-15）：React + TypeScript / Golang / PostgreSQL / **RabbitMQ** / **Harbor** / **VictoriaMetrics + VictoriaLogs + vmalert + Alertmanager + Grafana** / cephadm + podman / ansible / CentOS Stream 9。**待定**：认证源（D7） |
 | 待决策 | D1~D11，见 [权衡分析 §8](docs/02-研发线/04-架构师/架构决策与权衡分析.md) 与 [PRD §11](docs/01-产品线/01-产品经理/PRD-Ceph管理平台.md) |
 
 ### 目录约定
@@ -310,7 +310,7 @@ git reflog                            # 兜底：找回误操作前的 HEAD
 | I1 | 业务 IO 直连 Ceph，**绝不经过控制面**；平台全停不影响数据面 |
 | I2 | 所有变更走异步任务（返回 `task_id`），禁止同步长调用；任务有状态机、幂等键、超时、死信 |
 | I3 | Agent **主动拉取**任务 + 双向 mTLS；中心不直连 SSH，不集中保存节点私钥 |
-| I4 | 命令白名单 + 强类型参数校验 + `exec argv`；禁止自由 shell、禁止 `bash -c` 拼接 |
+| I4 | 命令白名单 + 强类型参数校验 + `exec argv`；禁止自由 shell、禁止 `bash -c` 拼接。**Agent 一律非 root**：专用账号常驻，特权动作经 sudo 白名单（绝对路径 + 参数形态，禁 `ALL` 与解释器）（ADR-19） |
 | I5 | 凭据静态加密，明文不出现在 API 响应、日志、审计、前端、错误堆栈 |
 | I6 | 审计只追加 + fail-closed（审计写失败则任务拒绝执行）；存在全局「停止任务下发」熔断开关 |
 | I7 | Ceph 实际状态为真相；DB 只是期望/流程状态；必须有 Reconciler 对账并展示采集时间 |
@@ -499,4 +499,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | G4 落地为「离线可搬运」：有网制包 → 搬运校验 → 现场远程安装，落成 `ADR-14`。安装部署手册重构为三段式（v0.2，含 BOM/digest/无跳板机降级/断网重装验收）；同步架构设计 §1.1/§6.1、PRD 部署目标与 FR-10/D6、TC-22、权衡 §1/B1、部署方案、I14 | `aa969cf` |
 | 2026-11-15 | 安装通道定案：**Nginx 只读内网源 + ansible 批量安装**，落成 `ADR-15`。明确两条边界——镜像走不了 yum（registry 或静态 tar，成为 D3 新候选）、明文 HTTP 必须配包与 repodata 双重签名；手册阶段 C 重排为 C1~C10（起源→前置检查→装包→镜像→配置→启动→Agent→初始化→纳管→验收），验收新增源签名与限网段检查；同步架构设计 §6.1、PRD FR-10、TC-22、权衡 D3、I14 | `7a812b0` |
 | 2026-11-15 | D3 关闭：**自建 Harbor，节点统一经仓库拉取**（ansible 下发 CA 与只读 robot 凭据），落成 `ADR-16`；静态 tar 降级为应急路径。新增不变量 I15（镜像唯一来源、禁 insecure-registry）；部署资源 11C/16G/220G → 14C/22G/300G；手册 BOM/C4/验收、TC-25、架构设计 §4.1/§6.1/§6.2/§14、权衡 §8、部署方案同步 | `dba8bc5` |
-| 2026-11-15 | 部署框架定案：**Ansible，结构对齐 kolla-ansible，不 fork**，落成 `ADR-17`。阶段 C 由 `deploy/` 分阶段 playbook 驱动（bootstrap-servers / prechecks / pull / deploy / post-deploy / reconfigure / upgrade / destroy）；手册升 v0.3（C1~C8）；新增不变量 I16 与 TC-26（prechecks 只读、deploy 幂等）；目录约定登记 `deploy/` | 本次提交 |
+| 2026-11-15 | 部署框架定案：**Ansible，结构对齐 kolla-ansible，不 fork**，落成 `ADR-17`。阶段 C 由 `deploy/` 分阶段 playbook 驱动（bootstrap-servers / prechecks / pull / deploy / post-deploy / reconfigure / upgrade / destroy）；手册升 v0.3（C1~C8）；新增不变量 I16 与 TC-26（prechecks 只读、deploy 幂等）；目录约定登记 `deploy/` | `c07d334` |
+| 2026-11-15 | 四项决策关闭：**D4/D5 可观测性**（VictoriaLogs + 自带全套，`ADR-18`）、**D9 Agent 权限**（专用账号 + sudo 白名单，`ADR-19`）、**D11 适用下限**（≥3 集群或 ≥20 节点，`ADR-20`）。I4 增加「Agent 一律非 root」；新增 TC-27（提权边界）；架构设计 §1.2/§3/§4.1/§6.1/§11/§14、权衡 §8、PRD D4/D5/FR-09/§2.1、安全设计、部署资源表、手册 C5 与前置表同步 | 本次提交 |
