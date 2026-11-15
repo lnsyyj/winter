@@ -254,6 +254,8 @@ Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
 所有管理面组件以 podman pod / compose 方式交付，离线镜像包一次导入（对应 PRD D6）。
 
 > **交付期角色**：制包机（有网，与目标 OS 同 minor）与安装机（跳板，跑 ansible）都是**临时角色，不进入常驻拓扑**。制包机产出离线包，安装机在现场把制品推到管理节点与被管节点（[ADR-14](ADR-14-离线交付模型.md)）。安装期用 SSH/ansible，运行期仍走 Agent 拉模式。
+>
+> **安装通道**：安装机（或管理节点）用 Nginx 提供只读内网源（RPM + repodata 双重签名、镜像 tar），节点用 dnf 从 HTTP 拉取，ansible 只负责配 repo 与触发安装（[ADR-15](ADR-15-安装通道.md)）。
 
 ### 6.2 V1（管理面 HA）
 
