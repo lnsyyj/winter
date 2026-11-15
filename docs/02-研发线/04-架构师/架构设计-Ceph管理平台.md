@@ -32,7 +32,7 @@
 
 - 操作系统基线：CentOS Stream 9；容器运行时：podman；Ceph 编排：cephadm；**平台部署编排：Ansible（结构对齐 kolla-ansible，[ADR-17](ADR-17-部署框架.md)）**。
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
-- 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，消息队列见 [ADR-12](ADR-12-消息队列选型.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)。
+- 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)；**任务队列不引入独立 MQ，用 PG 任务表**（[ADR-36](ADR-36-任务队列去MQ.md)，取代 ADR-12）。
 - 未定项：**无**。组件与目标层均已收敛（ADR-11~ADR-21）；剩余为实现层细节 D2 / D6 / D10。
 - 假设规模：20 集群 / 500 节点（PRD §2.1）。
 
@@ -53,7 +53,6 @@ graph TB
   end
   subgraph L2["支撑层 Stateful Services"]
     PG[(PostgreSQL<br/>元数据 任务 审计 凭据密文)]
-    MQ[[消息队列<br/>任务分发 / 事件]]
     VM[(VictoriaMetrics<br/>指标)]
     LOG[(日志系统<br/>Loki / VictoriaLogs)]
     REG[[镜像仓库<br/>Harbor / registry]]
@@ -74,12 +73,10 @@ graph TB
   CLIENT[业务客户端<br/>RBD / RGW / CephFS]
   U --> NG --> S
   S --> PG
-  S --> MQ
   S --> VM
   S --> LOG
   S --> GF
   S --> KMS
-  MQ --> AG
   AG --> ANS
   AG --> CADM
   CADM --> REG
@@ -102,7 +99,7 @@ graph TB
 | C1 | `server → cephadm` 直连调用 | 改为 `server → 任务队列 → Agent → cephadm` | 建集群/扩容是分钟级长事务，同步调用会超时、丢进度、无法重试；异步任务才能做状态机、审计与断点续跑 |
 | C2 | `cephadm` 画在中心，连镜像仓库与所有 node | 改为**集群级执行上下文**，由目标节点上的 Agent 驱动 | cephadm 是「一套集群一套状态」，不是全局中心服务；中心化会造成跨集群状态串扰与单点 |
 | C3 | `server-system-agent-1` / `server-ceph-agent-1` 两个独立组件 | **保留能力边界，合并为一个二进制的两种运行模式**（`--capability=system\|ceph`） | 两者都运行在被管节点、都需要高权限，拆两个进程并不真正缩小权限面，却让部署、鉴权、升级翻倍；能力白名单才是真正的隔离手段 |
-| C4 | 消息队列标注 `queue? rabbitmq? redis? Kafka?` | 明确为**必需组件**，选定 RabbitMQ（ADR-12） | 任务可靠性是本平台的生命线；不能靠 `goroutine + 内存队列` 糊过去 |
+| C4 | 消息队列标注 `queue? rabbitmq? redis? Kafka?` | **不引入独立 MQ**：任务表即队列（PG + `SKIP LOCKED` + 租约），见 [ADR-36](ADR-36-任务队列去MQ.md) | 任务可靠性靠「状态落库 + 租约回收 + 幂等」，而不是靠多一个中间件；状态只有一份才不会漂移 |
 | C5 | 日志系统仅有方框 | 纳入统一检索，与任务日志、审计日志分层 | 排障需要「一次任务 → 步骤日志 → 节点日志」的可追踪链路 |
 | C6 | VictoriaMetrics / Grafana 直接前台集成 | Grafana 经反向代理统一鉴权；告警引入 vmalert + Alertmanager | 防止绕过平台 RBAC 直接看别的集群面板；补齐 Prometheus 规则生态 |
 | C7 | 无凭据与安全层 | 新增密钥管理 + Agent↔Server mTLS + 命令白名单 | Agent 具备 root 级执行能力，是最高价值攻击面 |
@@ -117,7 +114,6 @@ graph TB
 | --- | --- | --- | --- |
 | Web | React + TS | 控制台、向导、任务进度、Grafana 面板承载 | 不直连 Ceph、不直连 DB |
 | Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账（唯一 driver：agent，ADR-35）、凭据加解密、告警关联 | 不执行任何节点命令、**不直连任何 Ceph 端点**（不碰 mgr REST / cephadm / ceph CLI） |
-| 任务队列 | RabbitMQ（ADR-12） | 任务派发、重试、持久化、死信 | 不承载业务状态 |
 | PostgreSQL | PG 16+ | 集群/主机/用户/角色/任务/审计/凭据密文 | 不存指标、不存大段日志 |
 | Agent | Golang 单二进制双模式 | **交付期预装**；心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态、本地跑预检、本地生成密钥与轮换证书（私钥不出节点，ADR-28） | 不接受任意命令、不主动连 DB、不负责自身安装（由交付期 ansible 完成） |
 | ansible（交付期） | ansible-core（`deploy/`） | 交付阶段预装 Agent、批量注册证书、下发 registry CA 与配置 | **不参与运行期**；平台不持有其 SSH 凭据（ADR-35） |
@@ -141,7 +137,7 @@ graph TB
 | 前端 | React + TypeScript | ✅ 已确认 | 团队既定；生态成熟；Grafana 面板嵌入方便 | Vue | 嵌入 iframe 的鉴权与样式割裂 |
 | 控制面 | Golang | ✅ 已确认 | 单二进制、并发模型适合大量长连接/任务、静态部署简单 | Java / Python | 生态内 Ceph SDK 弱，多数靠 CLI |
 | 关系库 | PostgreSQL | ✅ 已确认（主版本待 DBA） | 图中既定；JSONB 适合存任务参数与 Ceph 原始状态；advisory lock 可做集群级互斥 | MySQL | 需自己做分区与审计表冷热分离 |
-| 消息队列 | **RabbitMQ** | ✅ 已确认（ADR-12） | 团队已有运维经验、语义完备（confirm/ack/DLX/TTL）、管理 UI 与 exporter 成熟 | NATS JetStream（更轻但团队不熟）、Kafka（过重，不选）、Redis Stream（持久化/确认语义不足，不选） | Erlang 运行时与 flow control 排障；内存基线比 JetStream 高 |
+| 任务队列 | **不引入独立 MQ**：PG `tasks` 表 + `SKIP LOCKED` | ✅ 已确认（ADR-36，取代 ADR-12） | 状态单一真相、少一个组件、少 2C/2G/20G；内部平台任务量低，PG 足够 | RabbitMQ（语义完备但两份状态）、NATS JetStream、Kafka、Redis Stream | 自己实现租约/重投；PG 写放大；失去 MQ 管理 UI |
 | 镜像仓库 | **Harbor（自建在管理面）** | ✅ 已确认（ADR-16） | 镜像 GC、漏洞扫描、robot 只读凭据、配额；作为镜像唯一来源，供应链可追溯 | registry:2（无 GC/扫描）、对接客户现有仓库 | 单点；磁盘随版本增长需 GC；Trivy 漏洞库需离线更新 |
 | 指标 | VictoriaMetrics + vmalert | ✅ 已确认（ADR-18） | 资源省、兼容 Prometheus remote_write / PromQL 主体；与日志同栈 | Prometheus + Thanos | 与 Prometheus 规则生态存在边界差异 |
 | 告警 | vmalert + Alertmanager | ✅ 已确认（ADR-18） | 唯一告警规则链路，复用 Prometheus 生态规则与通知渠道 | Grafana Alerting（会双发，不选） | 两套告警规则源需统一 |
@@ -172,34 +168,32 @@ graph TB
 sequenceDiagram
     participant W as Web
     participant S as Server
-    participant DB as PostgreSQL
-    participant Q as RabbitMQ
+    participant DB as PostgreSQL<br/>(任务表即队列)
     participant A as Agent（交付期已预装）
     participant C as cephadm / Ceph
 
     W->>S: POST /v1/clusters（选池中节点 / 网络 / 版本 / 仓库）
     S->>DB: 集群 + 任务 DAG 落库(PENDING) + 审计
     Note over S,A: 节点已在未分配池（Agent 常驻），纳管时绑定到 cluster
-    S->>Q: step-1 主机预检（executor=agent）
-    Q->>A: Agent 拉取
+    A->>S: Agent 长连接就绪（mTLS）
+    S->>DB: step-1 取任务（SKIP LOCKED，写 leased_until）
+    S->>A: 派发 step-1（预检）
     A->>A: 本地跑 precheck（OS / NTP / 磁盘 / podman / 源可达，只读）
     A-->>S: 检查结果
     S->>DB: 步骤状态 + hosts.cluster_id 绑定
-    S->>Q: step-2 系统初始化（executor=agent）
-    Q->>A: 装 podman / 下发 registry CA 与凭据 / 写集群配置
+    S->>A: 派发 step-2（初始化）
+    A->>A: 装 podman / 下发 registry CA 与凭据 / 写集群配置
     A-->>S: 完成
-    S->>Q: step-3 bootstrap（executor=agent）
-    Q->>A: 拉取
+    S->>A: 派发 step-3（bootstrap）
     A->>C: cephadm bootstrap（自行 pull 镜像）
     C-->>A: FSID
     A-->>S: FSID + 步骤日志
     S->>DB: 回写 fsid / 凭据密文
-    S->>Q: step-4~6（add hosts / OSD / 服务）
-    Q->>A: 按 DAG 顺序拉取
+    S->>A: 派发 step-4~6（add hosts / OSD / 服务）
     A->>C: ceph orch apply / osd create
     C-->>A: ceph -s
     A-->>S: SUCCEEDED
-    S->>Q: step-7 验收 HEALTH_OK
+    S->>DB: step-7 验收 HEALTH_OK
     S-->>W: WS 推送进度 → 完成
     Note over S,A: 任一步失败 → FAILED + 保留现场 + 人工重跑开新单
 ```
@@ -214,7 +208,8 @@ sequenceDiagram
 ### 5.2 任务下发与执行语义
 
 - **通信**：Agent 主动向 Server 发起 mTLS 长连接（或按配置轮询拉取），Server 不反向连节点 → 天然适配 NAT / 内网 / 防火墙单向放行。
-- **心跳**：Agent 10s 心跳，上报在线状态、版本、能力集；离线 30s 标记 `offline`，任务留在队列不派发。
+- **派单与租约**：无独立 MQ（ADR-36）。Server 用 `SELECT ... FOR UPDATE SKIP LOCKED` 取 `PENDING` 任务，派单时写 `leased_until`；Agent 心跳续租，超时未续则回收重派并 `attempt_count++`；**派单与状态迁移在同一事务**。
+- **心跳**：Agent 10s 心跳，上报在线状态、版本、能力集；离线 30s 标记 `offline`，任务留在表里不派发。
 - **幂等**：每个步骤带 `idempotency_key = cluster_fsid + task_type + normalized_params`，Agent 本地记录最近执行结果，重复投递直接返回上次结果。
 - **互斥**：同一集群同一资源类别的变更任务用 PostgreSQL advisory lock 加集群级互斥，避免并发改 OSD。
 - **超时 / 取消**：每步有超时；取消只作用于 `PENDING/RUNNING` 中尚未提交不可逆动作的步骤，已提交步骤不回滚。
@@ -380,7 +375,6 @@ sequenceDiagram
     participant S as Server
     participant ADB as 审计库（独立）
     participant PDB as 业务库
-    participant Q as RabbitMQ
 
     U->>S: 提交变更
     S->>S: 鉴权 + 参数校验（脱敏）
@@ -389,7 +383,7 @@ sequenceDiagram
         S-->>U: 503「审计不可用，操作已拒绝」<br/>（无任何业务副作用）
     else intent 成功
         S->>PDB: ② 业务事务提交
-        S->>Q: ③ 发布任务
+        S->>PDB: ③ 任务落库（PENDING，Agent 拉取）
         S->>ADB: ④ 补写 result（前后快照 / 结果 / 耗时，异步幂等重试）
         S-->>U: 202
     end
@@ -401,7 +395,7 @@ sequenceDiagram
 
 ```mermaid
 flowchart LR
-  A[Runner / Agent 初始化] --> B[下发 Harbor CA 到 certs.d]
+  A[Agent 初始化] --> B[下发 Harbor CA 到 certs.d]
   B --> C[通过 cephadm 配置注入 registry 凭据]
   C --> D[cephadm bootstrap / orch apply 自行 pull]
   D --> E{镜像就绪？}
@@ -442,7 +436,6 @@ flowchart LR
   ├─ Nginx + Web 静态资源
   ├─ Server ×1（无状态，可起 2 副本）
   ├─ PostgreSQL ×1（+ 每日 pg_dump）
-  ├─ RabbitMQ ×1（单节点，durable queue + 持久化卷）
   ├─ VictoriaMetrics 单节点 + vmalert + Alertmanager
   ├─ VictoriaLogs 单节点（日志）
   ├─ Grafana
@@ -459,7 +452,7 @@ flowchart LR
 
 ### 6.2 V1（管理面 HA）
 
-Server 多副本 + PG 主从 + RabbitMQ 3 节点集群（quorum queue）+ VM 双副本 + Harbor 多副本（外部 PG/Redis）；**控制面仍是「一个逻辑控制面」**，不做跨地域拆分。
+Server 多副本 + PG 主从（**任务队列随 PG 一起 HA**，无需额外中间件）+ VM 双副本 + Harbor 多副本（外部 PG/Redis）；**控制面仍是「一个逻辑控制面」**，不做跨地域拆分。
 
 ### 6.3 V2（多 Region 联邦，若确有必要）
 
@@ -469,7 +462,7 @@ Server 多副本 + PG 主从 + RabbitMQ 3 节点集群（quorum queue）+ VM 双
 
 | 故障 | 数据面 | 控制面 |
 | --- | --- | --- |
-| Server / DB / MQ 全停 | **不受影响** | 不可管理，Agent 本地缓存待上报状态 |
+| Server / DB 全停 | **不受影响** | 不可管理，Agent 本地缓存待上报状态 |
 | Agent 离线 | **不受影响** | 该节点任务暂停，其他节点可用 |
 | 镜像仓库不可达 | 不受影响 | 新建/升级受阻，日常运维可用 |
 | 监控栈全停 | 不受影响 | 无指标与告警，任务仍可执行（降级） |
@@ -536,7 +529,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 - Server 无状态 → 水平扩展；**access 为 JWT（15 分钟）+ refresh 存 PG**（[ADR-34](ADR-34-会话JWT方案.md)），撤销靠 `token_version` 与 jti 黑名单，踢人有 ≤30s 缓存窗口。
 - PG 主从 + 定期备份 + 恢复演练（DBA 职责）。
-- RabbitMQ durable queue + publisher confirm + manual ack，重启不丢任务；单节点故障期间无法接收新任务（不承诺零丢失，见 ADR-12 §6）。
+- 任务表在 PG 中，**重启不丢任务**；靠 `leased_until` 租约回收僵尸任务（[ADR-36](ADR-36-任务队列去MQ.md)）。PG 单点故障期间无法接收新任务。
 - Agent 断线重连、本地缓存结果、任务不丢。
 - 监控/日志/仓库属于**可降级组件**：全挂时控制台仍应能展示最近一次同步状态并允许执行预定义任务。
 - 管理面整体不可用时，保留 Ceph Dashboard 与 SSH 作为最终兜底（PRD §2.2 第 2 条）——**这是平台外的通道，平台自身不持有 SSH 凭据**（ADR-35）。
@@ -579,7 +572,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 | 阶段 | 变化 |
 | --- | --- |
-| MVP | 单机管理面、单 Region、RabbitMQ 单节点、只读纳管 + 新建 |
+| MVP | 单机管理面、单 Region、无独立 MQ、managed 纳管 + 新建 |
 | V1 | 管理面 HA、告警闭环、离线制品、Grafana 统一鉴权 |
 | V2 | 多 Region 联邦、LDAP/OIDC、配额、升级与配置回滚 |
 
@@ -594,17 +587,17 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | ADR | 决策 | 状态 | 详见 |
 | --- | --- | --- | --- |
 | ADR-01 | 控制面与数据面分离，平台不代理 IO | Accepted | 权衡分析 §2 R1 |
-| ADR-02 | 所有变更走异步任务队列，禁止同步长调用 | Accepted | §2 R2 |
+| ADR-02 | 所有变更走异步任务机制，禁止同步长调用 | Accepted（队列载体见 ADR-36） | §2 R2 |
 | ADR-03 | Agent 拉模式 + mTLS，中心不直连 SSH | Accepted | §2 R3 |
 | ADR-04 | 双能力合并为单二进制双模式 | Accepted | §2 R4 |
 | ADR-05 | cephadm 定位为集群级执行器而非中心服务 | Accepted | §2 R5 |
 | ADR-06 | DB 只存元数据，指标/日志分离；Ceph 实际状态为真相 | Accepted | §2 R6 / §4 B3 |
-| ADR-07 | 消息队列选 NATS JetStream（备选 RabbitMQ） | **Rejected**（改选 RabbitMQ，见 ADR-12） | §2 R7 |
+| ADR-07 | 消息队列选 NATS JetStream（备选 RabbitMQ） | **Rejected**（既定 MQ 方案由 ADR-12→ADR-36 废止） | §2 R7 |
 | ADR-08 | 引入 Reconciler 主动对账 | Accepted | §2 R8 |
 | ADR-09 | Grafana 经反代统一鉴权，禁止直连 | Accepted | §2 R9 |
 | ADR-10 | MVP 单机管理面，HA 延后到 V1 | Accepted | §2 R10 |
 | [ADR-11](ADR-11-技术栈基线.md) | 技术栈基线：React+TS / Golang / PostgreSQL / cephadm+podman / ansible / CentOS Stream 9 | Accepted（2026-11-15） | ADR-11 §2 |
-| [ADR-12](ADR-12-消息队列选型.md) | 消息队列选 RabbitMQ（非 JetStream） | Accepted（2026-11-15） | ADR-12 §3 |
+| [ADR-12](ADR-12-消息队列选型.md) | 消息队列选 RabbitMQ（非 JetStream） | **Superseded**（→ ADR-36） | ADR-12 §3 |
 | [ADR-16](ADR-16-镜像仓库.md) | 镜像仓库：自建 Harbor，节点统一经仓库拉取 | Accepted（2026-11-15） | ADR-16 §2 |
 | [ADR-17](ADR-17-部署框架.md) | 部署编排：Ansible 框架，结构对齐 kolla-ansible（不 fork） | Accepted（2026-11-15） | ADR-17 §2 |
 | [ADR-18](ADR-18-可观测性栈.md) | 可观测性：VictoriaLogs + 自带 VM/vmalert/Alertmanager/Grafana | Accepted（2026-11-15） | ADR-18 §1 |
@@ -625,7 +618,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-33](ADR-33-日志与告警链路.md) | 日志由 Agent 直推 VL，告警经 HMAC webhook 回流 | Accepted（2026-11-15） | ADR-33 §1 |
 | [ADR-34](ADR-34-会话JWT方案.md) | 会话：JWT + 版本号/黑名单（取代 ADR-26） | Accepted（2026-11-15） | ADR-34 §2 |
 | [ADR-35](ADR-35-Agent预装与零SSH.md) | Agent 交付期预装、运行期零 SSH、Server 不碰 Ceph、纳管单位=cluster | Accepted（2026-11-15） | ADR-35 §1 |
+| [ADR-36](ADR-36-任务队列去MQ.md) | 取消 RabbitMQ：PG 任务表 + SKIP LOCKED + 租约（取代 ADR-12） | Accepted（2026-11-15） | ADR-36 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
-> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12）、D3 以 **自建 Harbor** 关闭（ADR-16），ADR-07 标记为 `Rejected` 保留理由不删。**组件层选型已全部关闭**（最后一项 D7 由 ADR-21 关闭），剩余仅 D2 / D6 / D10 的实现层细节。
+> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12）、D3 以 **自建 Harbor** 关闭（ADR-16），ADR-07 标记为 `Rejected` 保留理由不删。**组件层选型已全部关闭**（最后一项 D7 由 ADR-21 关闭）。2026-11-15 傍晚 D1 再次改判：取消 RabbitMQ（[ADR-36](ADR-36-任务队列去MQ.md)），组件数由 9 类降为 8 类。剩余仅 D2 / D6 / D10 的实现层细节。

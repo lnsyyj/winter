@@ -34,8 +34,7 @@ sequenceDiagram
     participant U as 用户
     participant S as Server
     participant ADB as 审计库
-    participant PDB as 业务库
-    participant Q as RabbitMQ
+    participant PDB as 业务库（任务表）
 
     U->>S: 提交变更（写操作）
     S->>S: 鉴权 + 参数校验

@@ -31,7 +31,7 @@
 | 主题 | Ceph 集群管理平台（控制面）：多集群纳管/新建、可视化运维、RBAC、审计、监控告警 |
 | 主分支 | `main` |
 | 关键入口 | [文档总览](docs/README.md) · [PRD](docs/01-产品线/01-产品经理/PRD-Ceph管理平台.md) · [架构设计](docs/02-研发线/04-架构师/架构设计-Ceph管理平台.md) · [权衡分析](docs/02-研发线/04-架构师/架构决策与权衡分析.md) |
-| 技术栈 | **已确认**（`ADR-11` / `12` / `16` / `18`，2026-11-15）：React + TypeScript / Golang / PostgreSQL / **RabbitMQ** / **Harbor** / **VictoriaMetrics + VictoriaLogs + vmalert + Alertmanager + Grafana** / cephadm + podman / ansible / CentOS Stream 9。**待定**：认证源（D7） |
+| 技术栈 | **已确认**（`ADR-11` / `16` / `18` / `36`，2026-11-15）：React + TypeScript / Golang / PostgreSQL（**含任务队列，无独立 MQ**）/ **Harbor** / **VictoriaMetrics + VictoriaLogs + vmalert + Alertmanager + Grafana** / cephadm + podman / ansible / CentOS Stream 9。**待定**：认证源（D7） |
 | 待决策 | D1~D11，见 [权衡分析 §8](docs/02-研发线/04-架构师/架构决策与权衡分析.md) 与 [PRD §11](docs/01-产品线/01-产品经理/PRD-Ceph管理平台.md) |
 
 ### 目录约定
@@ -521,3 +521,4 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 日志与告警链路定案：**Agent 直推 VictoriaLogs（mTLS 鉴权）+ 告警 HMAC webhook 回流**（`ADR-33`）。Server 不代理日志字节；**日志不可用不阻塞任务**；告警可丢、审计不可丢；§5.4 重写为指标/日志/告警/面板四段；新增 TC-39 | `05f784c` |
 | 2026-11-15 | 复核 6 处矛盾：①②③ 维持（单进程 / 经 Server 写库 / Runner 预检），④ 确认不设 TIMEOUT 状态并**补两个必配项**（显示最后进展时间、告警阈值按任务类型分级），⑤ 维持开新单；⑥ 改为 **JWT + 版本号/黑名单**，落成 `ADR-34` 取代 `ADR-26`（踢人 ≤30s 窗口，可配 0 换即时）。`sessions` 表改为 `refresh_tokens` + `token_blacklist` + `users.token_version`；`group_vars` 增 `auth.session`；TC-32 重写 | `07d0e2f` |
 | 2026-11-15 | **架构简化**：定「Agent 交付期预装 + 运行期零 SSH + Server 不碰 Ceph + 纳管单位=cluster」，落成 `ADR-35`，取代 `ADR-23`/`ADR-27`、缩小 `ADR-24` 范围。取消 Runner 与 `executor=runner`；`limited` 改为「只读 Agent」（不再需要 mgr dashboard）；`hosts.cluster_id` 允许空（未分配池）；删除 `clusters.collector`；预检改由 Agent 本地实现并与 deploy prechecks 对齐；架构设计 §3/§5.1/§5.6/§5.7/§7/§8/§11、安全设计 §1、全景与图册、TC-29/TC-33、I3 同步 | 本次提交 |
+| 2026-11-15 | 消息队列取消：落成 `ADR-36` 取代 `ADR-12`。ADR-35 删掉 Runner 后队列无消费者、且任务状态本就在 PG，两份状态会漂移；改为 **PG 任务表 + `SKIP LOCKED` + 租约**（`leased_until`/`next_retry_at`/`DEAD_LETTER` 状态值）。组件 -1、资源 15C/24G/350G → **13C/22G/330G**；同步架构设计 §1/§2/§3/§4.1/§5.1/§5.2/§5.8/§6.1/§9/§10/§14、部署方案、手册 C5、全景与图册、API 分片并发、ADR-13/20/29、prechecks 注释、TC-40、技术栈 | 本次提交 |

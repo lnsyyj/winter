@@ -12,7 +12,7 @@
     msg: >-
       内核参数：vm.overcommit_memory={{ (prechecks_sysctl.stdout_lines | default(['?']))[0] }}，
       vm.max_map_count={{ (prechecks_sysctl.stdout_lines | default(['?', '?']))[1] }}。
-      建议 overcommit_memory=1（RabbitMQ 与 Harbor 内置 Redis 需要）、max_map_count≥262144。
+      建议 overcommit_memory=1（Harbor 内置 Redis 需要）、max_map_count≥262144。
     verbosity: 0
 
 - name: 预检 | 内核参数强制校验
