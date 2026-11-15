@@ -42,6 +42,29 @@
   failed_when: haproxy_check.rc != 0
   tags: [haproxy]
 
+- name: 确保 semanage 可用（SELinux 下需要给非标准端口打标记）
+  ansible.builtin.dnf:
+    name: policycoreutils-python-utils
+    state: present
+    disablerepo: "pgdg*"
+  when: ansible_facts.selinux.status == 'enabled'
+  tags: [haproxy]
+
+- name: 标记入口端口的 SELinux 类型
+  # 不加标记时 haproxy 会报 cannot bind socket (Permission denied)：
+  # SELinux 只允许 http_port_t 类端口，5434 不在其中
+  ansible.builtin.shell: |
+    set -o pipefail
+    semanage port -a -t http_port_t -p tcp {{ pg_cluster.haproxy.listen_port }} 2>/dev/null \
+      || semanage port -m -t http_port_t -p tcp {{ pg_cluster.haproxy.listen_port }}
+    semanage port -l | grep "{{ pg_cluster.haproxy.listen_port }}"
+  args:
+    executable: /bin/bash
+  register: haproxy_seport
+  changed_when: "'http_port_t' in haproxy_seport.stdout"
+  when: ansible_facts.selinux.status == 'enabled'
+  tags: [haproxy]
+
 - name: 启动并开机自启
   ansible.builtin.systemd:
     name: haproxy
