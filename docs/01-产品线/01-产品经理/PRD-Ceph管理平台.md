@@ -331,16 +331,18 @@ MVP 必须同时满足：
 
 ### 11.1 待决策项（对应设想图 TODO，需拍板）
 
-| ID | 待决策 | 备选 | 影响 | 建议责任方 |
-| --- | --- | --- | --- | --- |
-| D1 | 消息队列 | RabbitMQ / NATS JetStream / Kafka / Redis Stream | 任务可靠性、部署复杂度 | 架构师 + SRE |
-| D2 | 数据库 | PostgreSQL（图中已定）/ 是否引入 TimescaleDB | 指标与业务库边界 | 架构师 + DBA |
-| D3 | 镜像仓库 | Harbor / registry:2 / 客户现有仓库 | 离线导入方式 | SRE + 交付 |
-| D4 | 日志系统 | Loki / VictoriaLogs / ELK | 资源占用与检索能力 | SRE |
-| D5 | 监控栈 | VictoriaMetrics + vmalert + Grafana + Alertmanager | 与 Prometheus 生态兼容边界 | SRE |
-| D6 | 「复制粘贴就能部署」的形态 | 单条 shell 脚本 / docker-compose / podman pod / ansible playbook | 直接决定交付形态 | 交付 + SRE |
-| D7 | 认证源 | 本地账号 / LDAP / OIDC | 企业客户接入成本 | 产品 + 安全 |
-| D8 | 纳管范围 | 仅 cephadm / 兼容 Rook、手工部署 | 产品承诺边界 | 产品 + 架构 |
+> 2026-11-15 更新：技术栈基线 7 项已确认（[ADR-11](../../02-研发线/04-架构师/ADR-11-技术栈基线.md)）——React + TypeScript、Golang、PostgreSQL、cephadm + podman、ansible、CentOS Stream 9。对应 D2 / D6 收敛为剩余细节，其余不变。
+
+| ID | 待决策 | 备选 | 状态 | 影响 | 建议责任方 |
+| --- | --- | --- | --- | --- | --- |
+| D1 | 消息队列 | RabbitMQ / NATS JetStream / Kafka / Redis Stream | 开放 | 任务可靠性、部署复杂度 | 架构师 + SRE |
+| D2 | 数据库 | PostgreSQL（已确认）/ 主版本与审计表分区分策略 | 部分收敛 | 指标与业务库边界 | 架构师 + DBA |
+| D3 | 镜像仓库 | Harbor / registry:2 / 客户现有仓库 | 开放 | 离线导入方式 | SRE + 交付 |
+| D4 | 日志系统 | Loki / VictoriaLogs / ELK | 开放 | 资源占用与检索能力 | SRE |
+| D5 | 监控栈 | VictoriaMetrics + vmalert + Grafana + Alertmanager | 开放 | 与 Prometheus 生态兼容边界 | SRE |
+| D6 | 「复制粘贴就能部署」的形态 | 单条 shell 脚本 / docker-compose / podman pod / ansible playbook | 部分收敛（podman 已定） | 直接决定交付形态 | 交付 + SRE |
+| D7 | 认证源 | 本地账号 / LDAP / OIDC | 开放 | 企业客户接入成本 | 产品 + 安全 |
+| D8 | 纳管范围 | 仅 cephadm / 兼容 Rook、手工部署 | 开放 | 产品承诺边界 | 产品 + 架构 |
 
 ### 11.2 主要风险
 

@@ -131,22 +131,26 @@ graph TB
 
 ## 4. 技术选型
 
-### 4.1 已定 / 建议
+### 4.1 选型现状
 
-| 领域 | 选择 | 理由 | 备选 | 主要风险 |
-| --- | --- | --- | --- | --- |
-| 前端 | React + TypeScript | 团队既定；生态成熟；Grafana 面板嵌入方便 | Vue | 嵌入 iframe 的鉴权与样式割裂 |
-| 控制面 | Golang | 单二进制、并发模型适合大量长连接/任务、静态部署简单 | Java / Python | 生态内 Ceph SDK 弱，多数靠 CLI |
-| 关系库 | PostgreSQL | 图中既定；JSONB 适合存任务参数与 Ceph 原始状态；advisory lock 可做集群级互斥 | MySQL | 需自己做分区与审计表冷热分离 |
-| 消息队列 | **NATS JetStream（推荐）** | 单二进制、资源占用低、持久化流 + ACK + 重试语义足够任务队列；契合 G6「少组件」 | RabbitMQ（团队熟则优先）、Kafka（过重，不选）、Redis Stream（持久化/运维语义弱，不选） | 团队不熟悉；运维工具少 |
-| 镜像仓库 | Harbor（离线场景）/ 对接客户现有仓库 | 支持离线导入、复制、漏洞扫描、配额 | registry:2（轻但无管理能力） | Harbor 自身较重，与 G6 冲突 |
-| 指标 | VictoriaMetrics + vmalert | 资源省、兼容 Prometheus remote_write / PromQL 主体 | Prometheus + Thanos | 与 Prometheus 规则生态存在边界差异 |
-| 告警 | vmalert + Alertmanager | 复用 Prometheus 生态规则与通知渠道 | Grafana Alerting | 两套告警规则源需统一 |
-| 日志 | VictoriaLogs（推荐）/ Loki | 与 VM 同栈、资源轻 | ELK（重） | 生态与查询语法差异 |
-| 可视化 | Grafana（反代鉴权） | 面板生态成熟 | 自研图表 | 越权与多租户隔离 |
-| 编排 | cephadm + podman | 官方路径、容器化、无 K8s 依赖 | Rook（引入 K8s，超出范围） | 版本绑定、抽象泄漏 |
-| 初始化 | ansible | 图中既定，幂等、易审计 | SaltStack | playbook 版本管理 |
-| OS | CentOS Stream 9 | 图中既定 | Rocky / Alma | Stream 滚动更新带来兼容风险 |
+> ✅ **已确认** = 2026-11-15 项目负责人确认，见 [ADR-11](ADR-11-技术栈基线.md)；其余为建议值，待对应决策项拍板，**不得写成结论**。
+
+| 领域 | 选择 | 状态 | 理由 | 备选 | 主要风险 |
+| --- | --- | --- | --- | --- | --- |
+| 前端 | React + TypeScript | ✅ 已确认 | 团队既定；生态成熟；Grafana 面板嵌入方便 | Vue | 嵌入 iframe 的鉴权与样式割裂 |
+| 控制面 | Golang | ✅ 已确认 | 单二进制、并发模型适合大量长连接/任务、静态部署简单 | Java / Python | 生态内 Ceph SDK 弱，多数靠 CLI |
+| 关系库 | PostgreSQL | ✅ 已确认（主版本待 DBA） | 图中既定；JSONB 适合存任务参数与 Ceph 原始状态；advisory lock 可做集群级互斥 | MySQL | 需自己做分区与审计表冷热分离 |
+| 消息队列 | **NATS JetStream（推荐）** | 待决策 **D1** | 单二进制、资源占用低、持久化流 + ACK + 重试语义足够任务队列；契合 G6「少组件」 | RabbitMQ（团队熟则优先）、Kafka（过重，不选）、Redis Stream（持久化/运维语义弱，不选） | 团队不熟悉；运维工具少 |
+| 镜像仓库 | Harbor（离线场景）/ 对接客户现有仓库 | 待决策 **D3** | 支持离线导入、复制、漏洞扫描、配额 | registry:2（轻但无管理能力） | Harbor 自身较重，与 G6 冲突 |
+| 指标 | VictoriaMetrics + vmalert | 待决策 **D5** | 资源省、兼容 Prometheus remote_write / PromQL 主体 | Prometheus + Thanos | 与 Prometheus 规则生态存在边界差异 |
+| 告警 | vmalert + Alertmanager | 待决策 **D5** | 复用 Prometheus 生态规则与通知渠道 | Grafana Alerting | 两套告警规则源需统一 |
+| 日志 | VictoriaLogs（推荐）/ Loki | 待决策 **D4** | 与 VM 同栈、资源轻 | ELK（重） | 生态与查询语法差异 |
+| 可视化 | Grafana（反代鉴权） | 待决策 **D5** | 面板生态成熟 | 自研图表 | 越权与多租户隔离 |
+| 编排 | cephadm + podman | ✅ 已确认 | 官方路径、容器化、无 K8s 依赖 | Rook（引入 K8s，超出范围） | 版本绑定、抽象泄漏 |
+| 初始化 | ansible | ✅ 已确认 | 图中既定，幂等、易审计 | SaltStack | playbook 版本管理 |
+| OS | CentOS Stream 9 | ✅ 已确认（锁定 minor） | 图中既定 | Rocky / Alma | Stream 滚动更新带来兼容风险 |
+
+> 已确认项的版本策略、放弃项与推翻条件全部记录在 [ADR-11](ADR-11-技术栈基线.md)，本节只保留摘要，避免两处各自演化。
 
 ### 4.2 明确不选
 
@@ -365,15 +369,20 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 ## 14. 架构决策记录（ADR 索引）
 
-| ADR | 决策 | 详见 |
-| --- | --- | --- |
-| ADR-01 | 控制面与数据面分离，平台不代理 IO | 权衡分析 §2 R1 |
-| ADR-02 | 所有变更走异步任务队列，禁止同步长调用 | §2 R2 |
-| ADR-03 | Agent 拉模式 + mTLS，中心不直连 SSH | §2 R3 |
-| ADR-04 | 双能力合并为单二进制双模式 | §2 R4 |
-| ADR-05 | cephadm 定位为集群级执行器而非中心服务 | §2 R5 |
-| ADR-06 | DB 只存元数据，指标/日志分离；Ceph 实际状态为真相 | §2 R6 / §4 B3 |
-| ADR-07 | 消息队列选 NATS JetStream（备选 RabbitMQ） | §2 R7 |
-| ADR-08 | 引入 Reconciler 主动对账 | §2 R8 |
-| ADR-09 | Grafana 经反代统一鉴权，禁止直连 | §2 R9 |
-| ADR-10 | MVP 单机管理面，HA 延后到 V1 | §2 R10 |
+状态含义：`Accepted` = 已确认，可作为约束执行，推翻需新 ADR；`Proposed` = 建议，待拍板，**不得当结论引用**；`Superseded` = 被后续 ADR 取代。
+
+| ADR | 决策 | 状态 | 详见 |
+| --- | --- | --- | --- |
+| ADR-01 | 控制面与数据面分离，平台不代理 IO | Accepted | 权衡分析 §2 R1 |
+| ADR-02 | 所有变更走异步任务队列，禁止同步长调用 | Accepted | §2 R2 |
+| ADR-03 | Agent 拉模式 + mTLS，中心不直连 SSH | Accepted | §2 R3 |
+| ADR-04 | 双能力合并为单二进制双模式 | Accepted | §2 R4 |
+| ADR-05 | cephadm 定位为集群级执行器而非中心服务 | Accepted | §2 R5 |
+| ADR-06 | DB 只存元数据，指标/日志分离；Ceph 实际状态为真相 | Accepted | §2 R6 / §4 B3 |
+| ADR-07 | 消息队列选 NATS JetStream（备选 RabbitMQ） | **Proposed**（D1 待拍板） | §2 R7 |
+| ADR-08 | 引入 Reconciler 主动对账 | Accepted | §2 R8 |
+| ADR-09 | Grafana 经反代统一鉴权，禁止直连 | Accepted | §2 R9 |
+| ADR-10 | MVP 单机管理面，HA 延后到 V1 | Accepted | §2 R10 |
+| [ADR-11](ADR-11-技术栈基线.md) | 技术栈基线：React+TS / Golang / PostgreSQL / cephadm+podman / ansible / CentOS Stream 9 | Accepted（2026-11-15） | ADR-11 §2 |
+
+> ADR-07 与 D1 曾出现「ADR 记为已决策、D1 仍写待决策」的矛盾，现已统一为 `Proposed`——**消息队列是唯一还没定的基础组件**。ADR-11 只覆盖 7 项技术栈，不代表架构评审已完成。
