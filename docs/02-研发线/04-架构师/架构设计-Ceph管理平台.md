@@ -256,15 +256,33 @@ flowchart LR
 
 **原则**：`ceph -s` 的真实状态**永远优先于** DB 中的期望状态展示；DB 只用于流程与审计，不作为真相来源。
 
-### 5.4 监控与告警链路
+### 5.4 监控、日志与告警链路
 
 ```
+① 指标
 Ceph mgr prometheus 模块 / node-exporter / ceph-exporter
-   → VM agent(remote_write 或 scrape) → VictoriaMetrics
-   → vmalert（Prometheus 兼容规则）→ Alertmanager → Webhook/邮件
-   → Server 订阅告警事件 → 关联 cluster/region → 控制台告警中心
-Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
+   → VM agent（remote_write 或 scrape）→ VictoriaMetrics
+   → vmalert（Prometheus 兼容规则）→ Alertmanager
+
+② 日志（Server 不代理字节，ADR-33）
+Agent（任务步骤 stdout/stderr + 服务日志）──HTTP JSON──┐
+Server 结构化 JSON 日志 ──────────────────────────────┤→ Nginx（mTLS 校验 + 注入身份头）
+vmalert / Alertmanager 日志 ─────────────────────────┘        → VictoriaLogs
+任务详情页 ──log_ref + trace_id──────────────────────────────→ VictoriaLogs
+
+③ 告警回流
+Alertmanager → webhook（HMAC 签名）→ Server /internal/alerts
+   → 按 fingerprint 幂等写 alert_events → 关联 cluster/region → WS 推送告警中心
+
+④ 面板
+Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VictoriaMetrics
 ```
+
+**三条边界**（[ADR-33](ADR-33-日志与告警链路.md)）：
+
+- **日志不进 Server**：日志量与 API 不是一个量级，转发等于给主路径加瓶颈；鉴权用 Agent 的 mTLS 证书，不另造令牌。
+- **日志不可用不阻塞任务**：任务成败由 DB 状态决定；VL 挂了只影响「看日志」，UI 要明确提示「日志不完整」而不是报任务失败。
+- **告警可丢、审计不可丢**：Alertmanager 会重发，所以告警走幂等 webhook；审计是另一条路（ADR-29）。
 
 ---
 
@@ -601,6 +619,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-30](ADR-30-镜像拉取方式.md) | Ceph 镜像由 cephadm 直拉，平台不预拉（digest 固定 + 错误码兜底） | Accepted（2026-11-15） | ADR-30 §1 |
 | [ADR-31](ADR-31-备份与恢复.md) | 备份数据/密钥/CA/配置，镜像与日志不备；密钥与备份包分离 | Accepted（2026-11-15） | ADR-31 §1 |
 | [ADR-32](ADR-32-数据保留与清理.md) | 保留期可配置，审计 180 天硬下限，改动需容量校验 | Accepted（2026-11-15） | ADR-32 §1 |
+| [ADR-33](ADR-33-日志与告警链路.md) | 日志由 Agent 直推 VL，告警经 HMAC webhook 回流 | Accepted（2026-11-15） | ADR-33 §1 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
