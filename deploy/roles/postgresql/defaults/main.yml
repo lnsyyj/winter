@@ -35,4 +35,14 @@ postgresql_defaults:
   # 空 = postgresql-{{ major }}
   service_name: ""
 
+  # 离线安装：从内网源（roles/local_repo）取以下 RPM，版本固定，避免现场漂移
+  rpm_subdir: rpm/pgdg17
+  rpm_packages:
+    - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
+  # 本地暂存目录
+  rpm_stage_dir: /var/tmp/winter-pg17
+
 postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"

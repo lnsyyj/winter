@@ -1,34 +1,36 @@
 ---
-# 仅当机器上没有任何 PostgreSQL 实例时进入本文件（全新安装路径）
-# 已有实例的机器走 main.yml 的「收敛」路径，不会执行到这里
+# 从内网源安装 PostgreSQL 17（离线路径）
+#
+# 为什么要自己拉 RPM：现场 PGDG 官方站不可达（本环境实测超时），
+# 而 base/EPEL 里没有 PG17。制品已入库到 deploy/artifacts/repo/rpm/pgdg17，
+# 由 roles/local_repo 通过 Nginx 发布，这里用 get_url 取。
+#
+# 只在「机器上没有任何 PostgreSQL 实例」时进入本文件。
 
-- name: 判断 PGDG 源是否可用
-  ansible.builtin.stat:
-    path: /etc/yum.repos.d/pgdg-redhat-all.repo
-  register: pgdg_repo
+- name: 暂存目录
+  ansible.builtin.file:
+    path: "{{ postgresql.rpm_stage_dir }}"
+    state: directory
+    mode: "0755"
   tags: [postgresql]
 
-- name: 选择安装包名
-  ansible.builtin.set_fact:
-    pg_pkgs: >-
-      {{ ['postgresql17-server', 'postgresql17-contrib']
-         if pgdg_repo.stat.exists
-         else ['postgresql-server', 'postgresql-contrib'] }}
+- name: 从内网源取 RPM
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ postgresql.rpm_subdir }}/{{ item }}"
+    dest: "{{ postgresql.rpm_stage_dir }}/{{ item }}"
+    mode: "0644"
+    timeout: 60
+  loop: "{{ postgresql.rpm_packages }}"
+  register: pg_rpm_fetch
   tags: [postgresql]
 
-- name: 安装 PostgreSQL
+- name: 本地安装 RPM（不访问任何远端仓库）
   ansible.builtin.dnf:
-    name: "{{ pg_pkgs }}"
+    name: "{{ pg_rpm_fetch.results | map(attribute='dest') | list }}"
     state: present
-  tags: [postgresql]
-
-- name: 确保未启用 EL 模块流冲突（PGDG 与内置 module 只能选一个）
-  ansible.builtin.command:
-    cmd: dnf -qy module disable postgresql
-  register: pg_module_disable
-  changed_when: "'Nothing to do' not in pg_module_disable.stdout"
-  failed_when: false
-  when: pgdg_repo.stat.exists
+    disable_gpg_check: true
+    # 关键：只用本地文件，不触发元数据刷新（现场第三方源经常不可达）
+    disablerepo: "*"
   tags: [postgresql]
 
 - name: 探测新装实例的主版本

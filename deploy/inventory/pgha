@@ -1,0 +1,28 @@
+# 三节点高可用形态（Patroni + etcd），对应 ADR-38 撤回后的 PG 分布式高可用
+#
+# 用法：
+#   ./deploy.sh deploy -i inventory/pgha --tags repo             只在 pg-c 发布制品源
+#   ./deploy.sh deploy -i inventory/pgha --tags postgresql       三台装 PG（PGDG 不可达，走内网源）
+#
+# 端口约定（避开 pg-c 上 argus 已占用的 5432）：
+#   PG 5433 / Patroni REST 8008 / etcd 2379,2380
+
+[management]
+pg-a ansible_host=192.168.101.197
+pg-b ansible_host=192.168.101.198
+pg-c ansible_host=192.168.101.194
+
+[pg_primary_candidate]
+pg-a
+
+[pg_repo]
+pg-c
+
+[monitor:children]
+management
+
+[ceph_nodes]
+
+[all:vars]
+ansible_user=root
+ansible_python_interpreter=/usr/bin/python3

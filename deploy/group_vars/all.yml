@@ -11,8 +11,9 @@ platform:
   # 管理面 API 监听端口（唯一对外开放端口，见部署方案 §2）
   https_port: 443
 
-  # 内网软件源（ADR-15）：由安装机/管理节点的 Nginx 提供
-  repo_base_url: ""
+  # 内网软件源（ADR-15）：由管理节点的 Nginx 提供（roles/local_repo 发布）
+  # 现场没有外网时，所有 RPM / wheel / 二进制都从这里取
+  repo_base_url: "http://192.168.101.194:8082"
 
   # 镜像仓库（ADR-16）：自建 Harbor，全部镜像经此拉取
   registry_host: ""
