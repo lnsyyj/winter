@@ -479,7 +479,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `regions` / `azs` | id, name, parent_id | 自定义三级模型前两级 |
-| `clusters` | id, fsid(uk), az_id, name, deploy_mode, capability(managed/limited), collector(agent/ceph_api), ceph_version, image_digest, health, last_sync_at | 集群主表；非 cephadm 只能 limited（ADR-27）；digest 固定镜像（ADR-30） |
+| `clusters` | id, fsid(uk), az_id, name, deploy_mode, capability(managed/limited), collector(agent/ceph_api), ceph_version, image_digest, drift_state(ok/drift), last_drift_at, health, last_sync_at | 集群主表；`drift_state` 对应 §5.3 的对账结果（ADR-32） |
 | `image_inventory` | id, image, digest(uk), ceph_version, source, added_at | 「用过哪些镜像」的追溯表，对应 FR-10（ADR-30） |
 | `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；指纹是公钥信息，允许持久化（ADR-24） |
 | `credentials` | id, cluster_id, type(ceph/ceph_key/dashboard), cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 凭据，不含 SSH 登录凭据**（ADR-24）；limited 用 `ceph_key` 只读（ADR-27） |
@@ -550,6 +550,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | 健康 | `/healthz`（进程）、`/readyz`（依赖检查，区分核心/可降级依赖） |
 | 告警 | Agent 大面积离线、任务失败率突增、对账漂移持续、凭据即将过期 |
 
+**数据保留与清理**（[ADR-32](ADR-32-数据保留与清理.md)）：保留期是可配置项，但**审计 180 天为硬下限**。默认 日志 30 天 / 指标 30 天 / 任务 90 天 / 会话 7 天。改保留期必须走 `reconfigure` 并打印容量估算——「天数」要到「磁盘」，中间隔着日增体积，不校验就会在几个月后写满盘。
+
 ---
 
 ## 13. 演进路线与推翻条件
@@ -598,6 +600,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-29](ADR-29-审计落点.md) | 审计独立库：intent 同步必达、result 幂等补写 | Accepted（2026-11-15） | ADR-29 §2 |
 | [ADR-30](ADR-30-镜像拉取方式.md) | Ceph 镜像由 cephadm 直拉，平台不预拉（digest 固定 + 错误码兜底） | Accepted（2026-11-15） | ADR-30 §1 |
 | [ADR-31](ADR-31-备份与恢复.md) | 备份数据/密钥/CA/配置，镜像与日志不备；密钥与备份包分离 | Accepted（2026-11-15） | ADR-31 §1 |
+| [ADR-32](ADR-32-数据保留与清理.md) | 保留期可配置，审计 180 天硬下限，改动需容量校验 | Accepted（2026-11-15） | ADR-32 §1 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
