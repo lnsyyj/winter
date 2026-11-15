@@ -61,7 +61,7 @@ ADR-15 留下两个镜像分发选项：走 registry，或 Nginx 提供静态 ta
 | D3 | **关闭** |
 | ADR-15 §4.1 | 静态 tar 方案从「并列选项」降为**应急降级路径**（Harbor 不可用时手工导入） |
 | 部署资源 | 新增 Harbor（含 Trivy、内置 Redis）约 3C / 6G / 80G；管理面合计 ≈ **14C / 22G / 300G**（后续因审计独立库增至 15C / 24G / 350G，见 [ADR-29](ADR-29-审计落点.md)） |
-| 安装手册 | BOM 增加 Harbor 与 Trivy 镜像；C4 改为「制包机 push → ansible 下发 CA/凭据 → 节点 pull」 |
+| 安装手册 | BOM 增加 Harbor 与 Trivy 镜像；C4 改为「制包机 push → ansible 下发 CA/凭据 → 节点 pull」；**被管集群的 Ceph 镜像由 cephadm 直拉，平台不预拉**（[ADR-30](ADR-30-镜像拉取方式.md)） |
 | 测试 | 新增 TC-25（镜像供应链）：节点无外网只能从 Harbor 拉、吊销 robot 后 pull 失败、Harbor 停机不影响已运行容器 |
 | V1 HA | Harbor 单节点在 V1 评估多副本 + 外部 PG/Redis；MVP 单节点可接受（ADR-10） |
 

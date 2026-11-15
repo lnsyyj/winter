@@ -378,6 +378,23 @@ sequenceDiagram
 
 **要点**（[ADR-29](ADR-29-审计落点.md)）：跨库**没有共同事务**，所以「fail-closed」落在 ① 上——intent 写不进去就不执行；② 之后的结果用幂等补写 + 每日「有 intent 无 result」对账兜底。审计库是**写路径强依赖**，不是可降级组件。防篡改用链式哈希 + 每日尾 hash 外锚。
 
+### 5.9 镜像与制品供给
+
+```mermaid
+flowchart LR
+  A[Runner / Agent 初始化] --> B[下发 Harbor CA 到 certs.d]
+  B --> C[通过 cephadm 配置注入 registry 凭据]
+  C --> D[cephadm bootstrap / orch apply 自行 pull]
+  D --> E{镜像就绪？}
+  E -- 是 --> F[继续部署，记录 digest]
+  E -- 否 --> G[Agent 解析 cephadm 输出与 podman events<br/>命中拉取特征 → image_pull_failed]
+  G --> H{瞬时？}
+  H -- 是 --> I[整步重试，超时放宽 30min]
+  H -- 否 --> J[FAILED + 指引：查 CA / 凭据 / 磁盘]
+```
+
+**分工**（[ADR-30](ADR-30-镜像拉取方式.md)）：**被管集群的 Ceph 镜像由 cephadm 自己拉**，平台只配 registry + CA + 凭据；**管理面自身组件镜像仍由 `deploy` 的 `pull` 阶段显式拉**（ADR-17）。不预拉，所以必须靠三件事兜住质量：digest 引用（禁裸 tag）、`image_pull_failed` 错误码、镜像拉取专用超时。
+
 ---
 
 ## 6. 部署拓扑
@@ -445,7 +462,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | 表 | 关键字段 | 说明 |
 | --- | --- | --- |
 | `regions` / `azs` | id, name, parent_id | 自定义三级模型前两级 |
-| `clusters` | id, fsid(uk), az_id, name, deploy_mode, capability(managed/limited), collector(agent/ceph_api), ceph_version, health, last_sync_at | 集群主表；非 cephadm 只能 limited（ADR-27） |
+| `clusters` | id, fsid(uk), az_id, name, deploy_mode, capability(managed/limited), collector(agent/ceph_api), ceph_version, image_digest, health, last_sync_at | 集群主表；非 cephadm 只能 limited（ADR-27）；digest 固定镜像（ADR-30） |
+| `image_inventory` | id, image, digest(uk), ceph_version, source, added_at | 「用过哪些镜像」的追溯表，对应 FR-10（ADR-30） |
 | `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；指纹是公钥信息，允许持久化（ADR-24） |
 | `credentials` | id, cluster_id, type(ceph/ceph_key/dashboard), cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 凭据，不含 SSH 登录凭据**（ADR-24）；limited 用 `ceph_key` 只读（ADR-27） |
 | `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
@@ -560,6 +578,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-27](ADR-27-纳管双通道.md) | 纳管双通道：Agent 托管（managed）/ 只读 mgr API（limited） | Accepted（2026-11-15） | ADR-27 §2 |
 | [ADR-28](ADR-28-Agent证书体系.md) | Agent 证书：内置两层 CA，私钥不出节点，DB 状态双校验吊销 | Accepted（2026-11-15） | ADR-28 §2 |
 | [ADR-29](ADR-29-审计落点.md) | 审计独立库：intent 同步必达、result 幂等补写 | Accepted（2026-11-15） | ADR-29 §2 |
+| [ADR-30](ADR-30-镜像拉取方式.md) | Ceph 镜像由 cephadm 直拉，平台不预拉（digest 固定 + 错误码兜底） | Accepted（2026-11-15） | ADR-30 §1 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
