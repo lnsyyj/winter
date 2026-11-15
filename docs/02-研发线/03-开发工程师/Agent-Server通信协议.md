@@ -83,7 +83,7 @@ sequenceDiagram
 | `TASK_ACK` | A→S | task | `task_id` `accepted` `reason_code` | 幂等 | 10s 内未 ACK → 服务端重派 |
 | `TASK_PROGRESS` | A→S | task | `task_id` `step_id` `percent` `message` | 幂等（覆盖） | 仅用于 UI 与 `last_progress_at` |
 | `TASK_RESULT` | A→S | result | `task_id` `status` `error_code` `error_message` `output` `log_ref` `started_at` `finished_at` | 按 `task_id` | **落库成功才 ack** |
-| `REDIRECT` | S→A | control | `new_endpoint` `deadline_s` `reason` `target_shard_id` | — | 优雅迁移，见 §8 |
+| `REDIRECT` | S→A | control | `target_shard_id` `new_endpoints[]` `deadline_s` `reason` | — | 优雅迁移；Agent **持久化新 shard_id 与 endpoint 列表**后再断开，见 §8 |
 | `CERT_ROTATE_HINT` | S→A | control | `not_after` | — | 提示轮换；Agent 自己也会按时轮换 |
 | `ERROR` | 双向 | control | `code` `message` `retryable` `retry_after_ms` | — | 见 §10 |
 
@@ -139,7 +139,8 @@ sequenceDiagram
     participant A as Agent
     participant N as Server（新片）
 
-    S->>A: REDIRECT{new_endpoint, deadline_s=300, target_shard_id=11}
+    S->>A: REDIRECT{target_shard_id=11, new_endpoints[主,备1,备2], deadline_s=300}
+    A->>A: 持久化新配置（shard_id + endpoints）
     Note over A: 进入 draining：不再领新任务
     A->>A: 完成在途任务（≤4 个）并回报
     A-->>S: TASK_RESULT × N
@@ -154,6 +155,7 @@ sequenceDiagram
 | 宽限期 | 默认 **300s**，可随 `REDIRECT` 下发 |
 | 迁移限速 | **50 次/s per shard**（服务端控制） |
 | 新任务 | draining 期间**不再派发** |
+| 配置落盘 | 新 `shard_id` 与 endpoint 列表必须先写入本地配置再断开；重启后仍生效 |
 | 超时 | 到期仍连不上新片 → 回退旧片重试（避免节点变砖） |
 
 ## 9. 重连与备用 endpoint
