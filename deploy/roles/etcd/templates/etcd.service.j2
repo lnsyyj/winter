@@ -5,7 +5,9 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-Type=notify
+# 不用 Type=notify：官方 etcd 二进制不发 sd_notify，systemd 会一直等到超时判失败
+# （进程其实已经正常起来）。Type=exec 只等 exec 成功即可。
+Type=exec
 User=root
 # 数据目录独立；与 PG 无关
 ExecStart={{ etcd_role.bin_dir }}/etcd \
