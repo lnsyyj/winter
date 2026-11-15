@@ -2,11 +2,13 @@
 
 | 项目 | 内容 |
 | --- | --- |
-| 状态 | **Accepted（已确认）** |
+| 状态 | **Superseded**（由 [ADR-34](ADR-34-会话JWT方案.md) 取代：改用 JWT + 版本号/黑名单） |
 | 决策日期 | 2026-11-15 |
 | 决策人 | 项目负责人 |
 | 影响范围 | 架构设计 §5（新增认证链路）/ §8 / §10、安全与审计设计 §3、API 认证接口、TC-32 |
 | 关联 | [ADR-22 LDAP](ADR-22-LDAP接入.md) · [ADR-21 认证源](ADR-21-认证源.md) · [ADR-19 Agent 权限](ADR-19-Agent权限模型.md) |
+
+> **本 ADR 已被 [ADR-34](ADR-34-会话JWT方案.md) 取代**：会话不再存「不透明 Session ID + sessions 表」，改为 JWT（15 分钟）+ refresh token + `token_version` / jti 黑名单。仍然有效的部分：Cookie 属性（`__Host-`/HttpOnly/Secure/SameSite）、CSRF 双提交、DB 只存哈希、登录后轮换、审计不记令牌明文。原文保留，供追溯「为什么一开始选查表方案」。
 
 ---
 

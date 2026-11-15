@@ -26,6 +26,11 @@ platform:
   #      本地管理员始终保留（break-glass），目录服务故障不影响其登录
   auth:
     providers: [local, ldap]
+    # 会话（ADR-34）：access 短、refresh 长；cache_ttl 决定踢人延迟（0 = 即时但每请求查库）
+    session:
+      access_ttl_minutes: 15
+      refresh_ttl_days: 7
+      cache_ttl_seconds: 30
     ldap:
       enabled: false
       url: ""                          # 例：ldaps://dc01.corp.local:636

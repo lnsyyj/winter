@@ -242,6 +242,8 @@ stateDiagram-v2
 
 **状态机约束**：单向流转，仅允许 `RETRYING → RUNNING` 回流；每次迁移写事件（操作者/时间/原因）；**不加** `PAUSED` / `BLOCKED` / `WAITING_APPROVAL`——「卡住」用 `last_progress_at` + 超时告警表示，不新增状态。
 
+> **「卡住」的两个必配项**（ADR-25，缺一不可）：① 任务列表与详情必须显示「最后进展时间」（如「3 分钟前」），否则界面上看不出它停了；② 告警阈值**按任务类型分别配置**（镜像拉取 30 分钟 / 普通步骤 5 分钟 / 整任务 2 小时），一个统一阈值要么误报要么漏报。
+
 ### 5.3 状态对账（Reconciler）
 
 ```mermaid
@@ -307,17 +309,17 @@ sequenceDiagram
         S->>S: role_map 映射角色（未命中 = 无权限）
         S->>DB: JIT 建用户（idp=ldap, subject=dn）
     end
-    S->>DB: 写 sessions（只存 Session ID 的 SHA-256）
-    S-->>U: Set-Cookie __Host-sid（HttpOnly/Secure/SameSite=Lax）+ CSRF token
+    S->>DB: 写 refresh_tokens（只存哈希）
+    S-->>U: Set-Cookie access(JWT 15m) + refresh(7d)<br/>HttpOnly/Secure/SameSite=Lax + CSRF token
     U->>N: 后续请求（自动带 Cookie）
     N->>S: 透传
-    S->>DB: 查 sessions（未撤销且未过期）
-    S->>DB: 节流更新 last_seen_at（>60s 才写）
-    S-->>U: 200
-    Note over S,DB: 登出 / 踢人 / 改角色 → 置 revoked_at，下一个请求即 401
+    S->>S: 验签 + exp
+    S->>DB: 比对 users.token_version（缓存 ≤30s）与 jti 黑名单
+    S-->>U: 200（角色取自 JWT）
+    Note over S,DB: 登出/踢单会话 → jti 入黑名单；改密码/改角色/踢全部 → token_version+1
 ```
 
-**要点**：Session ID 是不透明随机串，**不用 JWT 装身份**——JWT 无法即时撤销；DB 只存哈希，拖库也不能冒用（[ADR-26](ADR-26-会话存储.md)）。LDAP 不可用不影响本地管理员登录（break-glass，ADR-22）。
+**要点**：access 是 JWT（**不查会话表**），refresh 是不透明串（存哈希）。撤销靠 **`token_version`（全员）+ jti 黑名单（单会话）**，两者都可缓存，因此**踢人有 ≤30s 窗口**——可配置为 0 换取即时，但那就退化成每请求查库（[ADR-34](ADR-34-会话JWT方案.md)）。角色放在 JWT 里，改角色时靠 `ver` 强制失效，**这是唯一防线**。
 
 ### 5.6 纳管已有集群（双通道）
 
@@ -506,8 +508,9 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | `agent_certs` | id, node_id, serial(uk), fingerprint, not_before, not_after, status(active/superseded/revoked), issued_by, revoked_at, revoke_reason | 握手时双校验：链 + DB 状态（ADR-28） |
 | `ca_state` | id, kind(root/intermediate), cert_pem, key_cipher, not_after, rotated_at | 私钥只存密文；root 离线保存 |
 | `audit_intents` / `audit_results`（**审计库**） | intent: id, trace_id(uk), actor, src_ip, action, target_type, target_id, params_redacted, prev_hash, hash · result: id, trace_id, result, error_code, before/after_snapshot, duration_ms, prev_hash, hash | 只追加、按月分区、保留 ≥180 天；链式哈希防篡改（ADR-29） |
-| `users` | id, username, password_hash(Argon2id), idp, subject, external_id, status, last_login_at | 本地账号 + LDAP 用户共存；`(idp, subject)` 唯一（ADR-22） |
-| `sessions` | id, session_hash(uk), user_id, idp, created_at, last_seen_at, expires_at, revoked_at, revoke_reason, client_fp | 只存哈希；撤销即时生效（ADR-26） |
+| `users` | id, username, password_hash(Argon2id), idp, subject, external_id, status, **token_version**, last_login_at | 本地账号 + LDAP 用户共存；`(idp, subject)` 唯一（ADR-22）；改密码/角色时 `token_version+1`（ADR-34） |
+| `refresh_tokens` | id, user_id, token_hash(uk), issued_at, expires_at, revoked_at, client_fp | 只存哈希；一次一换（ADR-34） |
+| `token_blacklist` | jti(uk), expires_at, reason | 单会话撤销；TTL 与 access 同寿命，表很小 |
 | `roles` / `grants` | 标准 RBAC + scope(region/az/cluster) | 三级授权 |
 | `alert_rules` / `alert_events` | 规则模板、关联集群、抑制策略 | 告警 |
 
@@ -532,7 +535,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 ## 10. 高可用与容错小结
 
-- Server 无状态 → 水平扩展；**会话存 PG**（[ADR-26](ADR-26-会话存储.md)），多副本天然一致，不依赖本地内存与 Redis。
+- Server 无状态 → 水平扩展；**access 为 JWT（15 分钟）+ refresh 存 PG**（[ADR-34](ADR-34-会话JWT方案.md)），撤销靠 `token_version` 与 jti 黑名单，踢人有 ≤30s 缓存窗口。
 - PG 主从 + 定期备份 + 恢复演练（DBA 职责）。
 - RabbitMQ durable queue + publisher confirm + manual ack，重启不丢任务；单节点故障期间无法接收新任务（不承诺零丢失，见 ADR-12 §6）。
 - Agent 断线重连、本地缓存结果、任务不丢。
@@ -612,7 +615,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-23](ADR-23-建集群预检执行者.md) | 建集群预检由管理面 Runner 复用 deploy prechecks 执行 | Accepted（2026-11-15） | ADR-23 §2 |
 | [ADR-24](ADR-24-SSH凭据管理.md) | SSH 凭据仅内存态：不落库、不走队列、终态擦除 | Accepted（2026-11-15） | ADR-24 §1 |
 | [ADR-25](ADR-25-任务状态机.md) | 自动重试不动任务号，人工重跑开新单 | Accepted（2026-11-15） | ADR-25 §2 |
-| [ADR-26](ADR-26-会话存储.md) | 会话存 PG 表，不透明 Session ID（非 JWT） | Accepted（2026-11-15） | ADR-26 §2 |
+| [ADR-26](ADR-26-会话存储.md) | 会话存 PG 表，不透明 Session ID（非 JWT） | **Superseded**（→ ADR-34） | ADR-26 §2 |
 | [ADR-27](ADR-27-纳管双通道.md) | 纳管双通道：Agent 托管（managed）/ 只读 mgr API（limited） | Accepted（2026-11-15） | ADR-27 §2 |
 | [ADR-28](ADR-28-Agent证书体系.md) | Agent 证书：内置两层 CA，私钥不出节点，DB 状态双校验吊销 | Accepted（2026-11-15） | ADR-28 §2 |
 | [ADR-29](ADR-29-审计落点.md) | 审计独立库：intent 同步必达、result 幂等补写 | Accepted（2026-11-15） | ADR-29 §2 |
@@ -620,6 +623,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-31](ADR-31-备份与恢复.md) | 备份数据/密钥/CA/配置，镜像与日志不备；密钥与备份包分离 | Accepted（2026-11-15） | ADR-31 §1 |
 | [ADR-32](ADR-32-数据保留与清理.md) | 保留期可配置，审计 180 天硬下限，改动需容量校验 | Accepted（2026-11-15） | ADR-32 §1 |
 | [ADR-33](ADR-33-日志与告警链路.md) | 日志由 Agent 直推 VL，告警经 HMAC webhook 回流 | Accepted（2026-11-15） | ADR-33 §1 |
+| [ADR-34](ADR-34-会话JWT方案.md) | 会话：JWT + 版本号/黑名单（取代 ADR-26） | Accepted（2026-11-15） | ADR-34 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
