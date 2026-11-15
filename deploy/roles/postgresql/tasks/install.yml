@@ -52,13 +52,17 @@
   tags: [postgresql]
 
 - name: 探测新装实例的主版本
+  # 不能用 `rpm -q postgresql*-server`：shell 未匹配时会把这个字面量当包名传进去，
+  # rpm 报「package postgresql*-server is not installed」。改用 rpm -qa + awk。
   ansible.builtin.shell: |
     set -o pipefail
-    rpm -q --qf '%{VERSION}\n' postgresql*-server 2>/dev/null | head -1 | cut -d. -f1
+    rpm -qa --qf '%{NAME}\t%{VERSION}\n' \
+      | awk -F'\t' '$1 ~ /^postgresql[0-9]+-server$/ {split($2,a,"."); print a[1]; exit}'
   args:
     executable: /bin/bash
   register: pg_new_major
   changed_when: false
+  failed_when: pg_new_major.stdout | trim | length == 0
   tags: [postgresql]
 
 - name: 记录主版本
