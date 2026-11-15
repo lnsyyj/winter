@@ -19,6 +19,16 @@
 
 **范围很重要**：本 ADR 只针对「被管 Ceph 集群的容器镜像」。管理面自己那套镜像仍走显式 `pull` 阶段——否则部署失败时无法区分「我们没拉」和「cephadm 没拉」。
 
+> **2026-11-15 补充（用户确认）**：Harbor **保留为唯一镜像来源**；拉取方式为「**cephadm 在每台被管节点上驱动本地 podman 各自 pull**」——不是中心拉一次再分发，也不是只有 bootstrap 节点拉。
+>
+> 这个细节决定了三件事，容易漏：
+>
+> | 含义 | 后果 |
+> | --- | --- |
+> | **所有**被管节点都要能到 Harbor | 防火墙按「节点 → Harbor:443」逐台放行，不是只放 bootstrap 节点 |
+> | CA 与 registry 凭据要下发到**每台**节点 | 初始化步骤按节点执行，不能只做一次 |
+> | 流量 ×N、失败点分散 | N 台节点各拉一份镜像层；任意一台拉不到，就卡在那台 → 错误码必须定位到节点 |
+
 ## 2. 理由
 
 1. **cephadm 本来就要拉**：bootstrap 与 `orch apply` 都会自行 pull，平台再预拉一遍等于同一份镜像走两条路径。
@@ -39,7 +49,7 @@
 | --- | --- |
 | 节点信任 Harbor CA | 写 `/etc/containers/certs.d/<registry>/ca.crt`（ADR-16） |
 | cephadm 能登录 registry | 通过 cephadm 的 `mgr/cephadm/registry_*` 配置注入，凭据来自平台加密存储，**不写节点明文文件** |
-| 节点可出站到 Harbor 443 | prechecks 的 `check_artifacts` 覆盖管理面侧；节点侧在初始化步骤校验 |
+| **每台**被管节点可出站到 Harbor 443 | 不是仅 bootstrap 节点：`check_artifacts` 覆盖管理面侧，节点侧在初始化步骤逐台校验 |
 | 禁用不安全选项 | 禁止 `insecure-registry` 与 `--tls-verify=false`（I15） |
 
 ## 5. 数据模型

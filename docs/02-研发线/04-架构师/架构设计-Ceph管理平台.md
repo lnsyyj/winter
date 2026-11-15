@@ -397,7 +397,7 @@ sequenceDiagram
 flowchart LR
   A[Agent 初始化] --> B[下发 Harbor CA 到 certs.d]
   B --> C[通过 cephadm 配置注入 registry 凭据]
-  C --> D[cephadm bootstrap / orch apply 自行 pull]
+  C --> D[每台节点的 cephadm 驱动本地 podman 各自 pull]
   D --> E{镜像就绪？}
   E -- 是 --> F[继续部署，记录 digest]
   E -- 否 --> G[Agent 解析 cephadm 输出与 podman events<br/>命中拉取特征 → image_pull_failed]
@@ -406,7 +406,7 @@ flowchart LR
   H -- 否 --> J[FAILED + 指引：查 CA / 凭据 / 磁盘]
 ```
 
-**分工**（[ADR-30](ADR-30-镜像拉取方式.md)）：**被管集群的 Ceph 镜像由 cephadm 自己拉**，平台只配 registry + CA + 凭据；**管理面自身组件镜像仍由 `deploy` 的 `pull` 阶段显式拉**（ADR-17）。不预拉，所以必须靠三件事兜住质量：digest 引用（禁裸 tag）、`image_pull_failed` 错误码、镜像拉取专用超时。
+**分工**（[ADR-30](ADR-30-镜像拉取方式.md)）：Harbor 是**唯一镜像来源**；**每台被管节点的 cephadm 驱动本地 podman 各自拉取**（不是中心拉一次再分发），平台只配 registry + CA + 凭据；因此 **Harbor 必须对每一台被管节点可达**，CA 与凭据也要逐台下发；**管理面自身组件镜像仍由 `deploy` 的 `pull` 阶段显式拉**（ADR-17）。不预拉，所以必须靠三件事兜住质量：digest 引用（禁裸 tag）、`image_pull_failed` 错误码、镜像拉取专用超时。
 
 ### 5.10 备份与恢复
 
