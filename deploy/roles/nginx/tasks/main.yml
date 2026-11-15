@@ -66,11 +66,14 @@
   tags: [nginx]
 
 - name: 落地站点配置
+  # 不用 validate：Ansible 的 validate 必须含 %s 占位符，而这里是 conf.d 片段、
+  # 无法脱离主配置单独校验。改为「写盘 → 全局 nginx -t → 通过才 reload」：
+  # 校验失败会中止 play，handler 不会触发，运行中的 nginx 保持旧配置不变。
   ansible.builtin.template:
     src: winter.conf.j2
     dest: "{{ nginx.conf_path }}"
     mode: "0644"
-    validate: "nginx -t -c /etc/nginx/nginx.conf"
+    backup: true
   notify: reload nginx
   tags: [nginx]
 
