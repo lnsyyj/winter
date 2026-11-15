@@ -16,6 +16,7 @@ desktop.ini
 *.temp
 *.log
 *.out
+.tmp_*
 dist/
 build/
 coverage/
