@@ -11,6 +11,25 @@
   when: (patroni_disable_standalone | default(patroni.disable_standalone_pg)) | bool
   tags: [patroni]
 
+- name: 确认 pip3 可用（精简系统常常没有）
+  ansible.builtin.shell: |
+    set -o pipefail
+    command -v pip3 >/dev/null 2>&1 && echo present || echo missing
+  args:
+    executable: /bin/bash
+  register: pip_probe
+  changed_when: false
+  tags: [patroni]
+
+- name: 安装 python3-pip（仅当缺失；来自 OS 仓库）
+  # 基础系统包不属于我们的制品库范畴（随 OS 镜像提供）；离线现场需自带 OS 源
+  ansible.builtin.dnf:
+    name: python3-pip
+    state: present
+    disablerepo: "pgdg*"
+  when: pip_probe.stdout | trim == 'missing'
+  tags: [patroni]
+
 - name: 从内网源安装 patroni（离线 wheel，不访问 PyPI）
   ansible.builtin.shell: |
     set -o pipefail
