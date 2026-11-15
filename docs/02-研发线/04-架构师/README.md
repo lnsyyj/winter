@@ -66,3 +66,4 @@
 - [`ADR-35-Agent预装与零SSH.md`](./ADR-35-Agent预装与零SSH.md) — Agent 交付期预装、运行期零 SSH、Server 不碰 Ceph、纳管单位=cluster（2026-11-15）
 - [`ADR-36-任务队列去MQ.md`](./ADR-36-任务队列去MQ.md) — 取消 RabbitMQ：PG 任务表 + SKIP LOCKED + 租约，状态单一真相（2026-11-15）
 - [`ADR-37-容量模型与规模上限.md`](./ADR-37-容量模型与规模上限.md) — 10k 节点容量模型：单副本 5k 连接、3 副本、心跳 30s 批量、采集代表、重连抖动（2026-11-15）
+- [`ADR-38-Agent通信分片.md`](./ADR-38-Agent通信分片.md) — 10 万连接：20 片 × 2 对等副本、静态归属、REDIRECT 迁移、故障与备用 endpoint（2026-11-15）
