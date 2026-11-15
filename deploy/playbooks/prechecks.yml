@@ -5,6 +5,9 @@
   hosts: all
   gather_facts: true
   become: true
+  # 同 deploy.yml：group_vars 在 deploy/ 下，不在 playbook 目录旁，需显式声明
+  vars_files:
+    - ../group_vars/all.yml
   roles:
     - role: prechecks
       tags: [prechecks]

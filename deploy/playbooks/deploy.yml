@@ -16,6 +16,11 @@
   become: true
   gather_facts: true
 
+  # Ansible 只从「playbook 目录」与「inventory 目录」旁加载 group_vars，
+  # 而本项目把唯一配置入口放在 deploy/group_vars/。显式声明，避免静默不加载。
+  vars_files:
+    - ../group_vars/all.yml
+
   pre_tasks:
     - name: 载入部署密码（deploy/passwords.yml，不存在则跳过）
       ansible.builtin.include_vars:
