@@ -513,4 +513,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 任务状态机定案：**自动重试不动任务号、人工重跑开新单**（`ADR-25`）。去掉 `TIMEOUT` 状态（改用 `last_progress_at` 告警），删除 `FAILED→PENDING` 回流；`tasks` 增 `parent_task_id`/`cancel_requested_at`/`last_progress_at`，`task_steps` 改 `attempt_count`/`last_error_code`/`next_retry_at`/`compensable`；新增 TC-31；API 文档状态机同步修正 | `a9beb88` |
 | 2026-11-15 | 会话存储定案：**PG sessions 表 + 不透明 Session ID**（`ADR-26`）。修正 §10「JWT/Redis 可选」与「服务端可撤销」的矛盾；新增 §5.5 认证与会话链路图；`users`/`sessions` 表补齐；API 增 `/auth/*` 并把 retry 语义改为「开新单」；新增 TC-32 | `89c0cc4` |
 | 2026-11-15 | 纳管定案：**双通道**（managed 装 Agent / limited 只读 mgr API，`ADR-27`）。新增 §5.6 纳管链路；`clusters` 增 `collector`、`credentials.type` 增 `ceph_key`/`dashboard`；明确「拿不到 mgr API 就不支持纳管、不许偷偷退 SSH」；新增 TC-33 | `ee230d9` |
-| 2026-11-15 | 证书体系定案：**内置两层 CA + 私钥不出节点 + DB 状态双校验吊销**（`ADR-28`）。新增 §5.7 证书链路；`agent_certs` / `ca_state` 表；`audit_logs` 补 `trace_id`；安全设计清单增节点身份项；新增 TC-34 | 本次提交 |
+| 2026-11-15 | 证书体系定案：**内置两层 CA + 私钥不出节点 + DB 状态双校验吊销**（`ADR-28`）。新增 §5.7 证书链路；`agent_certs` / `ca_state` 表；`audit_logs` 补 `trace_id`；安全设计清单增节点身份项；新增 TC-34 | `e4a7bb3` |
+| 2026-11-15 | 审计落点定案：**独立审计库 + 两段式写入**（`ADR-29`）。跨库无共同事务，故 fail-closed 落在 intent、result 幂等补写 + 每日对账；新增 §5.8 链路；业务库撤 `audit_logs`；部署资源 14C/22G/300G → 15C/24G/350G；新增 TC-35 | 本次提交 |
