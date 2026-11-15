@@ -17,6 +17,13 @@
   gather_facts: true
 
   pre_tasks:
+    - name: 载入部署密码（deploy/passwords.yml，不存在则跳过）
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
     - name: 确认这是受支持的发行版
       ansible.builtin.assert:
         that:
