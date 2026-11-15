@@ -353,6 +353,31 @@ sequenceDiagram
 
 **关键**：私钥**在节点本地生成**，平台只签发证书；吊销靠「证书链 + DB 状态」双校验，**不依赖 CRL 分发**——空气隔离环境里 CRL 分发经常不成立（[ADR-28](ADR-28-Agent证书体系.md)）。CA 为两层：root 离线、intermediate 在线签发。
 
+### 5.8 审计写入（独立库，两段式）
+
+```mermaid
+sequenceDiagram
+    participant U as 用户
+    participant S as Server
+    participant ADB as 审计库（独立）
+    participant PDB as 业务库
+    participant Q as RabbitMQ
+
+    U->>S: 提交变更
+    S->>S: 鉴权 + 参数校验（脱敏）
+    S->>ADB: ① 写 intent（trace_id / actor / action / params）
+    alt intent 失败
+        S-->>U: 503「审计不可用，操作已拒绝」<br/>（无任何业务副作用）
+    else intent 成功
+        S->>PDB: ② 业务事务提交
+        S->>Q: ③ 发布任务
+        S->>ADB: ④ 补写 result（前后快照 / 结果 / 耗时，异步幂等重试）
+        S-->>U: 202
+    end
+```
+
+**要点**（[ADR-29](ADR-29-审计落点.md)）：跨库**没有共同事务**，所以「fail-closed」落在 ① 上——intent 写不进去就不执行；② 之后的结果用幂等补写 + 每日「有 intent 无 result」对账兜底。审计库是**写路径强依赖**，不是可降级组件。防篡改用链式哈希 + 每日尾 hash 外锚。
+
 ---
 
 ## 6. 部署拓扑
@@ -427,11 +452,13 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | `task_steps` | id, task_id, seq, name, status, attempt_count, last_error_code, next_retry_at, compensable, log_ref, output_jsonb | DAG 步骤；`compensable=false` 禁止自动补偿 |
 | `agent_certs` | id, node_id, serial(uk), fingerprint, not_before, not_after, status(active/superseded/revoked), issued_by, revoked_at, revoke_reason | 握手时双校验：链 + DB 状态（ADR-28） |
 | `ca_state` | id, kind(root/intermediate), cert_pem, key_cipher, not_after, rotated_at | 私钥只存密文；root 离线保存 |
-| `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, **trace_id**, created_at | 只追加，按月分区 |
+| `audit_intents` / `audit_results`（**审计库**） | intent: id, trace_id(uk), actor, src_ip, action, target_type, target_id, params_redacted, prev_hash, hash · result: id, trace_id, result, error_code, before/after_snapshot, duration_ms, prev_hash, hash | 只追加、按月分区、保留 ≥180 天；链式哈希防篡改（ADR-29） |
 | `users` | id, username, password_hash(Argon2id), idp, subject, external_id, status, last_login_at | 本地账号 + LDAP 用户共存；`(idp, subject)` 唯一（ADR-22） |
 | `sessions` | id, session_hash(uk), user_id, idp, created_at, last_seen_at, expires_at, revoked_at, revoke_reason, client_fp | 只存哈希；撤销即时生效（ADR-26） |
 | `roles` / `grants` | 标准 RBAC + scope(region/az/cluster) | 三级授权 |
 | `alert_rules` / `alert_events` | 规则模板、关联集群、抑制策略 | 告警 |
+
+> **审计不在业务库**：`audit_intents` / `audit_results` 存独立审计库（[ADR-29](ADR-29-审计落点.md)），业务库只保留 `trace_id` 关联。业务库与应用账号对审计库只有 INSERT 权限。
 
 **不入库**：指标时序数据、原始日志正文（只存 `log_ref`）、Ceph 完整 `ceph -s` 历史快照（只存关键字段 + 对象存储引用）。
 
@@ -469,7 +496,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 2. **传输**：全链路 TLS，Agent ↔ Server 双向 mTLS，证书按节点签发、支持轮换与吊销。
 3. **凭据**：静态加密（密钥外置，MVP 可用文件密钥 + 权限收紧，V1 接 KMS/Vault）；明文不出现在 API 响应、日志、审计、前端。
 4. **执行**：任务模板白名单 + 参数强类型校验 + 枚举/正则/范围约束 + 参数化执行（不拼 shell 字符串）；禁止 `bash -c` 拼接。
-5. **审计**：只追加、独立存储、含执行前后状态快照；审计写入失败则任务拒绝执行（fail-closed）。
+5. **审计**：写**独立审计库**，两段式（intent 同步必达 → result 异步补写）；intent 失败则操作拒绝（fail-closed），result 失败靠幂等重试 + 每日对账兜底；只追加、链式哈希、保留 ≥180 天（ADR-29）。
 6. **最小权限**：Agent **一律不以 root 运行**——专用账号常驻，特权动作经 sudo 精确白名单（绝对路径 + 参数形态），禁止 `ALL` 与解释器（ADR-19）。
 7. **Grafana 隔离**：禁止直连，经 Nginx 反代注入身份，按 cluster 过滤数据源查询。
 8. **认证**：本地账号（Argon2id + HttpOnly 会话 + 登录限流）+ **可选 LDAP**（配置文件开启，强制 TLS、`default_role: none`、本地管理员保留为 break-glass）；**认证与 RBAC 分离**（ADR-22）。
@@ -532,6 +559,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-26](ADR-26-会话存储.md) | 会话存 PG 表，不透明 Session ID（非 JWT） | Accepted（2026-11-15） | ADR-26 §2 |
 | [ADR-27](ADR-27-纳管双通道.md) | 纳管双通道：Agent 托管（managed）/ 只读 mgr API（limited） | Accepted（2026-11-15） | ADR-27 §2 |
 | [ADR-28](ADR-28-Agent证书体系.md) | Agent 证书：内置两层 CA，私钥不出节点，DB 状态双校验吊销 | Accepted（2026-11-15） | ADR-28 §2 |
+| [ADR-29](ADR-29-审计落点.md) | 审计独立库：intent 同步必达、result 幂等补写 | Accepted（2026-11-15） | ADR-29 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 

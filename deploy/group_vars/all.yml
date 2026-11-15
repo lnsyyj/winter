@@ -44,9 +44,9 @@ platform:
 
 # 部署前检查阈值（与部署方案 §1 的资源估算对齐；Harbor 与可观测性栈占大头）
 prechecks:
-  management_min_vcpus: 14
-  management_min_memory_mb: 22528        # 22G
-  management_min_root_free_gb: 300       # 含 Harbor 镜像存储，Harbor 最先被吃满
+  management_min_vcpus: 15
+  management_min_memory_mb: 24576        # 24G
+  management_min_root_free_gb: 350       # 含 Harbor 镜像存储与独立审计库；Harbor 最先被吃满
   ceph_node_min_data_disks: 3
   # M0 阶段用 false：虚拟机常见单盘，先提示不拦截；正式交付改 true
   strict_data_disks: false

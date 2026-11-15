@@ -8,7 +8,7 @@
 | --- | --- | --- |
 | `tasks/main.yml` | 分组合法性（不能同时在 management 与 ceph_nodes） | 直接失败，指出该主机应属哪组 |
 | `tasks/os.yml` | CentOS Stream 9、podman 存在 | 失败并提示基线已锁定（ADR-11） |
-| `tasks/resources.yml` | 管理面 14C/22G/300G；被管节点数据盘 ≥3 | 失败并给出实际值与本项目估算来源 |
+| `tasks/resources.yml` | 管理面 15C/24G/350G；被管节点数据盘 ≥3 | 失败并给出实际值与本项目估算来源 |
 | `tasks/time.yml` | chronyd 运行、偏移 ≤1s | 失败；时间漂移会让 cephadm 直接失败 |
 | `tasks/kernel.yml` | overcommit_memory / max_map_count | 默认只报告；`enforce_kernel: true` 时失败 |
 | `tasks/network.yml` | 默认路由、域名解析、SELinux 状态 | 无路由即失败（出站链路不成立） |
