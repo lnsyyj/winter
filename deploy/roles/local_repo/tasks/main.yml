@@ -1,0 +1,78 @@
+---
+# 发布本地制品源
+# 约束：只读目录 + 明文 HTTP + 限制来源网段；不放任何私钥/证书
+
+- name: 发布目录
+  ansible.builtin.file:
+    path: "{{ local_repo.root }}"
+    state: directory
+    mode: "0755"
+  tags: [repo]
+
+- name: 同步制品（rpm / tarball / pip）
+  ansible.builtin.copy:
+    src: "{{ local_repo.src }}/"
+    dest: "{{ local_repo.root }}/"
+    mode: preserve
+    directory_mode: "0755"
+  tags: [repo]
+
+- name: 统计发布结果
+  ansible.builtin.shell: |
+    set -o pipefail
+    find {{ local_repo.root }} -type f | wc -l
+    du -sh {{ local_repo.root }} | awk '{print $1}'
+  args:
+    executable: /bin/bash
+  register: repo_stat
+  changed_when: false
+  tags: [repo]
+
+- name: 落地 Nginx 源站点
+  ansible.builtin.template:
+    src: repo.conf.j2
+    dest: /etc/nginx/conf.d/winter-repo.conf
+    mode: "0644"
+    backup: true
+  notify: reload nginx
+  tags: [repo]
+
+- name: 校验 Nginx 配置
+  ansible.builtin.command:
+    cmd: nginx -t
+  register: repo_nginx_test
+  changed_when: false
+  failed_when: repo_nginx_test.rc != 0
+  tags: [repo]
+
+- name: 应用变更
+  ansible.builtin.meta: flush_handlers
+  tags: [repo]
+
+- name: 放行防火墙端口（仅内网网段）
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ local_repo.allow_cidr }} port port={{ local_repo.listen_port }} protocol=tcp accept' 2>/dev/null
+    firewall-cmd --reload
+  register: repo_fw
+  changed_when: "'success' in repo_fw.stdout or 'ALREADY' not in repo_fw.stdout"
+  failed_when: false
+  tags: [repo]
+
+- name: 自检（本机）
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:{{ local_repo.listen_port }}/"
+  args:
+    executable: /bin/bash
+  register: repo_selfcheck
+  changed_when: false
+  failed_when: repo_selfcheck.stdout | trim != "200"
+  tags: [repo]
+
+- name: 输出结论
+  ansible.builtin.debug:
+    msg:
+      - "制品源：http://{{ ansible_facts.default_ipv4.address }}:{{ local_repo.listen_port }}/  （根目录 {{ local_repo.root }}）"
+      - "文件数 {{ repo_stat.stdout_lines[0] }}，体积 {{ repo_stat.stdout_lines[1] }}"
+      - "仅允许 {{ local_repo.allow_cidr }} 访问"
+  tags: [repo]

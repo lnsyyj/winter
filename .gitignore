@@ -65,3 +65,8 @@ passwords.yml
 *.zip
 offline-images-*
 platform-bundle-*
+
+# 离线制品库（ADR-15 内网源）：随代码入库，供现场无外网时使用
+# 注意：这里只放公开发行包（RPM/wheel/官方二进制），严禁放私钥、证书、客户数据
+!deploy/artifacts/
+!deploy/artifacts/**

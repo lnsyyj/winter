@@ -1,0 +1,14 @@
+---
+# 本地静态制品源（ADR-15 内网源）：把仓库里的 artifacts 发布成 HTTP 目录
+#
+# 位置：deploy/artifacts/repo/（已入库，离线现场随代码一起带过去）
+# 服务：Nginx 明文 HTTP，仅内网网段可访问；不走 443 是为了让节点无需信任 CA
+
+local_repo:
+  # 制品来源（控制机上的目录）
+  src: "{{ playbook_dir }}/../artifacts/repo"
+  # 发布目录（Nginx 根）
+  root: "{{ platform.data_dir }}/www/repo"
+  listen_port: 8082
+  # 允许访问的网段（现场按实际内网改）
+  allow_cidr: "192.168.101.0/24"

@@ -38,7 +38,9 @@
       tags: [always]
 
   roles:
-    # 顺序即依赖：先有库，再有对外接入
+    # 顺序即依赖：先有制品源（其他角色从它拉包），再有库，最后对外接入
+    - role: local_repo
+      tags: [repo]
     - role: postgresql
       tags: [postgresql, db]
     - role: nginx

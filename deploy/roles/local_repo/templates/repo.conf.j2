@@ -1,0 +1,24 @@
+# {{ ansible_managed | default('managed by ansible') }}
+#
+# 本地制品源（只读）。由 deploy/roles/local_repo 生成，请勿手改。
+# 明文 HTTP：节点只需能连通，无需信任自签 CA；由防火墙限制来源网段。
+
+server {
+    listen      {{ local_repo.listen_port }};
+    server_name _;
+
+    root  {{ local_repo.root }};
+    autoindex on;
+    autoindex_exact_size off;
+    autoindex_localtime on;
+
+    # 只读
+    limit_except GET { deny all; }
+
+    access_log off;
+    error_log  /var/log/nginx/winter-repo.error.log warn;
+
+    location / {
+        try_files $uri $uri/ =404;
+    }
+}
