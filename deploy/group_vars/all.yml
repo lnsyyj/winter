@@ -103,3 +103,21 @@ nginx_overrides:
   # 8080 可能被同机其他服务占用（本机是 argus），平台 API 默认走 8081
   api_upstream: "http://127.0.0.1:8081"
   tls_days: 825
+
+# PostgreSQL 高可用集群（etcd + Patroni + HAProxy）
+# 端口全部可配；默认 5433 是为了避开 .194 上 argus 已占用的 5432
+pg_cluster:
+  scope: winter-pg
+  port: 5433                # PG 实例端口（每个节点相同）
+  rest_port: 8008           # Patroni REST API
+  data_dir: /var/lib/pgsql/17/ha   # 与系统自带的 /data 分开，互不影响
+  vip_iface_cidr: "192.168.101.0/24"   # 集群互通网段（pg_hba 与防火墙都用它）
+  etcd:
+    client_port: 2379
+    peer_port: 2380
+    data_dir: /var/lib/etcd
+  haproxy:
+    listen_port: 5434       # 应用连这个端口，永远指向当前主库
+    check_interval: 2s
+    check_fall: 3
+    check_rise: 2

@@ -1,0 +1,13 @@
+#!/usr/bin/env bash
+# 首个主库 bootstrap 完成后执行（只在 leader 上跑一次）
+# 作用：建应用库，并把属主给应用账号
+set -euo pipefail
+
+PGPORT={{ pg_cluster.port }}
+APP_DB="{{ patroni.app_db }}"
+APP_USER="{{ patroni.app_user }}"
+
+psql -p "$PGPORT" -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_database WHERE datname='$APP_DB'" \
+  | grep -q 1 || psql -p "$PGPORT" -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$APP_DB\" OWNER \"$APP_USER\""
+
+echo "post_bootstrap: database $APP_DB ready"

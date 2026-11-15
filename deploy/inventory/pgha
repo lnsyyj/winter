@@ -10,7 +10,7 @@
 [management]
 pg-a ansible_host=192.168.101.197
 pg-b ansible_host=192.168.101.198
-pg-c ansible_host=192.168.101.194
+pg-c ansible_host=192.168.101.194 patroni_disable_standalone=false   # 该机 5432 被 argus 占用，系统实例必须保留
 
 [pg_primary_candidate]
 pg-a

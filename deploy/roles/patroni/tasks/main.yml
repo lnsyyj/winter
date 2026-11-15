@@ -1,0 +1,116 @@
+---
+# Patroni：把三台 PG 组成一主两从，并交给 etcd 做选主
+#
+# 顺序：停用独立实例 → 装 patroni（离线 wheel）→ 写配置 → 起服务 → 等集群成形
+
+- name: 停用系统自带的 PostgreSQL 服务（避免与 Patroni 抢实例）
+  ansible.builtin.systemd:
+    name: "postgresql-{{ patroni.pg_major }}"
+    state: stopped
+    enabled: false
+  when: (patroni_disable_standalone | default(patroni.disable_standalone_pg)) | bool
+  tags: [patroni]
+
+- name: 从内网源安装 patroni（离线 wheel，不访问 PyPI）
+  ansible.builtin.shell: |
+    set -o pipefail
+    pip3 install --no-index --trusted-host $(echo {{ platform.repo_base_url }} | sed -E 's#https?://([^:/]+).*#\1#') \
+      --find-links {{ platform.repo_base_url }}/{{ patroni.pip_subdir }}/ \
+      patroni psycopg2-binary 2>&1 | tail -3
+  args:
+    executable: /bin/bash
+  register: patroni_pip
+  changed_when: "'Successfully installed' in patroni_pip.stdout"
+  tags: [patroni]
+
+- name: 配置目录
+  ansible.builtin.file:
+    path: /etc/patroni
+    state: directory
+    mode: "0755"
+  tags: [patroni]
+
+- name: 数据目录（与系统实例分开）
+  ansible.builtin.file:
+    path: "{{ pg_cluster.data_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+  tags: [patroni]
+
+- name: 落地 patroni.yml
+  ansible.builtin.template:
+    src: patroni.yml.j2
+    dest: /etc/patroni/patroni.yml
+    owner: postgres
+    group: postgres
+    mode: "0600"
+  notify: restart patroni
+  tags: [patroni]
+
+- name: 落地 post_bootstrap 脚本（首个主库建库）
+  ansible.builtin.template:
+    src: post_bootstrap.sh.j2
+    dest: /etc/patroni/post_bootstrap.sh
+    owner: postgres
+    group: postgres
+    mode: "0755"
+  tags: [patroni]
+
+- name: 落地 systemd unit
+  ansible.builtin.template:
+    src: patroni.service.j2
+    dest: /etc/systemd/system/patroni.service
+    mode: "0644"
+  notify: restart patroni
+  tags: [patroni]
+
+- name: 启动并开机自启
+  ansible.builtin.systemd:
+    name: patroni
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [patroni]
+
+- name: 防火墙放行 PG 与 REST 端口（仅集群网段）
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.rest_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --reload >/dev/null 2>&1
+    echo done
+  changed_when: false
+  failed_when: false
+  tags: [patroni]
+
+- name: 等待本节点 REST API 就绪
+  ansible.builtin.shell: |
+    set -o pipefail
+    for i in $(seq 1 40); do
+      curl -s --max-time 2 http://{{ ansible_host }}:{{ pg_cluster.rest_port }}/ | grep -q '"state"' && exit 0
+      sleep 3
+    done
+    echo "patroni REST 未就绪" >&2
+    exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false
+  tags: [patroni]
+
+- name: 集群状态
+  ansible.builtin.shell: |
+    set -o pipefail
+    patronictl -c /etc/patroni/patroni.yml list 2>&1 | head -8
+  args:
+    executable: /bin/bash
+  register: patroni_list
+  changed_when: false
+  run_once: true
+  tags: [patroni]
+
+- name: 输出集群状态
+  ansible.builtin.debug:
+    msg: "{{ patroni_list.stdout_lines }}"
+  run_once: true
+  tags: [patroni]

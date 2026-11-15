@@ -1,0 +1,10 @@
+---
+# etcd：Patroni 的分布式配置与选主后端（3 节点奇数，Raft）
+etcd_role:
+  # 二进制来源（内网源里的官方静态包）
+  tarball: etcd-v3.5.17-linux-amd64.tar.gz
+  tarball_subdir: tarball
+  bin_dir: /usr/local/bin
+
+# 集群成员由 inventory 的 management 组自动生成
+etcd_nodes: "{{ groups['management'] }}"

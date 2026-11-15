@@ -1,0 +1,85 @@
+---
+# HAProxy：装包（内网源）→ 写配置 → 起服务 → 验证能连到主库
+
+- name: 检查是否已安装
+  ansible.builtin.stat:
+    path: /usr/sbin/haproxy
+  register: haproxy_bin
+  tags: [haproxy]
+
+- name: 从内网源取 RPM
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ haproxy_role.rpm_subdir }}/{{ haproxy_role.rpm }}"
+    dest: /var/tmp/{{ haproxy_role.rpm }}
+    mode: "0644"
+    timeout: 60
+  when: not haproxy_bin.stat.exists
+  tags: [haproxy]
+
+- name: 本地安装（不访问远端仓库）
+  ansible.builtin.shell: |
+    set -o pipefail
+    dnf -y --disablerepo='*' --nogpgcheck install /var/tmp/{{ haproxy_role.rpm }}
+  args:
+    executable: /bin/bash
+  when: not haproxy_bin.stat.exists
+  tags: [haproxy]
+
+- name: 落地配置
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: "{{ haproxy_role.config }}"
+    mode: "0644"
+    backup: true
+  notify: restart haproxy
+  tags: [haproxy]
+
+- name: 校验配置
+  ansible.builtin.command:
+    cmd: haproxy -c -f {{ haproxy_role.config }}
+  register: haproxy_check
+  changed_when: false
+  failed_when: haproxy_check.rc != 0
+  tags: [haproxy]
+
+- name: 启动并开机自启
+  ansible.builtin.systemd:
+    name: haproxy
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [haproxy]
+
+- name: 应用配置变更
+  ansible.builtin.meta: flush_handlers
+  tags: [haproxy]
+
+- name: 放行入口端口（仅集群网段与本地）
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.haproxy.listen_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --reload >/dev/null 2>&1
+    echo done
+  changed_when: false
+  failed_when: false
+  tags: [haproxy]
+
+- name: 验证入口指向主库（查询当前主库身份）
+  ansible.builtin.shell: |
+    set -o pipefail
+    PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ pg_cluster.haproxy.listen_port }} \
+      -U {{ patroni.app_user }} -d {{ patroni.app_db }} -tAc "select inet_server_addr()||':'||inet_server_port()"
+  args:
+    executable: /bin/bash
+  register: haproxy_probe
+  changed_when: false
+  retries: 6
+  delay: 5
+  until: haproxy_probe.rc == 0
+  failed_when: haproxy_probe.rc != 0
+  tags: [haproxy]
+
+- name: 输出结论
+  ansible.builtin.debug:
+    msg:
+      - "应用入口 127.0.0.1:{{ pg_cluster.haproxy.listen_port }} → 主库 {{ haproxy_probe.stdout | trim }}"
+  tags: [haproxy]

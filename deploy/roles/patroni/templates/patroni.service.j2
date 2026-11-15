@@ -1,0 +1,21 @@
+[Unit]
+Description=Patroni (winter PostgreSQL HA)
+Documentation=https://patroni.readthedocs.io/
+After=network-online.target etcd.service
+Wants=network-online.target etcd.service
+
+[Service]
+Type=simple
+User=postgres
+Group=postgres
+Environment=PYTHONUNBUFFERED=1
+Environment=PATH=/usr/pgsql-{{ patroni.pg_major }}/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/local/bin/patroni /etc/patroni/patroni.yml
+# Patroni 自己管理 PG 进程；这里不要用 KillMode=control-group，否则重启会带走 PG
+KillMode=process
+TimeoutSec=30
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

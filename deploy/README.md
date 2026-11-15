@@ -7,7 +7,8 @@
 | 阶段 | 命令 | 状态 |
 | --- | --- | --- |
 | 部署前检查 | `./deploy.sh prechecks -i inventory/multinode` | ✅ **已实现**（只读，交付期用） |
-| 收敛部署 | `./deploy.sh deploy -i inventory/multinode` | ✅ **已实现**（PostgreSQL + Nginx；其余待补） |
+| 收敛部署 | `./deploy.sh deploy -i inventory/multinode` | ✅ **已实现**（制品源 + PostgreSQL + Nginx） |
+| PG 高可用 | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **已实现**（etcd + Patroni + HAProxy，三节点） |
 | bootstrap-servers | — | ⬜ 未实现 |
 | pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ 未实现 |
 

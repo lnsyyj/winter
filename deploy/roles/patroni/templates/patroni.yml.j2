@@ -1,0 +1,92 @@
+# {{ ansible_managed | default('managed by ansible') }}
+#
+# Patroni 配置（由 deploy/roles/patroni 生成，请勿手改）
+# 端口来自 group_vars 的 pg_cluster，全部可配。
+
+scope: {{ pg_cluster.scope }}
+namespace: /winter/
+name: {{ inventory_hostname }}
+
+restapi:
+  listen: {{ ansible_host }}:{{ pg_cluster.rest_port }}
+  connect_address: {{ ansible_host }}:{{ pg_cluster.rest_port }}
+
+etcd3:
+  hosts:
+{% for h in groups['management'] %}
+    - {{ hostvars[h]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }}
+{% endfor %}
+
+bootstrap:
+  dcs:
+    ttl: 30
+    loop_wait: 10
+    retry_timeout: 10
+    maximum_lag_on_failover: 1048576
+    postgresql:
+      use_pg_rewind: true
+      use_slots: true
+      parameters:
+        listen_addresses: '*'
+        port: {{ pg_cluster.port }}
+        hot_standby: 'on'
+        wal_level: replica
+        wal_log_hints: 'on'
+        max_wal_senders: 10
+        max_replication_slots: 10
+        wal_keep_size: 512MB
+        shared_buffers: 256MB
+        max_connections: 200
+
+  initdb:
+    - encoding: UTF8
+    - data-checksums
+
+  pg_hba:
+    - local all all peer
+    - host all all 127.0.0.1/32 scram-sha-256
+    - host replication {{ patroni.repl_user }} 127.0.0.1/32 scram-sha-256
+    - host replication {{ patroni.repl_user }} {{ pg_cluster.vip_iface_cidr }} scram-sha-256
+    - host all all {{ pg_cluster.vip_iface_cidr }} scram-sha-256
+
+  users:
+    {{ patroni.superuser }}:
+      password: {{ vault_pg_superuser | default(vault_pg_password) }}
+      options:
+        - superuser
+    {{ patroni.repl_user }}:
+      password: {{ vault_pg_replicator | default(vault_pg_password) }}
+      options:
+        - replication
+    {{ patroni.app_user }}:
+      password: {{ vault_pg_password }}
+      options:
+        - createdb
+
+  # 首个主库建成后执行：建应用库
+  post_bootstrap: /etc/patroni/post_bootstrap.sh
+
+postgresql:
+  listen: {{ ansible_host }}:{{ pg_cluster.port }}
+  connect_address: {{ ansible_host }}:{{ pg_cluster.port }}
+  data_dir: {{ pg_cluster.data_dir }}
+  bin_dir: {{ patroni.pg_bin }}
+  pgpass: /var/lib/pgsql/.pgpass
+  authentication:
+    replication:
+      username: {{ patroni.repl_user }}
+      password: {{ vault_pg_replicator | default(vault_pg_password) }}
+    superuser:
+      username: {{ patroni.superuser }}
+      password: {{ vault_pg_superuser | default(vault_pg_password) }}
+    rewind:
+      username: {{ patroni.superuser }}
+      password: {{ vault_pg_superuser | default(vault_pg_password) }}
+  parameters:
+    unix_socket_directories: '/tmp'
+
+tags:
+  nofailover: false
+  noloadbalance: false
+  clonefrom: false
+  nosync: false

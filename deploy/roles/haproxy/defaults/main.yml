@@ -1,0 +1,9 @@
+---
+# HAProxy：给应用一个固定入口，永远指向「当前主库」
+#
+# 判定主库不用 TCP 探测（主从都在听 5432/5433，探不出来），
+# 而是查 Patroni 的 REST /primary：返回 200 才是主。
+haproxy_role:
+  rpm: haproxy-2.8.14-4.el9.x86_64.rpm
+  rpm_subdir: rpm/base
+  config: /etc/haproxy/haproxy.cfg

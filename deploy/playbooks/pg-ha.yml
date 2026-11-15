@@ -1,0 +1,47 @@
+---
+# PostgreSQL 高可用集群：etcd（选主）+ Patroni（编排）+ HAProxy（唯一入口）
+#
+# 用法：
+#   ./deploy.sh pg-ha -i inventory/pgha                 # 全量
+#   ./deploy.sh pg-ha -i inventory/pgha --tags etcd     # 只做 DCS
+#   ./deploy.sh pg-ha -i inventory/pgha --tags patroni  # 只做 PG 集群
+#   ./deploy.sh pg-ha -i inventory/pgha --tags haproxy  # 只做入口
+#
+# 端口全部来自 group_vars 的 pg_cluster（PG 5433 / REST 8008 / etcd 2379,2380 / 入口 5434）
+
+- name: PostgreSQL 高可用集群
+  hosts: management
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: 载入部署密码
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: 集群成员必须是奇数（etcd 需要多数派）
+      ansible.builtin.assert:
+        that:
+          - groups['management'] | length % 2 == 1
+          - groups['management'] | length >= 3
+        fail_msg: "etcd 需要至少 3 个且为奇数个节点，当前 {{ groups['management'] | length }} 个"
+        quiet: true
+      run_once: true
+      tags: [always]
+
+  roles:
+    # 顺序：先有二进制 → 再有选主 → 再由 Patroni 拉起 PG → 最后给统一入口
+    - role: postgresql
+      tags: [postgresql, db]
+    - role: etcd
+      tags: [etcd]
+    - role: patroni
+      tags: [patroni]
+    - role: haproxy
+      tags: [haproxy]

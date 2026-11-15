@@ -1,0 +1,35 @@
+# {{ ansible_managed | default('managed by ansible') }}
+#
+# 由 deploy/roles/haproxy 生成，请勿手改。
+# 只暴露一个写入口：指向当前主库（通过 Patroni REST /primary 判定）。
+
+global
+    maxconn 1000
+    log stdout format raw local0
+    stats socket /var/run/haproxy.sock mode 600 level admin
+
+defaults
+    mode tcp
+    log global
+    timeout connect 3s
+    timeout client  30m
+    timeout server  30m
+
+# 写入口：应用连这里
+frontend winter_pg
+    bind *:{{ pg_cluster.haproxy.listen_port }}
+    default_backend winter_pg_primary
+
+backend winter_pg_primary
+    option httpchk GET /primary
+    http-check expect status 200
+    default-server inter {{ pg_cluster.haproxy.check_interval }} fall {{ pg_cluster.haproxy.check_fall }} rise {{ pg_cluster.haproxy.check_rise }}
+{% for h in groups['management'] %}
+    server {{ h }} {{ hostvars[h]['ansible_host'] }}:{{ pg_cluster.port }} check port {{ pg_cluster.rest_port }}
+{% endfor %}
+
+# 可选：只读入口（指向从库），当前用不到，保留便于扩展
+# backend winter_pg_replica
+#     option httpchk GET /replica
+#     http-check expect status 200
+#     server ... 同上

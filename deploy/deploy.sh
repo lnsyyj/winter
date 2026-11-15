@@ -14,7 +14,8 @@ usage() {
   prechecks            部署前检查（只读，已实现）
   bootstrap-servers    装基础依赖（未实现）
   pull                 从 Harbor 拉镜像（未实现）
-  deploy               收敛到目标状态（已实现：PostgreSQL + Nginx）
+  deploy               收敛到目标状态（已实现：PostgreSQL + Nginx + 制品源）
+  pg-ha                PostgreSQL 高可用集群（etcd + Patroni + HAProxy）
   post-deploy          初始化（未实现）
   reconfigure          改配置后重跑（未实现）
   upgrade              版本升级（未实现）
@@ -45,6 +46,9 @@ case "$STAGE" in
         ;;
     deploy)
         PLAYBOOK="$ROOT/playbooks/deploy.yml"
+        ;;
+    pg-ha)
+        PLAYBOOK="$ROOT/playbooks/pg-ha.yml"
         ;;
     bootstrap-servers|pull|post-deploy|reconfigure|upgrade|destroy)
         echo "阶段 '$STAGE' 尚未实现（规划见 docs/02-研发线/04-架构师/ADR-17-部署框架.md）。" >&2
