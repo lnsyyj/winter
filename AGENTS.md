@@ -27,7 +27,7 @@
 | 项 | 内容 |
 | --- | --- |
 | 仓库 | `winter` |
-| 当前阶段 | **设计与文档阶段**，尚无产品代码；所有代码规范在对应语言出现时生效 |
+| 当前阶段 | **实现阶段**：文档基线已完成，`deploy/`（ansible）与 `server/`（Go + Gin）已落地；代码规范已生效 |
 | 主题 | Ceph 集群管理平台（控制面）：多集群纳管/新建、可视化运维、RBAC、审计、监控告警 |
 | 主分支 | `main` |
 | 关键入口 | [文档总览](docs/README.md) · [PRD](docs/01-产品线/01-产品经理/PRD-Ceph管理平台.md) · [架构设计](docs/02-研发线/04-架构师/架构设计-Ceph管理平台.md) · [权衡分析](docs/02-研发线/04-架构师/架构决策与权衡分析.md) |
@@ -43,7 +43,8 @@ README.md            仓库门面
 docs/                按《软件行业岗位全景图》七条线 / 24 个岗位归档的全部文档
   ├── README.md      文档总览与索引（唯一索引入口）
   └── 岗位映射与变更记录.md   岗位体系变更时的旧→新对照（体系变了必须更新）
-deploy/              平台部署框架：inventory / group_vars / roles / playbooks（ADR-17；当前仅 prechecks 已实现）
+deploy/              平台部署框架：inventory / group_vars / roles / playbooks（ADR-17；PG HA + Nginx + 内网源已实机跑通）
+server/              管理面 Server（Go + Gin）：internal/{config,db,auth,audit,task,api}，迁移 SQL 随二进制 embed
 .workbuddy/          工作区元数据 / 会话记忆（不纳入版本控制，不得删除）
 ```
 
@@ -527,3 +528,4 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 新增《Agent-Server 通信协议（v1）》：传输栈（TLS1.3 + HTTP/2 + gRPC + protobuf、1MiB 上限、**不提供长轮询降级**）、证书即身份（node_id 必须与 HELLO 一致）、3 条逻辑流（control/task/result）、12 类消息与字段、任务 ACK/窗口 4/幂等键、心跳 10s 与 SUSPECT 60s、REDIRECT 迁移、9 个错误码、版本 N/N-1 | 本次提交 |
 | 2026-11-15 | **撤回分片设计**：项目决定规模问题在部署层解决（部署多套独立实例），架构内不做分片。`ADR-38` 标 **Withdrawn**（保留作参考）；删除图册 §1.1–§1.3（分片逻辑/路由/部署视角）与 TC-42；协议去掉 `shard_id`/`REDIRECT`/`SHARD_MISMATCH`，§8 改为「重连与故障转移」；架构设计 §1/§5.2/§8 与全景 §2.2、部署方案 §7.1 同步为「单套上限 10k，超出则多套实例」 | 本次提交 |
 | 2026-11-15 | `deploy` 阶段落地：新增 `roles/postgresql`（收敛式：复用已有实例、只增库与账号、默认不改参数）与 `roles/nginx`（叠加式：只写 conf.d、不抢 default_server、靠 server_name 分流）+ `playbooks/deploy.yml`。在 CentOS Stream 9 实机跑通（ok=25/failed=0，二次运行 changed=0，既有站点与库未受影响）。修掉 5 个实机才暴露的问题：passwords.yml 不被自动加载、deploy.sh 执行位、pg_isready 不在 PATH、dnf 被 pgdg 源拖死、**group_vars 从未被加载**（+字典整块替换改 combine） | 本次提交 |
+| 2026-11-15 | `server/`（Go + Gin）落地：M0 可运行骨架（配置/双连接池/embed 迁移/JWT/审计两段式/REST）、`ADR-36` 任务表队列（`SKIP LOCKED` + 租约 + 退避 + 死信 + 队列深度）、幂等键与任务模板白名单、表驱动单测与真实 PG 集成测试；修复骨架中 `audit.VerifyChain` 的 `prev` 类型错误与 `Queue.Stats` 的非法 `FILTER`；§1 目录约定登记 `server/`、阶段状态更新；`.gitignore` 排除 Go 构建产物与 vendor；`server/README.md` 记录配置、接口与实机验证结果 | 本次提交 |

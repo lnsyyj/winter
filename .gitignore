@@ -70,3 +70,12 @@ platform-bundle-*
 # 注意：这里只放公开发行包（RPM/wheel/官方二进制），严禁放私钥、证书、客户数据
 !deploy/artifacts/
 !deploy/artifacts/**
+
+# Go 构建产物（交付时只传编译好的单二进制，产物不入库）
+/server/bin/
+/server/winter-server
+/server/winter-server.exe
+*.test
+*.test.exe
+# vendor 只用于离线的开发验证，正式交付是单二进制，不入库
+/server/vendor/
