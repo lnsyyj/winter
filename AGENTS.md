@@ -43,6 +43,7 @@ README.md            仓库门面
 docs/                按《软件行业岗位全景图》七条线 / 24 个岗位归档的全部文档
   ├── README.md      文档总览与索引（唯一索引入口）
   └── 岗位映射与变更记录.md   岗位体系变更时的旧→新对照（体系变了必须更新）
+deploy/              平台部署框架：inventory / group_vars / roles / playbooks（ADR-17，规划中，M0 后创建）
 .workbuddy/          工作区元数据 / 会话记忆（不纳入版本控制，不得删除）
 ```
 
@@ -321,6 +322,7 @@ git reflog                            # 兜底：找回误操作前的 HEAD
 | I13 | 新建集群等不可逆步骤标记 `compensable=false`，失败不自动重试，重试不重复创建资源 |
 | I14 | **交付形态是硬指标**：三段式离线交付（有网制包 → 搬运校验 → 现场安装，ADR-14），安装通道为「Nginx 只读内网源 + ansible 触发」（ADR-15），目标环境零外网依赖、不编译；组件数量已不设上限（G6 已放宽，ADR-13），但新增有状态组件必须同步给出离线安装、升级、备份与自监控（对应弊端 B1） |
 | I15 | **镜像唯一来源是自建 Harbor**：节点只 pull，push 仅从制包机 / CI 执行；必须 TLS + `certs.d` 信任 CA，**禁用 `insecure-registry` 与 `--tls-verify=false`**；一律使用只读 robot 凭据（ADR-16） |
+| I16 | **部署编排统一走 `deploy/` 的分阶段 playbook**（ADR-17）：`prechecks` 必须只读、`deploy` 必须幂等（重复执行 `changed=0`）、配置只在 `group_vars` 单点、secrets 只在 `passwords.yml` 且不入库；playbook 内**禁止**写 hostname 判断 |
 
 ---
 
@@ -496,4 +498,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | G6 放宽：由「部署单元尽量少」改为「**交付可控**」，落成 `ADR-13`。B1 从「目标自相矛盾·最核心弊端」降级为「成本转移」；§5.1 风险矩阵、§2 R7/R10、§6 备选 D、§9 第二件事、架构设计 §1.1/§4.1/§4.2、PRD R4、项目计划 M0/RK-1、部署方案 §1 标题、I14 与 §10.4 同步；新增待定项「离线包体积/启动时间上限」 | `2c5c01a` |
 | 2026-11-15 | G4 落地为「离线可搬运」：有网制包 → 搬运校验 → 现场远程安装，落成 `ADR-14`。安装部署手册重构为三段式（v0.2，含 BOM/digest/无跳板机降级/断网重装验收）；同步架构设计 §1.1/§6.1、PRD 部署目标与 FR-10/D6、TC-22、权衡 §1/B1、部署方案、I14 | `aa969cf` |
 | 2026-11-15 | 安装通道定案：**Nginx 只读内网源 + ansible 批量安装**，落成 `ADR-15`。明确两条边界——镜像走不了 yum（registry 或静态 tar，成为 D3 新候选）、明文 HTTP 必须配包与 repodata 双重签名；手册阶段 C 重排为 C1~C10（起源→前置检查→装包→镜像→配置→启动→Agent→初始化→纳管→验收），验收新增源签名与限网段检查；同步架构设计 §6.1、PRD FR-10、TC-22、权衡 D3、I14 | `7a812b0` |
-| 2026-11-15 | D3 关闭：**自建 Harbor，节点统一经仓库拉取**（ansible 下发 CA 与只读 robot 凭据），落成 `ADR-16`；静态 tar 降级为应急路径。新增不变量 I15（镜像唯一来源、禁 insecure-registry）；部署资源 11C/16G/220G → 14C/22G/300G；手册 BOM/C4/验收、TC-25、架构设计 §4.1/§6.1/§6.2/§14、权衡 §8、部署方案同步 | 本次提交 |
+| 2026-11-15 | D3 关闭：**自建 Harbor，节点统一经仓库拉取**（ansible 下发 CA 与只读 robot 凭据），落成 `ADR-16`；静态 tar 降级为应急路径。新增不变量 I15（镜像唯一来源、禁 insecure-registry）；部署资源 11C/16G/220G → 14C/22G/300G；手册 BOM/C4/验收、TC-25、架构设计 §4.1/§6.1/§6.2/§14、权衡 §8、部署方案同步 | `dba8bc5` |
+| 2026-11-15 | 部署框架定案：**Ansible，结构对齐 kolla-ansible，不 fork**，落成 `ADR-17`。阶段 C 由 `deploy/` 分阶段 playbook 驱动（bootstrap-servers / prechecks / pull / deploy / post-deploy / reconfigure / upgrade / destroy）；手册升 v0.3（C1~C8）；新增不变量 I16 与 TC-26（prechecks 只读、deploy 幂等）；目录约定登记 `deploy/` | 本次提交 |
