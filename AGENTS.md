@@ -43,7 +43,7 @@ README.md            仓库门面
 docs/                按《软件行业岗位全景图》七条线 / 24 个岗位归档的全部文档
   ├── README.md      文档总览与索引（唯一索引入口）
   └── 岗位映射与变更记录.md   岗位体系变更时的旧→新对照（体系变了必须更新）
-deploy/              平台部署框架：inventory / group_vars / roles / playbooks（ADR-17；PG HA + Nginx + 内网源已实机跑通）
+deploy/              平台部署框架：inventory / group_vars / roles / playbooks / scripts / artifacts（ADR-17；PG HA、接入层、离线制品源、可观测性栈与 Server 部署）
 server/              管理面 Server（Go + Gin）：internal/{config,db,auth,audit,task,api}，迁移 SQL 随二进制 embed
 .workbuddy/          工作区元数据 / 会话记忆（不纳入版本控制，不得删除）
 ```
@@ -529,3 +529,4 @@ trim_trailing_whitespace = false
 | 2026-11-15 | **撤回分片设计**：项目决定规模问题在部署层解决（部署多套独立实例），架构内不做分片。`ADR-38` 标 **Withdrawn**（保留作参考）；删除图册 §1.1–§1.3（分片逻辑/路由/部署视角）与 TC-42；协议去掉 `shard_id`/`REDIRECT`/`SHARD_MISMATCH`，§8 改为「重连与故障转移」；架构设计 §1/§5.2/§8 与全景 §2.2、部署方案 §7.1 同步为「单套上限 10k，超出则多套实例」 | 本次提交 |
 | 2026-11-15 | `deploy` 阶段落地：新增 `roles/postgresql`（收敛式：复用已有实例、只增库与账号、默认不改参数）与 `roles/nginx`（叠加式：只写 conf.d、不抢 default_server、靠 server_name 分流）+ `playbooks/deploy.yml`。在 CentOS Stream 9 实机跑通（ok=25/failed=0，二次运行 changed=0，既有站点与库未受影响）。修掉 5 个实机才暴露的问题：passwords.yml 不被自动加载、deploy.sh 执行位、pg_isready 不在 PATH、dnf 被 pgdg 源拖死、**group_vars 从未被加载**（+字典整块替换改 combine） | 本次提交 |
 | 2026-11-15 | `server/`（Go + Gin）落地：M0 可运行骨架（配置/双连接池/embed 迁移/JWT/审计两段式/REST）、`ADR-36` 任务表队列（`SKIP LOCKED` + 租约 + 退避 + 死信 + 队列深度）、幂等键与任务模板白名单、表驱动单测与真实 PG 集成测试；修复骨架中 `audit.VerifyChain` 的 `prev` 类型错误与 `Queue.Stats` 的非法 `FILTER`；§1 目录约定登记 `server/`、阶段状态更新；`.gitignore` 排除 Go 构建产物与 vendor；`server/README.md` 记录配置、接口与实机验证结果 | 本次提交 |
+| 2026-11-15 | 离线交付补齐可观测性栈与 Server 部署：新增 `scripts/fetch-artifacts.sh`（有网制包、版本固定 + `SHA256SUMS.txt`），5 个监控组件静态包与 Go 单二进制入库；新增 `roles/observability`（VM/vmalert/VictoriaLogs/Alertmanager/Grafana 数据驱动，端口全在 group_vars）与 `roles/winter-server`（systemd + `mv` 原子替换避 ETXTBSY）；`deploy.yml` 收敛顺序扩展、Nginx 增 `/grafana/` 反代（ADR-09）、`passwords.yml.example`；Grafana 锁 9.5.20、vmalert 二次打包，以规避 GitHub 单文件 100MB 上限；§1 目录约定与 `deploy/README.md` 同步 | 本次提交 |

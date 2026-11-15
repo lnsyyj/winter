@@ -1,0 +1,6 @@
+---
+# 只放与业务配置无关的兜底值。
+# 组件清单、端口、版本一律以 group_vars/all.yml 的 observability 为准（ADR-17 单一配置入口），
+# 这里刻意不定义同名字典，避免「role 默认值被整块替换」的老问题。
+obs_health_retries: 30
+obs_health_delay: 2

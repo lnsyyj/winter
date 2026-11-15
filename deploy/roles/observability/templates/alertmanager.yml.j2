@@ -1,0 +1,25 @@
+# {{ ansible_managed | default('managed by ansible') }}
+# 告警唯一出口（ADR-18）：vmalert → Alertmanager → webhook 回流平台（ADR-33）。
+# M0 阶段 Server 的 HMAC webhook 端点尚未实现，这里先占位；
+# 告警可丢、审计不可丢，端点不可用时不影响任务执行。
+global:
+  resolve_timeout: 5m
+
+route:
+  receiver: winter-webhook
+  group_by: [alertname]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+
+receivers:
+  - name: winter-webhook
+    webhook_configs:
+      - url: http://{{ observability.listen_addr }}:8081/v1/alerts/webhook
+        send_resolved: true
+        max_alerts: 20
+
+inhibit_rules:
+  - source_matchers: [severity="critical"]
+    target_matchers: [severity="warning"]
+    equal: [alertname, cluster]

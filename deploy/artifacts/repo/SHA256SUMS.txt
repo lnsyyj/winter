@@ -1,0 +1,7 @@
+9bed2de058b17e030ed675e877ad2655dfcacae37a8a6f91f8a0dfff4bdeda49  bin/winter-server
+6c7752a903c40c8a749e0b29df9240437e4fbb8228068d0af8807377db32addd  tarball/alertmanager-0.35.0.linux-amd64.tar.gz
+eff6ac621d41711085d0f38fab17d8fa3705f6326c3ff11301a1f5a71fc94edd  tarball/etcd-v3.5.17-linux-amd64.tar.gz
+1127253cf64e7f911c07ff605e8afbaa950bde826d3ef534dae3fcfcbf8d8d39  tarball/grafana-9.5.20.linux-amd64.tar.gz
+739e78c82294520b6079bc8a6ae32a1f9fb95a543092929a53a2fe9ab7383016  tarball/victoria-logs-linux-amd64-v1.54.0.tar.gz
+54409ea381db0316f0bf6f242c718bc498085eb1eb37520b73526e6d86891601  tarball/victoria-metrics-linux-amd64-v1.156.0.tar.gz
+c15b5dfa6e9d54fed88b84047b8d73299244f8d0fccb8a67b5fa455b00c40407  tarball/vmalert-linux-amd64-v1.156.0.tar.gz

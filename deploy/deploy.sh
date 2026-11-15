@@ -14,7 +14,7 @@ usage() {
   prechecks            部署前检查（只读，已实现）
   bootstrap-servers    装基础依赖（未实现）
   pull                 从 Harbor 拉镜像（未实现）
-  deploy               收敛到目标状态（已实现：PostgreSQL + Nginx + 制品源）
+  deploy               收敛到目标状态（制品源 + PostgreSQL + Nginx + 可观测性栈 + Server）
   pg-ha                PostgreSQL 高可用集群（etcd + Patroni + HAProxy）
   post-deploy          初始化（未实现）
   reconfigure          改配置后重跑（未实现）
@@ -24,6 +24,7 @@ usage() {
 示例：
   ./deploy.sh prechecks -i inventory/multinode
   ./deploy.sh prechecks -i inventory/multinode --tags prechecks.time
+  ./deploy.sh deploy --tags observability,server   # 只收敛监控栈与 Server（自动带上制品源）
 EOF
 }
 

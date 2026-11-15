@@ -1,0 +1,222 @@
+---
+# 可观测性栈（ADR-18）：内网源取静态二进制 → 安装 → 配置 → systemd → 健康检查
+#
+# 幂等要点：
+#   1. 解压标记带 tarball 名，换版本自动重新解压，同版本重复跑不解压；
+#   2. 安装二进制前用 cmp 比对，内容不变就不覆盖（不产生 changed）；
+#   3. 只有配置/unit 变更才通过 handler 重启。
+# 所有端口、版本、命令行参数来自 group_vars/all.yml，本文件不硬编码。
+
+- name: 校验 Grafana 管理员口令（不生成默认弱口令）
+  ansible.builtin.assert:
+    that:
+      - vault_grafana_admin_password is defined and vault_grafana_admin_password | length > 0
+    fail_msg: "deploy/passwords.yml 缺少 vault_grafana_admin_password，参见 passwords.yml.example"
+    quiet: true
+  when: observability.components.grafana.enabled | bool
+  tags: [observability]
+
+- name: 计算启用组件
+  ansible.builtin.set_fact:
+    obs_components: "{{ observability.components | dict2items | selectattr('value.enabled', 'equalto', true) | list }}"
+  tags: [observability]
+
+- name: 创建服务账号（非 root）
+  ansible.builtin.user:
+    name: "{{ observability.run_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  tags: [observability]
+
+- name: 创建数据 / 配置 / 规则 / 暂存目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ observability.run_user }}"
+    group: "{{ observability.run_user }}"
+    mode: "0750"
+  loop:
+    - "{{ observability.data_dir }}"
+    - "{{ observability.config_dir }}"
+    - "{{ observability.config_dir }}/rules"
+    - "{{ observability.config_dir }}/grafana/provisioning/datasources"
+    - "{{ observability.data_dir }}/grafana"
+    - "{{ observability.data_dir }}/grafana/log"
+    - /var/tmp/winter-observability
+    - /opt/winter
+  tags: [observability]
+
+- name: 每个组件的解压目录
+  ansible.builtin.file:
+    path: "/var/tmp/winter-observability/{{ item.key }}"
+    state: directory
+    mode: "0755"
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags: [observability]
+
+- name: 从内网源取静态包（ADR-15 安装通道）
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ observability.tarball_subdir }}/{{ item.value.tarball }}"
+    dest: "/var/tmp/winter-observability/{{ item.value.tarball }}"
+    mode: "0644"
+    timeout: 180
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags: [observability]
+
+- name: 解压单文件二进制组件
+  ansible.builtin.unarchive:
+    src: "/var/tmp/winter-observability/{{ item.value.tarball }}"
+    dest: "/var/tmp/winter-observability/{{ item.key }}"
+    remote_src: true
+    creates: "/var/tmp/winter-observability/{{ item.key }}/.unpacked-{{ item.value.tarball }}"
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value.mode | default('binary') == 'binary'
+  tags: [observability]
+
+- name: 标记已解压（标记随 tarball 版本变化）
+  ansible.builtin.copy:
+    content: "{{ item.value.tarball }}\n"
+    dest: "/var/tmp/winter-observability/{{ item.key }}/.unpacked-{{ item.value.tarball }}"
+    mode: "0644"
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value.mode | default('binary') == 'binary'
+  tags: [observability]
+
+- name: 安装单文件二进制（内容不变则不覆盖）
+  ansible.builtin.shell: |
+    set -euo pipefail
+    src=$(find "/var/tmp/winter-observability/{{ item.key }}" -type f -name "{{ item.value.binary }}" -print -quit)
+    test -n "$src"
+    dst="{{ observability.bin_dir }}/{{ item.value.binary }}"
+    if [ ! -x "$dst" ] || ! cmp -s "$src" "$dst"; then
+      install -m 0755 "$src" "$dst"
+      echo installed
+    else
+      echo unchanged
+    fi
+  args:
+    executable: /bin/bash
+  register: obs_install
+  changed_when: "'installed' in obs_install.stdout"
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: item.value.mode | default('binary') == 'binary'
+  tags: [observability]
+
+- name: 安装 Grafana 目录（含前端静态资源，需整目录）
+  ansible.builtin.unarchive:
+    src: "/var/tmp/winter-observability/{{ observability.components.grafana.tarball }}"
+    dest: "{{ observability.components.grafana.install_dir }}"
+    remote_src: true
+    extra_opts: [--strip-components=1]
+    creates: "{{ observability.components.grafana.install_dir }}/bin/grafana"
+  when: observability.components.grafana.enabled | bool
+  tags: [observability, grafana]
+
+- name: 渲染 Alertmanager 配置
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ observability.config_dir }}/alertmanager.yml"
+    owner: "{{ observability.run_user }}"
+    group: "{{ observability.run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart alertmanager
+  tags: [observability]
+
+- name: 渲染 vmalert 规则（M0 占位）
+  ansible.builtin.template:
+    src: rules.yml.j2
+    dest: "{{ observability.config_dir }}/rules/platform.yml"
+    owner: "{{ observability.run_user }}"
+    group: "{{ observability.run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart vmalert
+  tags: [observability]
+
+- name: 渲染 Grafana 配置（含管理员口令，权限 0640）
+  ansible.builtin.template:
+    src: grafana.ini.j2
+    dest: "{{ observability.config_dir }}/grafana.ini"
+    owner: "{{ observability.run_user }}"
+    group: "{{ observability.run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart grafana
+  when: observability.components.grafana.enabled | bool
+  tags: [observability, grafana]
+
+- name: 渲染默认数据源（VictoriaMetrics）
+  ansible.builtin.template:
+    src: datasource.yml.j2
+    dest: "{{ observability.config_dir }}/grafana/provisioning/datasources/victoriametrics.yml"
+    owner: "{{ observability.run_user }}"
+    group: "{{ observability.run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart grafana
+  when: observability.components.grafana.enabled | bool
+  tags: [observability, grafana]
+
+- name: 渲染 systemd unit
+  ansible.builtin.template:
+    src: unit.service.j2
+    dest: "/etc/systemd/system/winter-{{ item.key }}.service"
+    mode: "0644"
+    backup: true
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  vars:
+    comp_key: "{{ item.key }}"
+    comp: "{{ item.value }}"
+  notify: "restart {{ item.key }}"
+  tags: [observability]
+
+- name: 应用配置变更（先重启）
+  ansible.builtin.meta: flush_handlers
+  tags: [observability]
+
+- name: 启动并开机自启
+  ansible.builtin.systemd:
+    name: "winter-{{ item.key }}"
+    state: started
+    enabled: true
+    daemon_reload: true
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags: [observability]
+
+- name: 等待组件健康
+  ansible.builtin.uri:
+    url: "http://{{ observability.listen_addr }}:{{ item.value.port }}{{ item.value.health_path }}"
+    status_code: 200
+    return_content: false
+  register: obs_health
+  until: obs_health.status is defined and obs_health.status == 200
+  retries: "{{ obs_health_retries | int }}"
+  delay: "{{ obs_health_delay | int }}"
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags: [observability]
+
+- name: 输出结论
+  ansible.builtin.debug:
+    msg:
+      - "可观测性栈：{{ obs_components | map(attribute='key') | join(', ') }}"
+      - "全部只监听 {{ observability.listen_addr }}；Grafana 对外入口 https://{{ platform.domain }}/grafana/"
+      - "指标/日志保留 {{ observability.retention_days }} 天；告警链路唯一（vmalert → Alertmanager）"
+  tags: [observability]

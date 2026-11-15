@@ -1,0 +1,15 @@
+# {{ ansible_managed | default('managed by ansible') }}
+# vmalert 的规则目录必须至少有一个合法规则文件，否则进程启动即报错。
+# M0 用一条永不为真的占位规则；接入采集后按 ADR-18 补
+# 「VictoriaLogs 磁盘水位」与 ADR-36 的「队列深度 / 最老任务年龄」告警。
+groups:
+  - name: winter.m0
+    interval: 30s
+    rules:
+      - alert: PlatformSelfCheckPlaceholder
+        expr: vector(1) == 0
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: 占位规则，不会触发

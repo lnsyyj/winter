@@ -1,17 +1,17 @@
 ---
 # deploy · 收敛管理面组件到目标状态（ADR-17 阶段语义）
 #
-# 当前覆盖：PostgreSQL（库与账号）、Nginx（接入层）
-# 未覆盖：Server / RabbitMQ 已取消 / VictoriaMetrics / VictoriaLogs / Grafana / Harbor
+# 当前覆盖：制品源 → PostgreSQL → Nginx 接入层 → 可观测性栈 → Server
+# 未覆盖：Harbor（镜像仓库）、Agent（交付期 ansible 预装，运行期零 SSH）
 #         —— 后续按依赖顺序追加 role，本 play 的 order 就是启动顺序
 #
 # 用法：
-#   ./deploy.sh deploy                       # all-in-one
+#   ./deploy.sh deploy                              # 全量收敛
 #   ./deploy.sh deploy -i inventory/multinode
-#   ./deploy.sh deploy --tags nginx          # 只跑接入层
-#   ./deploy.sh deploy --list-tasks          # 看会做什么
+#   ./deploy.sh deploy --tags observability,server  # 只跑监控栈与 Server（会带上制品源）
+#   ./deploy.sh deploy --list-tasks                 # 看会做什么
 
-- name: 管理面组件收敛（M0：数据库 + 接入层）
+- name: 管理面组件收敛（数据库 + 接入层 + 可观测性 + Server）
   hosts: management
   become: true
   gather_facts: true
@@ -38,13 +38,20 @@
       tags: [always]
 
   roles:
-    # 顺序即依赖：先有制品源（其他角色从它拉包），再有库，最后对外接入
+    # 顺序即依赖：先有制品源（其他角色从它拉包），再有库，再接入层，
+    # 最后起监控栈与 Server。local_repo 带多个 tag，任意子集执行都会先同步制品。
     - role: local_repo
-      tags: [repo]
+      tags: [repo, observability, server]
     - role: postgresql
       tags: [postgresql, db]
     - role: nginx
       tags: [nginx, web]
+    - role: observability
+      tags: [observability, monitoring]
+      when: observability.enabled | bool
+    - role: winter-server
+      tags: [server]
+      when: winter_server.enabled | bool
 
   post_tasks:
     - name: 汇总结果
@@ -52,5 +59,7 @@
         msg:
           - "PostgreSQL：库 {{ postgresql.db_name }} / 角色 {{ postgresql.db_user }}"
           - "Nginx：https://{{ nginx.server_name }}:{{ nginx.https_port }} → {{ nginx.doc_root }}"
-          - "下一步：部署 Server 后把 nginx.api_upstream 指过去"
+          - "API：https://{{ nginx.server_name }}/api/v1/ → {{ nginx.api_upstream }}"
+          - "Grafana：https://{{ nginx.server_name }}/grafana/（经反代，禁止直连 3000）"
+          - "可观测性：VM / vmalert / VictoriaLogs / Alertmanager 只监听 {{ monitoring_listen_addr }}"
       tags: [always]

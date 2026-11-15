@@ -121,3 +121,81 @@ pg_cluster:
     check_interval: 2s
     check_fall: 3
     check_rise: 2
+
+# 可观测性栈（ADR-18 / ADR-33）：默认全装、单节点、全部只监听本机
+# 端口、版本、保留期只允许在这里改；role 内不硬编码端口。
+# Grafana 经 Nginx /grafana/ 反代（ADR-09），不直接暴露 3000。
+monitoring_ports:
+  victoriametrics: 8428
+  vmalert: 8880
+  victorialogs: 9428
+  alertmanager: 9093
+  grafana: 3000
+monitoring_listen_addr: 127.0.0.1
+monitoring_data_dir: /var/lib/winter/monitoring
+monitoring_config_dir: /etc/winter/monitoring
+monitoring_retention_days: 30       # 指标与日志各 30 天；审计在 PG，不进日志系统
+
+observability:
+  enabled: true
+  bin_dir: /usr/local/bin
+  data_dir: "{{ monitoring_data_dir }}"
+  config_dir: "{{ monitoring_config_dir }}"
+  listen_addr: "{{ monitoring_listen_addr }}"
+  run_user: winter-monitor          # 非 root 运行（ADR-19 的同类约束）
+  retention_days: "{{ monitoring_retention_days }}"
+  tarball_subdir: tarball
+  components:
+    victoriametrics:
+      enabled: true
+      tarball: victoria-metrics-linux-amd64-v1.156.0.tar.gz
+      binary: victoria-metrics-prod
+      port: "{{ monitoring_ports.victoriametrics }}"
+      listen_flag: -httpListenAddr
+      health_path: /health
+      args: "-storageDataPath={{ monitoring_data_dir }}/victoriametrics -retentionPeriod={{ monitoring_retention_days }}d"
+    vmalert:
+      enabled: true
+      tarball: vmalert-linux-amd64-v1.156.0.tar.gz
+      binary: vmalert-prod
+      port: "{{ monitoring_ports.vmalert }}"
+      listen_flag: -httpListenAddr
+      health_path: /health
+      # 唯一告警规则链路（ADR-18）：M0 用占位规则，接入采集后替换为磁盘水位/任务积压规则
+      args: "-datasource.url=http://{{ monitoring_listen_addr }}:{{ monitoring_ports.victoriametrics }} -notifier.url=http://{{ monitoring_listen_addr }}:{{ monitoring_ports.alertmanager }} -rule={{ monitoring_config_dir }}/rules/*.yml -evaluationInterval=15s"
+    victorialogs:
+      enabled: true
+      tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz
+      binary: victoria-logs-prod
+      port: "{{ monitoring_ports.victorialogs }}"
+      listen_flag: -httpListenAddr
+      health_path: /health
+      args: "-storageDataPath={{ monitoring_data_dir }}/victorialogs -retentionPeriod={{ monitoring_retention_days }}d"
+    alertmanager:
+      enabled: true
+      tarball: alertmanager-0.35.0.linux-amd64.tar.gz
+      binary: alertmanager
+      port: "{{ monitoring_ports.alertmanager }}"
+      listen_flag: --web.listen-address
+      health_path: /-/healthy
+      args: "--config.file={{ monitoring_config_dir }}/alertmanager.yml --storage.path={{ monitoring_data_dir }}/alertmanager"
+    grafana:
+      enabled: true
+      mode: directory                # 目录式安装（含前端静态资源），不是单文件二进制
+      tarball: grafana-9.5.20.linux-amd64.tar.gz
+      install_dir: /opt/winter/grafana
+      port: "{{ monitoring_ports.grafana }}"
+      health_path: /api/health
+
+# Server（Go 单二进制 + systemd）；口令与密钥只在 passwords.yml，不写在这里
+winter_server:
+  enabled: true
+  bin_dir: /usr/local/bin
+  config_dir: /etc/winter
+  env_file: /etc/winter/server.env
+  listen_addr: 127.0.0.1
+  port: 8081                        # 与 nginx.api_upstream 保持一致
+  app_env: prod
+  admin_user: admin
+  artifact: winter-server
+  bin_subdir: bin

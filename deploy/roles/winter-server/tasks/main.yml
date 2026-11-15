@@ -1,0 +1,113 @@
+---
+# 部署 Server 单二进制 + systemd（ADR-14：现场不编译，只从内网源取制品）
+#
+# 覆盖正在运行的二进制会触发 ETXTBSY，所以用 mv 原子替换 inode，
+# 而不是直接 cp/install 写原文件；只有内容变化才重启。
+
+- name: 校验部署密码齐备（缺一项就明确报错，不生成弱口令）
+  ansible.builtin.assert:
+    that:
+      - vault_pg_password is defined and vault_pg_password | length > 0
+      - vault_jwt_secret is defined and vault_jwt_secret | length >= 32
+      - vault_admin_password is defined and vault_admin_password | length > 0
+    fail_msg: "deploy/passwords.yml 缺少 vault_pg_password / vault_jwt_secret(>=32) / vault_admin_password"
+    quiet: true
+  tags: [server]
+
+- name: 创建服务账号
+  ansible.builtin.user:
+    name: "{{ server_run_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  tags: [server]
+
+- name: 创建配置与暂存目录
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.owner | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ winter_server.config_dir }}", mode: "0750", owner: "{{ server_run_user }}" }
+    - { path: /var/tmp/winter-server, mode: "0755" }
+  tags: [server]
+
+- name: 从内网源取 Server 二进制
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ winter_server.bin_subdir }}/{{ winter_server.artifact }}"
+    dest: "/var/tmp/winter-server/winter-server.new"
+    mode: "0755"
+    timeout: 120
+  tags: [server]
+
+- name: 安装二进制（内容不变则跳过；mv 避开 ETXTBSY）
+  ansible.builtin.shell: |
+    set -euo pipefail
+    src=/var/tmp/winter-server/winter-server.new
+    dst={{ winter_server.bin_dir }}/{{ winter_server.artifact }}
+    if [ -x "$dst" ] && cmp -s "$src" "$dst"; then
+      echo unchanged
+    else
+      mv "$src" "$dst"
+      chmod 0755 "$dst"
+      echo installed
+    fi
+  args:
+    executable: /bin/bash
+  register: server_install
+  changed_when: "'installed' in server_install.stdout"
+  notify: restart winter-server
+  tags: [server]
+
+- name: 渲染环境文件（含口令，0640）
+  ansible.builtin.template:
+    src: server.env.j2
+    dest: "{{ winter_server.env_file }}"
+    owner: "{{ server_run_user }}"
+    group: "{{ server_run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart winter-server
+  tags: [server]
+
+- name: 渲染 systemd unit
+  ansible.builtin.template:
+    src: winter-server.service.j2
+    dest: /etc/systemd/system/winter-server.service
+    mode: "0644"
+    backup: true
+  notify: restart winter-server
+  tags: [server]
+
+- name: 应用变更（先重启）
+  ansible.builtin.meta: flush_handlers
+  tags: [server]
+
+- name: 启动并开机自启
+  ansible.builtin.systemd:
+    name: winter-server
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [server]
+
+- name: 等待 /healthz
+  ansible.builtin.uri:
+    url: "http://{{ winter_server.listen_addr }}:{{ winter_server.port }}/healthz"
+    status_code: 200
+    return_content: false
+  register: server_health
+  until: server_health.status is defined and server_health.status == 200
+  retries: "{{ server_health_retries | int }}"
+  delay: "{{ server_health_delay | int }}"
+  tags: [server]
+
+- name: 输出结论
+  ansible.builtin.debug:
+    msg:
+      - "Server：{{ winter_server.listen_addr }}:{{ winter_server.port }}（systemd: winter-server）"
+      - "Nginx 反代 /api/ → {{ nginx.api_upstream }}；确认两者端口一致"
+      - "迁移与 break-glass 管理员由进程启动时自动完成"
+  tags: [server]

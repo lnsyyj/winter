@@ -1,0 +1,37 @@
+# {{ ansible_managed | default('managed by ansible') }}
+# Winter 可观测性组件：{{ comp_key }}
+# 由 deploy/roles/observability 生成，请勿手改。
+# 端口、命令行参数全部来自 group_vars/all.yml 的 observability.components。
+
+[Unit]
+Description=Winter observability: {{ comp_key }}
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ observability.run_user }}
+Group={{ observability.run_user }}
+{% if comp.mode | default('binary') == 'directory' %}
+WorkingDirectory={{ comp.install_dir }}
+Environment=HOME={{ observability.data_dir }}/grafana
+Environment=GF_SERVER_HTTP_ADDR={{ observability.listen_addr }}
+Environment=GF_SERVER_HTTP_PORT={{ comp.port }}
+Environment=GF_SERVER_ROOT_URL=https://{{ platform.domain }}/grafana/
+Environment=GF_SERVER_SERVE_FROM_SUB_PATH=true
+Environment=GF_PATHS_DATA={{ observability.data_dir }}/grafana
+Environment=GF_PATHS_LOGS={{ observability.data_dir }}/grafana/log
+Environment=GF_PATHS_PROVISIONING={{ observability.config_dir }}/grafana/provisioning
+ExecStart={{ comp.install_dir }}/bin/grafana server --homepath={{ comp.install_dir }} --config={{ observability.config_dir }}/grafana.ini
+{% else %}
+ExecStart={{ observability.bin_dir }}/{{ comp.binary }} {{ comp.args }} {{ comp.listen_flag }}={{ observability.listen_addr }}:{{ comp.port }}
+{% endif %}
+Restart=always
+RestartSec=5s
+LimitNOFILE=65535
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

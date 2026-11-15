@@ -1,0 +1,10 @@
+# {{ ansible_managed | default('managed by ansible') }}
+# 开箱可用：装完就有一个指向本机 VictoriaMetrics 的默认数据源（ADR-18）
+apiVersion: 1
+datasources:
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://{{ observability.listen_addr }}:{{ observability.components.victoriametrics.port }}
+    isDefault: true
+    editable: false

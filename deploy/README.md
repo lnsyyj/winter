@@ -7,12 +7,87 @@
 | 阶段 | 命令 | 状态 |
 | --- | --- | --- |
 | 部署前检查 | `./deploy.sh prechecks -i inventory/multinode` | ✅ **已实现**（只读，交付期用） |
-| 收敛部署 | `./deploy.sh deploy -i inventory/multinode` | ✅ **已实现**（制品源 + PostgreSQL + Nginx） |
+| 收敛部署 | `./deploy.sh deploy -i inventory/multinode` | ✅ **已实现**（制品源 + PostgreSQL + Nginx + 可观测性栈 + Server） |
+| 只收敛监控栈/Server | `./deploy.sh deploy --tags observability,server` | ✅ **已实现**（自动带上制品源） |
 | PG 高可用 | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **已实现**（etcd + Patroni + HAProxy，三节点） |
 | bootstrap-servers | — | ⬜ 未实现 |
 | pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ 未实现 |
 
 未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
+
+## 离线制品源（ADR-14 / ADR-15）
+
+现场三种源都不可靠（实测：PGDG 官方站超时、EPEL 无 PG17/etcd、pip 的文件站超时），因此所有包**随代码入库**，由管理节点的 Nginx 发布，节点从内网拉取。
+
+```
+deploy/artifacts/repo/
+├── rpm/pgdg17/     PG 17 的 4 个 RPM（不含 contrib，见下）
+├── rpm/base/       haproxy、perl-libs 等基础依赖
+├── tarball/        etcd + 可观测性栈 5 个静态包
+├── bin/            winter-server（Go 单二进制，交叉编译产物）
+├── pip/            patroni 及其依赖 wheel
+└── SHA256SUMS.txt  搬运校验清单：cd deploy/artifacts/repo && sha256sum -c SHA256SUMS.txt
+```
+
+| 环节 | 做法 |
+| --- | --- |
+| 有网制包 | `sh deploy/scripts/fetch-artifacts.sh`（可复现；`GHPROXY=` 直连、`GHPROXY=https://ghproxy.net` 走镜像） |
+| 搬运校验 | 制品随 git 搬运，现场用 `sha256sum -c` 逐项核对（ADR-14 第二段） |
+| 发布 | `./deploy.sh deploy --tags repo`：复制到 `/var/lib/winter/www/repo`，Nginx 明文 **8082**，防火墙只放行内网网段 |
+| 拉取 | 角色内 `get_url {{ platform.repo_base_url }}/...`；RPM 用 `dnf --disablerepo='*'` 本地安装，**不刷新任何远端仓库元数据** |
+
+### 可观测性栈制品（版本固定，禁止 latest）
+
+| 组件 | 版本 | 制品 |
+| --- | --- | --- |
+| VictoriaMetrics | v1.156.0 | `victoria-metrics-linux-amd64-v1.156.0.tar.gz` |
+| vmalert | v1.156.0 | `vmalert-linux-amd64-v1.156.0.tar.gz` |
+| VictoriaLogs | v1.54.0 | `victoria-logs-linux-amd64-v1.54.0.tar.gz` |
+| Alertmanager | 0.35.0 | `alertmanager-0.35.0.linux-amd64.tar.gz` |
+| Grafana | 9.5.20 | `grafana-9.5.20.linux-amd64.tar.gz` |
+| Server | `17ba4fb` | `bin/winter-server` |
+
+两个刻意的取舍：
+
+- **vmalert 官方不单独发布**，只随 `vmutils`（约 140MB）提供。制包脚本提取 `vmalert-prod`
+  后二次打包成约 14MB 的包，避免把全量工具包带进仓库。
+- **Grafana 选 9.5.20（83.6MB）**，因为它是最后一个 tar.gz 小于 GitHub 单文件 100MB 上限的
+  稳定版；11.x 起均 >170MB，升级时必须改走分片或搬运介质。
+
+> 实测：本地经 ghproxy 约 18KB/s（不可用），实机直连 GitHub 约 1.7MB/s（15MB/9s）。
+> 制包脚本默认走代理，在能直连的机器上用 `GHPROXY= sh deploy/scripts/fetch-artifacts.sh`。
+
+**已实测**（2026-11-15）：在 `.197`、`.198` 两台**无 PGDG 源的精简系统**上，PG 17 完全从内网源装成（`ok=23 failed=0`），应用账号 `winter` 连接正常。
+
+**两个坑，记下来**：
+
+1. `postgresql17-contrib` 依赖 `libperl` → `perl-libs` → `perl(Carp)/perl(Encode)…` 一整条 perl 链，精简系统上要多拉十几个包。**HA 用不到 contrib，故不纳入**；需要时再补。
+2. `dnf download --resolve` 在**已经装过依赖的机器**上会跳过这些依赖（本次就漏了 `perl-libs`）。做法是最后一次 `rpm -qa` 比对，或用干净容器生成闭包。
+
+## 可观测性栈与 Server（ADR-18 / ADR-09 / ADR-33）
+
+`./deploy.sh deploy` 一次收敛；也可只跑 `--tags observability,server`。
+组件清单、端口、版本、命令行参数全在 `group_vars/all.yml`，role 不硬编码端口。
+
+| 组件 | 端口（默认） | systemd | 健康端点 |
+| --- | --- | --- | --- |
+| VictoriaMetrics | 8428 | `winter-victoriametrics` | `/health` |
+| vmalert | 8880 | `winter-vmalert` | `/health` |
+| VictoriaLogs | 9428 | `winter-victorialogs` | `/health` |
+| Alertmanager | 9093 | `winter-alertmanager` | `/-/healthy` |
+| Grafana | 3000 | `winter-grafana` | `/api/health` |
+| Server | 8081 | `winter-server` | `/healthz` |
+
+- 全部只监听 `127.0.0.1`，以非 root 账号运行；Grafana 对外只经 `https://<domain>/grafana/`
+  反代（ADR-09），开箱即带一个指向本机 VictoriaMetrics 的默认数据源。
+- 告警链路唯一：`vmalert → Alertmanager → webhook`（ADR-18）；M0 用占位规则，
+  Server 的 HMAC webhook 端点待实现，告警可丢不影响任务。
+- 指标/日志保留 30 天；**审计在 PG，不进日志系统**（ADR-06 / ADR-32）。
+- `observability.enabled: false` 或单个组件 `enabled: false` 可裁剪（ADR-18 打包分层）。
+- Server 的 `DATABASE_URL` / `JWT_SECRET` / 管理员口令全部来自 `deploy/passwords.yml`
+  （模板见 `passwords.yml.example`），role 显式 assert，不生成默认弱口令。
+- 覆盖正在运行的二进制会触发 `ETXTBSY`，Server role 用 `mv` 原子替换 inode，
+  内容不变则不重启。
 
 ## PostgreSQL 高可用（etcd + Patroni + HAProxy）
 
@@ -62,34 +137,9 @@ patronictl -c /etc/patroni/patroni.yml failover        # 强制切主
 etcdctl --endpoints=http://127.0.0.1:2379 endpoint health --cluster
 ```
 
-## 离线制品源（ADR-15）
-
-现场三种源都不可靠（实测：PGDG 官方站超时、EPEL 无 PG17/etcd、pip 的文件站超时），因此所有包**随代码入库**，由管理节点的 Nginx 发布，节点从内网拉取。
-
-```
-deploy/artifacts/repo/
-├── rpm/pgdg17/   PG 17 的 4 个 RPM（server / libs / client；不含 contrib，见下）
-├── rpm/base/     haproxy、perl-libs 等基础依赖
-├── tarball/      etcd 官方静态包
-└── pip/          patroni 及其依赖 wheel
-```
-
-| 环节 | 做法 |
-| --- | --- |
-| 发布 | `./deploy.sh deploy --tags repo`（`roles/local_repo`）：把 artifacts 复制到 `/var/lib/winter/www/repo`，Nginx 明文监听 **8082**，防火墙只放行内网网段 |
-| 拉取 | 角色内用 `get_url` 取 `{{ platform.repo_base_url }}/...`，RPM 用 `dnf --disablerepo='*'` 本地安装，**不触发任何远端仓库元数据刷新** |
-| 新增包 | 下载到对应子目录 → 提交 → 重跑 `--tags repo` → 目标机再跑对应角色 |
-
-**已实测**（2026-11-15）：在 `.197`、`.198` 两台**无 PGDG 源的精简系统**上，PG 17 完全从内网源装成（`ok=23 failed=0`），应用账号 `winter` 连接正常。
-
-**两个坑，记下来**：
-
-1. `postgresql17-contrib` 依赖 `libperl` → `perl-libs` → `perl(Carp)/perl(Encode)…` 一整条 perl 链，精简系统上要多拉十几个包。**HA 用不到 contrib，故不纳入**；需要时再补。
-2. `dnf download --resolve` 在**已经装过依赖的机器**上会跳过这些依赖（本次就漏了 `perl-libs`）。做法是最后一次 `rpm -qa` 比对，或用干净容器生成闭包。
-
 ## 实机验证记录（2026-11-15 · CentOS Stream 9）
 
-在 M0 环境跑通 `./deploy.sh deploy`，`ok=25 changed=2 failed=0`；二次运行 `changed=0`（幂等）。
+基础层：`./deploy.sh deploy` 跑通 `ok=25 changed=2 failed=0`；二次运行 `changed=0`（幂等）。
 
 | 验证项 | 结果 |
 | --- | --- |
@@ -115,42 +165,53 @@ deploy/artifacts/repo/
 
 ```
 deploy/
-├── deploy.sh              # 阶段分发（对齐 kolla-ansible 的 CLI 形态）
+├── deploy.sh                  # 阶段分发（对齐 kolla-ansible 的 CLI 形态）
 ├── ansible.cfg
-├── inventory/
-│   ├── all-in-one         # 单机（本机 localhost）
-│   └── multinode          # 分组：management / ceph_nodes / monitor
-├── group_vars/all.yml     # 唯一配置入口（对应 kolla 的 globals.yml）
-├── playbooks/prechecks.yml
-└── roles/prechecks/       # 只读检查，不修改系统
+├── inventory/                 # all-in-one / multinode / pgha
+├── group_vars/all.yml          # 唯一配置入口（对应 kolla 的 globals.yml）
+├── passwords.yml.example      # 敏感值模板；实际 passwords.yml 不入库
+├── scripts/fetch-artifacts.sh # 有网制包（可复现，版本固定）
+├── artifacts/repo/            # 离线制品库（随代码入库）
+├── playbooks/                 # prechecks / deploy / pg-ha
+└── roles/
+    ├── prechecks/             # 只读检查
+    ├── local_repo/            # 发布内网制品源（8082）
+    ├── postgresql/ nginx/     # 库与接入层
+    ├── etcd/ patroni/ haproxy/# PG 高可用
+    ├── observability/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
+    └── winter-server/         # Go 单二进制 + systemd
 ```
 
 ## 快速开始
 
 ```bash
-# 1. 准备：控制机需有 ansible-core（版本见 docs BOM 约定，勿用发行版自带的过旧版本）
+# 1. 控制机需有 ansible-core（版本见 docs BOM 约定）
 ansible-playbook --version
 
-# 2. 按现场改 inventory 与 group_vars/all.yml
-vi inventory/multinode
-vi group_vars/all.yml
+# 2. 按现场改 inventory 与 group_vars/all.yml，并准备 passwords.yml
+cp passwords.yml.example passwords.yml && vi passwords.yml
 
-# 3. 跑检查
+# 3. 只读预检
 ./deploy.sh prechecks -i inventory/multinode
 
-# 4. 只跑某一类检查（排障时用）
-./deploy.sh prechecks -i inventory/multinode --tags prechecks.time
+# 4. 全量收敛（数据库 + 接入层 + 监控栈 + Server）
+./deploy.sh deploy -i inventory/multinode
+
+# 5. 二次运行确认幂等（应 changed=0）
+./deploy.sh deploy -i inventory/multinode
 ```
 
-可用的 tag：`prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`。
+可用的 tag：`repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`，
+以及 `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`。
 
 ## 设计约束（改动前必读）
 
-1. **prechecks 必须只读**：所有 `command` 都要 `changed_when: false`；不得安装包、不得写 sysctl、不得改防火墙。检查本身要是改了系统，排障时就无法信任它。
+1. **prechecks 必须只读**：所有 `command` 都要 `changed_when: false`；不得安装包、不得写 sysctl、不得改防火墙。
 2. **配置只在 `group_vars/all.yml`**：不要在 playbook 或 role 里硬编码 IP、端口、路径。
 3. **不写 hostname 判断**：用 inventory 分组（`management` / `ceph_nodes`），不要 `when: inventory_hostname == ...`。
-4. **失败信息必须可操作**：`fail_msg` 要包含「期望值 / 实际值 / 怎么修」，只写「检查失败」等于没写。
-5. **敏感信息不进仓库**：密码、密钥只放 `passwords.yml`（后续阶段引入，`.gitignore` 已排除）。
+4. **失败信息必须可操作**：`fail_msg` 要包含「期望值 / 实际值 / 怎么修」。
+5. **敏感信息不进仓库**：密码、密钥只放 `passwords.yml`（`.gitignore` 已排除）。
+6. **目标机不编译**：Go 组件一律交叉编译成单二进制进 `artifacts/repo/bin/`（ADR-14）。
 
 ## 与文档的关系
 

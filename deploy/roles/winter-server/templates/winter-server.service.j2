@@ -1,0 +1,20 @@
+# {{ ansible_managed | default('managed by ansible') }}
+[Unit]
+Description=Winter management server (Go + Gin)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=exec
+User={{ server_run_user }}
+Group={{ server_run_user }}
+EnvironmentFile={{ winter_server.env_file }}
+ExecStart={{ winter_server.bin_dir }}/winter-server
+Restart=always
+RestartSec=5s
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target
