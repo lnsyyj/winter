@@ -36,9 +36,11 @@
 | `/clusters/{id}/pools` `/osds` | GET | 资源只读视图 | 200 |
 | `/tasks` | GET | 任务列表（多维筛选） | 200 |
 | `/tasks/{id}` | GET | 详情 + 步骤 + 日志引用 | 200 |
-| `/tasks/{id}/retry` `/cancel` | POST | 从失败步骤重试 / 取消 | 202 |
+| `/tasks/{id}/retry` `/cancel` | POST | **人工重跑**（新建任务，`parent_task_id` 指向本任务）/ 取消（仅在安全点生效） | 202 |
 | `/task-templates` | GET | 可用白名单任务模板（含参数 schema） | 200 |
 | `/tasks` | POST | 提交参数化任务（模板 + 参数 + 目标集群） | 202 |
+| `/auth/login` `/auth/logout` | POST | 登录（local 或 LDAP）/ 登出（撤销当前会话） | 200 / 204 |
+| `/auth/sessions` | GET / DELETE | 查看与撤销会话（管理员可踢单会话或踢该用户全部） | 200 / 204 |
 | `/users` `/roles` `/grants` | CRUD | RBAC + 三级作用域 | 200 / 202 |
 | `/audits` | GET / 导出 | 审计检索与 CSV 导出 | 200 |
 | `/alerts` `/alert-rules` | GET / CRUD | 告警事件与规则 | 200 / 202 |

@@ -268,6 +268,41 @@ Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
 
 ---
 
+### 5.5 认证与会话（含可选 LDAP）
+
+```mermaid
+sequenceDiagram
+    participant U as 浏览器
+    participant N as Nginx
+    participant S as Server
+    participant DB as PostgreSQL
+    participant L as LDAP（可选）
+
+    U->>N: POST /v1/auth/login
+    N->>S: 转发（限流：用户名 + IP，跨 provider 共用计数）
+    S->>DB: 查 users（本地账号？）
+    alt 本地账号命中
+        S->>S: Argon2id 校验
+    else 启用 LDAP
+        S->>L: bind 服务账号 → search → 用用户凭据 re-bind
+        L-->>S: user_dn + 所属组
+        S->>S: role_map 映射角色（未命中 = 无权限）
+        S->>DB: JIT 建用户（idp=ldap, subject=dn）
+    end
+    S->>DB: 写 sessions（只存 Session ID 的 SHA-256）
+    S-->>U: Set-Cookie __Host-sid（HttpOnly/Secure/SameSite=Lax）+ CSRF token
+    U->>N: 后续请求（自动带 Cookie）
+    N->>S: 透传
+    S->>DB: 查 sessions（未撤销且未过期）
+    S->>DB: 节流更新 last_seen_at（>60s 才写）
+    S-->>U: 200
+    Note over S,DB: 登出 / 踢人 / 改角色 → 置 revoked_at，下一个请求即 401
+```
+
+**要点**：Session ID 是不透明随机串，**不用 JWT 装身份**——JWT 无法即时撤销；DB 只存哈希，拖库也不能冒用（[ADR-26](ADR-26-会话存储.md)）。LDAP 不可用不影响本地管理员登录（break-glass，ADR-22）。
+
+---
+
 ## 6. 部署拓扑
 
 ### 6.1 MVP（单机管理面，最小可交付）
@@ -339,7 +374,9 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
 | `task_steps` | id, task_id, seq, name, status, attempt_count, last_error_code, next_retry_at, compensable, log_ref, output_jsonb | DAG 步骤；`compensable=false` 禁止自动补偿 |
 | `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, created_at | 只追加，按月分区 |
-| `users` / `roles` / `grants` | 标准 RBAC + scope(region/az/cluster) | 三级授权 |
+| `users` | id, username, password_hash(Argon2id), idp, subject, external_id, status, last_login_at | 本地账号 + LDAP 用户共存；`(idp, subject)` 唯一（ADR-22） |
+| `sessions` | id, session_hash(uk), user_id, idp, created_at, last_seen_at, expires_at, revoked_at, revoke_reason, client_fp | 只存哈希；撤销即时生效（ADR-26） |
+| `roles` / `grants` | 标准 RBAC + scope(region/az/cluster) | 三级授权 |
 | `alert_rules` / `alert_events` | 规则模板、关联集群、抑制策略 | 告警 |
 
 **不入库**：指标时序数据、原始日志正文（只存 `log_ref`）、Ceph 完整 `ceph -s` 历史快照（只存关键字段 + 对象存储引用）。
@@ -361,7 +398,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 ## 10. 高可用与容错小结
 
-- Server 无状态 → 水平扩展；会话放 JWT/Redis（可选），不依赖本地内存。
+- Server 无状态 → 水平扩展；**会话存 PG**（[ADR-26](ADR-26-会话存储.md)），多副本天然一致，不依赖本地内存与 Redis。
 - PG 主从 + 定期备份 + 恢复演练（DBA 职责）。
 - RabbitMQ durable queue + publisher confirm + manual ack，重启不丢任务；单节点故障期间无法接收新任务（不承诺零丢失，见 ADR-12 §6）。
 - Agent 断线重连、本地缓存结果、任务不丢。
@@ -437,6 +474,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-23](ADR-23-建集群预检执行者.md) | 建集群预检由管理面 Runner 复用 deploy prechecks 执行 | Accepted（2026-11-15） | ADR-23 §2 |
 | [ADR-24](ADR-24-SSH凭据管理.md) | SSH 凭据仅内存态：不落库、不走队列、终态擦除 | Accepted（2026-11-15） | ADR-24 §1 |
 | [ADR-25](ADR-25-任务状态机.md) | 自动重试不动任务号，人工重跑开新单 | Accepted（2026-11-15） | ADR-25 §2 |
+| [ADR-26](ADR-26-会话存储.md) | 会话存 PG 表，不透明 Session ID（非 JWT） | Accepted（2026-11-15） | ADR-26 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
