@@ -509,4 +509,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 落地 `deploy/` 骨架与 prechecks role（ADR-17 首批代码）：`deploy.sh` 阶段分发、inventory 双形态、单一 `group_vars`、只读预检（OS/资源/时间/内核/网络/端口/制品）；`.gitignore` 排除 `passwords.yml`；§1 目录约定与 §4.4 补充 ansible 约定 | `ea0dff0` |
 | 2026-11-15 | **D7 改判**：LDAP 从「V1 预留」改为「MVP 可配置项」，落成 `ADR-22` 并取代 `ADR-21`（原文保留）。新增 TC-28（LDAP 五场景 + 明文拒绝）；安全设计 §3/§8、PRD D7、架构设计 §4.1/§11/§14、权衡 §8、手册 C6、`deploy/group_vars` 的 `platform.auth` 同步 | `4868c4c` |
 | 2026-11-15 | 修正 §5.1 三处矛盾并定「预检执行者」：合并为单 Agent、回写一律经 Server、预检由**管理面 Runner 复用 deploy prechecks** 执行（`ADR-23`）。新增 `tasks.executor`（agent/runner）与互斥规则；架构设计 §3/§5.1/§8/§9/§14、安全设计 §1 信任边界图、TC-29、I3 例外条款同步 | `c6f07c5` |
-| 2026-11-15 | SSH 凭据定案：**内存态一次性、不落库不入队列**（`ADR-24`），解决 ADR-23 遗留项。`credentials` 表明确只存 Ceph 凭据；`hosts` 增 `ssh_host_key_fp`；新增 TC-30；I5 增补；安全设计 §3、架构设计 §8/§11、手册 C7 同步 | 本次提交 |
+| 2026-11-15 | SSH 凭据定案：**内存态一次性、不落库不入队列**（`ADR-24`），解决 ADR-23 遗留项。`credentials` 表明确只存 Ceph 凭据；`hosts` 增 `ssh_host_key_fp`；新增 TC-30；I5 增补；安全设计 §3、架构设计 §8/§11、手册 C7 同步 | `efe40f4` |
+| 2026-11-15 | 任务状态机定案：**自动重试不动任务号、人工重跑开新单**（`ADR-25`）。去掉 `TIMEOUT` 状态（改用 `last_progress_at` 告警），删除 `FAILED→PENDING` 回流；`tasks` 增 `parent_task_id`/`cancel_requested_at`/`last_progress_at`，`task_steps` 改 `attempt_count`/`last_error_code`/`next_retry_at`/`compensable`；新增 TC-31；API 文档状态机同步修正 | 本次提交 |
