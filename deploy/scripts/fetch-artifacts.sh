@@ -87,7 +87,7 @@ else
 fi
 
 # 校验清单：现场搬运后逐项 sha256sum -c（ADR-14 第二段）
-(cd "$REPO" && find bin tarball -type f -print | sort | xargs sha256sum) > "$REPO/SHA256SUMS.txt"
+(cd "$REPO" && find bin tarball pip rpm -type f -print | sort | xargs sha256sum) > "$REPO/SHA256SUMS.txt"
 
 echo "===== 制品清单 ====="
 ls -lh "$TARBALL" "$BIN"

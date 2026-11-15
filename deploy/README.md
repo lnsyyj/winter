@@ -26,7 +26,7 @@ deploy/artifacts/repo/
 ├── tarball/        etcd + 可观测性栈 5 个静态包
 ├── bin/            winter-server（Go 单二进制，交叉编译产物）
 ├── pip/            patroni 及其依赖 wheel
-└── SHA256SUMS.txt  搬运校验清单：cd deploy/artifacts/repo && sha256sum -c SHA256SUMS.txt
+└── SHA256SUMS.txt  全量搬运校验清单（rpm/pip/tarball/bin）：cd deploy/artifacts/repo && sha256sum -c SHA256SUMS.txt
 ```
 
 | 环节 | 做法 |
