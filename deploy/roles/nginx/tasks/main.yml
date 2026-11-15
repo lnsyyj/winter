@@ -7,10 +7,20 @@
 # - 只靠 server_name 分流（本平台域名的请求才进我们这段配置）
 # - reload 而非 restart：不断已有连接
 
-- name: 确保 nginx 已安装
+- name: 检查 nginx 是否已安装
+  ansible.builtin.stat:
+    path: /usr/sbin/nginx
+  register: nginx_bin
+  tags: [nginx]
+
+- name: 安装 nginx（仅缺失时）
+  # 已安装的机器上绝不调用 dnf：现场常有不可达的第三方源（如 pgdg），
+  # 一旦触发元数据刷新就会整体失败，而这里根本不需要装包。
   ansible.builtin.dnf:
     name: nginx
     state: present
+    disablerepo: "pgdg*"
+  when: not nginx_bin.stat.exists
   tags: [nginx]
 
 - name: 创建站点目录
