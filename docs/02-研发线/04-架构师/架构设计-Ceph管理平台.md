@@ -221,7 +221,26 @@ sequenceDiagram
 - **幂等**：每个步骤带 `idempotency_key = cluster_fsid + task_type + normalized_params`，Agent 本地记录最近执行结果，重复投递直接返回上次结果。
 - **互斥**：同一集群同一资源类别的变更任务用 PostgreSQL advisory lock 加集群级互斥，避免并发改 OSD。
 - **超时 / 取消**：每步有超时；取消只作用于 `PENDING/RUNNING` 中尚未提交不可逆动作的步骤，已提交步骤不回滚。
-- **失败处理**：不自动无限重试；非幂等步骤最多人工确认后重试，进入死信队列并告警。
+- **失败处理**：瞬时错误按退避自动重试（1s→5s→30s→2min→10min，最多 5 次），超限进死信并告警；**人工重跑开新任务**（`parent_task_id` 串链），原任务状态不变（[ADR-25](ADR-25-任务状态机.md)）。
+
+**任务状态机**（详见 [ADR-25](ADR-25-任务状态机.md)）：
+
+```mermaid
+stateDiagram-v2
+    [*] --> PENDING
+    PENDING --> RUNNING: Runner / Agent 领取
+    PENDING --> CANCELED: 未开始即取消
+    RUNNING --> SUCCEEDED: 全部步骤成功
+    RUNNING --> FAILED: 步骤确定性失败
+    RUNNING --> DEAD_LETTER: 重试超限
+    RUNNING --> CANCELED: 仅未提交不可逆动作
+    FAILED --> [*]
+    DEAD_LETTER --> [*]
+    SUCCEEDED --> [*]
+    CANCELED --> [*]
+```
+
+**状态机约束**：单向流转，仅允许 `RETRYING → RUNNING` 回流；每次迁移写事件（操作者/时间/原因）；**不加** `PAUSED` / `BLOCKED` / `WAITING_APPROVAL`——「卡住」用 `last_progress_at` + 超时告警表示，不新增状态。
 
 ### 5.3 状态对账（Reconciler）
 
@@ -317,8 +336,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | `clusters` | id, fsid(uk), az_id, name, deploy_mode, ceph_version, capability(managed/limited), health, last_sync_at | 集群主表 |
 | `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；指纹是公钥信息，允许持久化（ADR-24） |
 | `credentials` | id, cluster_id, type, cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 接入凭据，不含 SSH 登录凭据**（ADR-24） |
-| `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), idempotency_key(uk), created_by, started_at, finished_at | 任务主表 |
-| `task_steps` | id, task_id, seq, name, status, log_ref, output_jsonb, retry_count | DAG 步骤 |
+| `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), parent_task_id, cancel_requested_at, last_progress_at, idempotency_key(uk), created_by, started_at, finished_at | 任务主表；`parent_task_id` 只用于人工重跑（ADR-25） |
+| `task_steps` | id, task_id, seq, name, status, attempt_count, last_error_code, next_retry_at, compensable, log_ref, output_jsonb | DAG 步骤；`compensable=false` 禁止自动补偿 |
 | `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, created_at | 只追加，按月分区 |
 | `users` / `roles` / `grants` | 标准 RBAC + scope(region/az/cluster) | 三级授权 |
 | `alert_rules` / `alert_events` | 规则模板、关联集群、抑制策略 | 告警 |
@@ -416,6 +435,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-21](ADR-21-认证源.md) | 认证源：MVP 本地账号，V1 预留 LDAP/OIDC | **Superseded**（→ ADR-22） | ADR-21 §1 |
 | [ADR-22](ADR-22-LDAP接入.md) | 认证源：本地账号 + LDAP 可配置（客户自行对接） | Accepted（2026-11-15） | ADR-22 §2 |
 | [ADR-23](ADR-23-建集群预检执行者.md) | 建集群预检由管理面 Runner 复用 deploy prechecks 执行 | Accepted（2026-11-15） | ADR-23 §2 |
+| [ADR-24](ADR-24-SSH凭据管理.md) | SSH 凭据仅内存态：不落库、不走队列、终态擦除 | Accepted（2026-11-15） | ADR-24 §1 |
+| [ADR-25](ADR-25-任务状态机.md) | 自动重试不动任务号，人工重跑开新单 | Accepted（2026-11-15） | ADR-25 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 

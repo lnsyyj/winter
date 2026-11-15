@@ -50,20 +50,26 @@
 
 ## 3. 任务状态机
 
+以 [ADR-25](../../02-研发线/04-架构师/ADR-25-任务状态机.md) 为准：**自动重试不动任务号，人工重跑开新单**。
+
 ```mermaid
 stateDiagram-v2
   [*] --> PENDING: 任务落库
-  PENDING --> RUNNING: 队列派发成功
-  PENDING --> CANCELED: 用户取消 / 集群锁超时
+  PENDING --> RUNNING: Runner / Agent 领取
+  PENDING --> CANCELED: 未开始即取消
   RUNNING --> SUCCEEDED: 全部步骤成功
-  RUNNING --> FAILED: 步骤失败（进入死信）
-  RUNNING --> TIMEOUT: 步骤超时
-  RUNNING --> CANCELED: 未提交不可逆动作
-  FAILED --> PENDING: 人工确认后从失败步骤重试
-  TIMEOUT --> PENDING: 人工确认后重试
+  RUNNING --> FAILED: 步骤确定性失败
+  RUNNING --> DEAD_LETTER: 重试超限
+  RUNNING --> CANCELED: 仅未提交不可逆动作
+  FAILED --> [*]
+  DEAD_LETTER --> [*]
   SUCCEEDED --> [*]
   CANCELED --> [*]
 ```
+
+步骤级：`PENDING → RUNNING → SUCCEEDED | FAILED | SKIPPED`，其中瞬时错误先进入 `RETRYING`（`attempt_count` 递增），退避到期回到 `RUNNING`。
+
+**与旧版的三处修正**：去掉 `TIMEOUT` 状态（超时用 `last_progress_at` + 告警表示，不新增状态）；删除 `FAILED → PENDING` 回流（人工重跑改开新任务，用 `parent_task_id` 串链）；「集群锁超时」不再等同于取消（那是等待而非取消，记 `last_progress_at`）。
 
 **约束**
 
