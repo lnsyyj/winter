@@ -1,13 +1,33 @@
 #!/usr/bin/env bash
 # 首个主库 bootstrap 完成后执行（只在 leader 上跑一次）
-# 作用：建应用库，并把属主给应用账号
+#
+# 为什么角色也在这里建：Patroni 的 bootstrap.users 与 post_bootstrap 脚本的
+# 执行顺序不保证（实机验证：脚本跑时 users 尚未落库），所以这里用幂等 SQL 兜底，
+# 同时保证 replicator 存在（流复制必需）。
 set -euo pipefail
 
 PGPORT={{ pg_cluster.port }}
 APP_DB="{{ patroni.app_db }}"
 APP_USER="{{ patroni.app_user }}"
+APP_PW='{{ vault_pg_password }}'
+REPL_USER="{{ patroni.repl_user }}"
+REPL_PW='{{ vault_pg_replicator | default(vault_pg_password) }}'
 
-psql -h /tmp -p "$PGPORT" -v ON_ERROR_STOP=1 -tAc "SELECT 1 FROM pg_database WHERE datname='$APP_DB'" \
-  | grep -q 1 || psql -h /tmp -p "$PGPORT" -v ON_ERROR_STOP=1 -c "CREATE DATABASE \"$APP_DB\" OWNER \"$APP_USER\""
+py() { psql -h /tmp -p "$PGPORT" -v ON_ERROR_STOP=1 "$@"; }
 
-echo "post_bootstrap: database $APP_DB ready"
+if ! py -tAc "SELECT 1 FROM pg_roles WHERE rolname='$APP_USER'" | grep -q 1; then
+  py -c "CREATE ROLE \"$APP_USER\" LOGIN CREATEDB PASSWORD '$APP_PW'"
+  echo "post_bootstrap: role $APP_USER created"
+fi
+
+if ! py -tAc "SELECT 1 FROM pg_roles WHERE rolname='$REPL_USER'" | grep -q 1; then
+  py -c "CREATE ROLE \"$REPL_USER\" LOGIN REPLICATION PASSWORD '$REPL_PW'"
+  echo "post_bootstrap: role $REPL_USER created"
+fi
+
+if ! py -tAc "SELECT 1 FROM pg_database WHERE datname='$APP_DB'" | grep -q 1; then
+  py -c "CREATE DATABASE \"$APP_DB\" OWNER \"$APP_USER\""
+  echo "post_bootstrap: database $APP_DB created"
+fi
+
+echo "post_bootstrap: done"
