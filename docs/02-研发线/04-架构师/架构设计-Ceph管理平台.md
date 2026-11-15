@@ -474,7 +474,7 @@ Server 多副本 + PG 主从（**任务队列随 PG 一起 HA**，无需额外�
 | 通道 | 协议 | 用途 |
 | --- | --- | --- |
 | Web ↔ Server | HTTPS REST + WebSocket | 页面数据、任务进度推送 |
-| Server ↔ Agent | mTLS + gRPC 双向流 / HTTPS 长轮询 | 注册、心跳、任务派发、日志与状态回报 |
+| Server ↔ Agent | **mTLS + gRPC 双向流**（不提供长轮询降级） | 握手、心跳、任务派发、结果回报、分片迁移；详见 [Agent-Server 通信协议](../03-开发工程师/Agent-Server通信协议.md) |
 | Agent ↔ Ceph | 本地进程调用（cephadm / ceph CLI / podman） | 全部集群读写，**Server 不参与**（ADR-35） |
 | 监控采集 | Prometheus remote_write / scrape | 指标 |
 | 告警 | Alertmanager Webhook → Server | 告警入库与关联 |
