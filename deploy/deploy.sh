@@ -14,7 +14,7 @@ usage() {
   prechecks            部署前检查（只读，已实现）
   bootstrap-servers    装基础依赖（未实现）
   pull                 从 Harbor 拉镜像（未实现）
-  deploy               收敛到目标状态（未实现）
+  deploy               收敛到目标状态（已实现：PostgreSQL + Nginx）
   post-deploy          初始化（未实现）
   reconfigure          改配置后重跑（未实现）
   upgrade              版本升级（未实现）
@@ -43,7 +43,10 @@ case "$STAGE" in
     prechecks)
         PLAYBOOK="$ROOT/playbooks/prechecks.yml"
         ;;
-    bootstrap-servers|pull|deploy|post-deploy|reconfigure|upgrade|destroy)
+    deploy)
+        PLAYBOOK="$ROOT/playbooks/deploy.yml"
+        ;;
+    bootstrap-servers|pull|post-deploy|reconfigure|upgrade|destroy)
         echo "阶段 '$STAGE' 尚未实现（规划见 docs/02-研发线/04-架构师/ADR-17-部署框架.md）。" >&2
         echo "当前可用：prechecks。手工操作临时参考安装部署手册阶段 C。" >&2
         exit 2

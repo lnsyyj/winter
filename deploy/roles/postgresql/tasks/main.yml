@@ -1,0 +1,143 @@
+---
+# PostgreSQL：收敛到「可用 + 有本平台的库与账号」
+#
+# 顺序：探测已有实例 → 没有才安装 → 确认服务 → 建库建号 → 可选调参 → 验证
+# 约束：
+# - 不删任何已有库/角色
+# - 默认不改内存参数（改参数要重启，会影响同机其他业务）
+# - 密码只从 vault_pg_password 读，绝不写进 group_vars
+
+- name: 校验密码已提供
+  ansible.builtin.assert:
+    that:
+      - vault_pg_password is defined
+      - vault_pg_password | length >= 12
+    fail_msg: "缺少 vault_pg_password（≥12 位）。请在 deploy/passwords.yml 中定义，该文件不入库。"
+    quiet: true
+  tags: [postgresql]
+
+- name: 探测已在运行的 PostgreSQL
+  ansible.builtin.shell: |
+    set -o pipefail
+    systemctl list-units --type=service --state=running --no-legend 'postgresql-*.service' \
+      | awk '{print $1}' | sed -E 's/^postgresql-([0-9]+)\.service$/\1/' | head -1
+  args:
+    executable: /bin/bash
+  register: pg_running
+  changed_when: false
+  failed_when: false
+  tags: [postgresql]
+
+- name: 记录探测结果
+  ansible.builtin.set_fact:
+    pg_major: >-
+      {{ postgresql.major
+         if postgresql.major | length > 0
+         else (pg_running.stdout | trim) }}
+  tags: [postgresql]
+
+- name: 未发现运行实例 → 安装（仅此分支会装包）
+  ansible.builtin.include_tasks: install.yml
+  when: pg_major | length == 0
+  tags: [postgresql]
+
+- name: 探测数据目录
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -tAc "show data_directory"
+  args:
+    executable: /bin/bash
+  register: pg_datadir_query
+  changed_when: false
+  failed_when: false
+  when: pg_major | length > 0
+  tags: [postgresql]
+
+- name: 确定数据目录与服务名
+  ansible.builtin.set_fact:
+    pg_datadir: "{{ postgresql.data_dir if postgresql.data_dir | length > 0 else (pg_datadir_query.stdout | trim | default('/var/lib/pgsql/' ~ pg_major ~ '/data', true)) }}"
+    pg_service: "{{ postgresql.service_name if postgresql.service_name | length > 0 else 'postgresql-' ~ pg_major }}"
+  tags: [postgresql]
+
+- name: 确保服务已启用并运行
+  ansible.builtin.systemd:
+    name: "{{ pg_service }}"
+    state: started
+    enabled: true
+  tags: [postgresql]
+
+- name: 等待实例可接受连接
+  ansible.builtin.shell: |
+    set -o pipefail
+    for i in $(seq 1 20); do
+      sudo -u postgres pg_isready -q && exit 0
+      sleep 1
+    done
+    echo "postgres 未就绪" >&2; exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false
+  tags: [postgresql]
+
+- name: 创建应用角色（不存在时）
+  ansible.builtin.shell: |
+    set -o pipefail
+    exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ postgresql.db_user }}'")
+    if [ "$exists" != "1" ]; then
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+        "CREATE ROLE {{ postgresql.db_user }} LOGIN PASSWORD '{{ vault_pg_password }}'"
+      echo created
+    elif [ "{{ postgresql.force_password | bool }}" = "True" ]; then
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+        "ALTER ROLE {{ postgresql.db_user }} WITH LOGIN PASSWORD '{{ vault_pg_password }}'"
+      echo rotated
+    else
+      echo exists
+    fi
+  args:
+    executable: /bin/bash
+  register: pg_role_result
+  changed_when: pg_role_result.stdout is search('created|rotated')
+  no_log: true
+  tags: [postgresql]
+
+- name: 创建应用数据库（不存在时，属主为应用角色）
+  ansible.builtin.shell: |
+    set -o pipefail
+    exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ postgresql.db_name }}'")
+    if [ "$exists" != "1" ]; then
+      sudo -u postgres createdb -O {{ postgresql.db_user }} -E UTF8 {{ postgresql.db_name }}
+      echo created
+    else
+      echo exists
+    fi
+  args:
+    executable: /bin/bash
+  register: pg_db_result
+  changed_when: "'created' in pg_db_result.stdout"
+  tags: [postgresql]
+
+- name: 数据库与角色清单（验证用）
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -tAc "SELECT 'db='||count(*) FROM pg_database WHERE datname='{{ postgresql.db_name }}'"
+    sudo -u postgres psql -tAc "SELECT 'role='||count(*) FROM pg_roles WHERE rolname='{{ postgresql.db_user }}'"
+  args:
+    executable: /bin/bash
+  register: pg_verify
+  changed_when: false
+  failed_when: not (pg_verify.stdout is search('db=1') and pg_verify.stdout is search('role=1'))
+  tags: [postgresql]
+
+- name: 参数调整（默认关闭：需要重启实例）
+  ansible.builtin.include_tasks: tune.yml
+  when: postgresql.tune | bool
+  tags: [postgresql, postgresql-tune]
+
+- name: 输出结论
+  ansible.builtin.debug:
+    msg:
+      - "PostgreSQL {{ pg_major }} 运行中，数据目录 {{ pg_datadir }}"
+      - "库 {{ postgresql.db_name }} / 角色 {{ postgresql.db_user }} 就绪"
+      - "监听 {{ postgresql.listen_addresses }}:{{ postgresql.port }}（默认值，本次未改动）"
+  tags: [postgresql]

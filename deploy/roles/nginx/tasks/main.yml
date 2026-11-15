@@ -1,0 +1,100 @@
+---
+# Nginx：把本平台的站点「叠加」到现有 Nginx 上
+#
+# 约束（重要）：
+# - 不修改 /etc/nginx/nginx.conf，也不动 conf.d 下别人的文件
+# - 不声明 default_server：同一端口的默认虚拟主机仍归已有站点
+# - 只靠 server_name 分流（本平台域名的请求才进我们这段配置）
+# - reload 而非 restart：不断已有连接
+
+- name: 确保 nginx 已安装
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+  tags: [nginx]
+
+- name: 创建站点目录
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ nginx.doc_root }}"
+    - "{{ nginx.tls_dir }}"
+  tags: [nginx]
+
+- name: 生成自签证书（仅首次，已有则不动）
+  ansible.builtin.shell: |
+    set -o pipefail
+    openssl req -x509 -nodes -newkey rsa:2048 -days {{ nginx.tls_days }} \
+      -subj "/CN={{ nginx.server_name }}" \
+      -addext "subjectAltName=DNS:{{ nginx.server_name }}" \
+      -keyout {{ nginx.tls_dir }}/server.key \
+      -out {{ nginx.tls_dir }}/server.crt
+  args:
+    executable: /bin/bash
+    creates: "{{ nginx.tls_dir }}/server.crt"
+  tags: [nginx]
+
+- name: 证书私钥权限
+  ansible.builtin.file:
+    path: "{{ nginx.tls_dir }}/server.key"
+    mode: "0600"
+  tags: [nginx]
+
+- name: 落地占位首页（Server 未上线前可访问）
+  ansible.builtin.copy:
+    dest: "{{ nginx.doc_root }}/index.html"
+    mode: "0644"
+    content: |
+      <!doctype html>
+      <meta charset="utf-8">
+      <title>winter</title>
+      <h1>winter 平台</h1>
+      <p>接入层已就绪；管理面 API 尚未部署。</p>
+      <p>健康检查：<code>/healthz</code></p>
+  tags: [nginx]
+
+- name: 落地站点配置
+  ansible.builtin.template:
+    src: winter.conf.j2
+    dest: "{{ nginx.conf_path }}"
+    mode: "0644"
+    validate: "nginx -t -c /etc/nginx/nginx.conf"
+  notify: reload nginx
+  tags: [nginx]
+
+- name: 校验整体配置
+  ansible.builtin.command:
+    cmd: nginx -t
+  register: nginx_test
+  changed_when: false
+  failed_when: nginx_test.rc != 0
+  tags: [nginx]
+
+- name: 立即应用变更（不让 handler 拖到 play 末尾）
+  ansible.builtin.meta: flush_handlers
+  tags: [nginx]
+
+- name: 验证健康检查端点
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -ksS --max-time 5 -H "Host: {{ nginx.server_name }}" \
+      "https://127.0.0.1:{{ nginx.https_port }}/healthz"
+  args:
+    executable: /bin/bash
+  register: nginx_health
+  changed_when: false
+  retries: 3
+  delay: 2
+  until: nginx_health.rc == 0
+  failed_when: nginx_health.rc != 0 or 'ok' not in nginx_health.stdout
+  tags: [nginx]
+
+- name: 输出结论
+  ansible.builtin.debug:
+    msg:
+      - "站点 https://{{ nginx.server_name }}:{{ nginx.https_port }} → {{ nginx.doc_root }}"
+      - "API 反代 /api/ → {{ nginx.api_upstream }}（Server 未上线前会 502，属预期）"
+      - "healthz 返回：{{ nginx_health.stdout | trim }}"
+  tags: [nginx]

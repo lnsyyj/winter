@@ -1,0 +1,66 @@
+# {{ ansible_managed | default('managed by ansible') }}
+#
+# 本文件由 deploy/roles/nginx 生成，请勿手改。
+# 设计约束：不改 nginx.conf、不声明 default_server —— 同端口已有站点不受影响。
+
+server {
+    listen      {{ nginx.http_port }};
+    listen      [::]:{{ nginx.http_port }};
+    server_name {{ nginx.server_name }};
+
+    # 统一跳到 HTTPS
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen      {{ nginx.https_port }} ssl;
+    listen      [::]:{{ nginx.https_port }} ssl;
+    server_name {{ nginx.server_name }};
+
+    ssl_certificate     {{ nginx.tls_dir }}/server.crt;
+    ssl_certificate_key {{ nginx.tls_dir }}/server.key;
+    ssl_protocols       TLSv1.2 TLSv1.3;
+    ssl_ciphers         HIGH:!aNULL:!MD5;
+    ssl_session_cache   shared:winter_tls:10m;
+    ssl_session_timeout 10m;
+
+    # 鉴权信息不进中间层缓存
+    add_header Cache-Control "no-store" always;
+    add_header X-Content-Type-Options "nosniff" always;
+    add_header X-Frame-Options "SAMEORIGIN" always;
+
+    root  {{ nginx.doc_root }};
+    index index.html;
+
+    # 健康检查：不写访问日志，避免刷屏
+    location = /healthz {
+        access_log off;
+        add_header Content-Type text/plain always;
+        return 200 "ok\n";
+    }
+
+    # 管理面 API（Server 上线后生效；未上线时为 502，属预期）
+    location /api/ {
+        proxy_pass         {{ nginx.api_upstream }}/;
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_read_timeout 300s;
+    }
+
+    # WebSocket（任务进度推送）
+    location /ws {
+        proxy_pass         {{ nginx.api_upstream }};
+        proxy_http_version 1.1;
+        proxy_set_header   Upgrade    $http_upgrade;
+        proxy_set_header   Connection "upgrade";
+        proxy_set_header   Host       $host;
+        proxy_read_timeout 3600s;
+    }
+
+    location / {
+        try_files $uri $uri/ /index.html;
+    }
+}

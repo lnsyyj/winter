@@ -76,3 +76,26 @@ prechecks:
     - 443
   # 阶段 C1 起完内网源后置 true，才检查源与 Harbor 可达
   check_artifacts: false
+
+# 数据库（role 默认值在 roles/postgresql/defaults；这里放与部署环境相关的）
+# 密码不在此文件：见 deploy/passwords.yml 的 vault_pg_password（已 gitignore）
+postgresql:
+  # 已在运行的实例优先（留空 = 自动探测）。全新机器会自动装 PGDG 的 17
+  major: ""
+  db_name: winter
+  db_user: winter
+  # 默认不动现有实例的参数：调参需要重启，同机有别的业务时会被打断
+  tune: false
+  # tune=true 时才生效（3GB 单机 + 同机 ceph 的经验值）
+  shared_buffers: 256MB
+  effective_cache_size: 1GB
+  work_mem: 4MB
+  maintenance_work_mem: 64MB
+  max_connections: 100
+
+# 接入层（叠加式：不改 nginx.conf、不抢 default_server）
+nginx:
+  server_name: "{{ platform.domain }}"
+  # 8080 可能被同机其他服务占用（本机是 argus），平台 API 默认走 8081
+  api_upstream: "http://127.0.0.1:8081"
+  tls_days: 825

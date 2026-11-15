@@ -1,0 +1,42 @@
+---
+# deploy · 收敛管理面组件到目标状态（ADR-17 阶段语义）
+#
+# 当前覆盖：PostgreSQL（库与账号）、Nginx（接入层）
+# 未覆盖：Server / RabbitMQ 已取消 / VictoriaMetrics / VictoriaLogs / Grafana / Harbor
+#         —— 后续按依赖顺序追加 role，本 play 的 order 就是启动顺序
+#
+# 用法：
+#   ./deploy.sh deploy                       # all-in-one
+#   ./deploy.sh deploy -i inventory/multinode
+#   ./deploy.sh deploy --tags nginx          # 只跑接入层
+#   ./deploy.sh deploy --list-tasks          # 看会做什么
+
+- name: 管理面组件收敛（M0：数据库 + 接入层）
+  hosts: management
+  become: true
+  gather_facts: true
+
+  pre_tasks:
+    - name: 确认这是受支持的发行版
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == "RedHat"
+        fail_msg: "当前只支持 RHEL 系（CentOS Stream 9 / RHEL 9）；实际：{{ ansible_facts.distribution }}"
+        quiet: true
+      tags: [always]
+
+  roles:
+    # 顺序即依赖：先有库，再有对外接入
+    - role: postgresql
+      tags: [postgresql, db]
+    - role: nginx
+      tags: [nginx, web]
+
+  post_tasks:
+    - name: 汇总结果
+      ansible.builtin.debug:
+        msg:
+          - "PostgreSQL：库 {{ postgresql.db_name }} / 角色 {{ postgresql.db_user }}"
+          - "Nginx：https://{{ nginx.server_name }}:{{ nginx.https_port }} → {{ nginx.doc_root }}"
+          - "下一步：部署 Server 后把 nginx.api_upstream 指过去"
+      tags: [always]

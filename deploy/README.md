@@ -7,8 +7,9 @@
 | 阶段 | 命令 | 状态 |
 | --- | --- | --- |
 | 部署前检查 | `./deploy.sh prechecks -i inventory/multinode` | ✅ **已实现**（只读，交付期用） |
+| 收敛部署 | `./deploy.sh deploy -i inventory/multinode` | ✅ **已实现**（PostgreSQL + Nginx；其余待补） |
 | bootstrap-servers | — | ⬜ 未实现 |
-| pull / deploy / post-deploy / reconfigure / upgrade / destroy | — | ⬜ 未实现 |
+| pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ 未实现 |
 
 未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
 

@@ -1,0 +1,51 @@
+---
+# 可选：内存与连接参数调整（需要重启实例）
+# 只有 postgresql.tune=true 时才执行；同机跑着别的业务时不要开
+
+- name: 记录调整前的参数
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -tAc "select name||'='||setting from pg_settings where name in ('shared_buffers','work_mem','max_connections') order by 1"
+  args:
+    executable: /bin/bash
+  register: pg_before
+  changed_when: false
+  tags: [postgresql-tune]
+
+- name: 逐项 ALTER SYSTEM
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET {{ item.key }} = '{{ item.value }}'"
+  loop:
+    - { key: shared_buffers, value: "{{ postgresql.shared_buffers }}" }
+    - { key: effective_cache_size, value: "{{ postgresql.effective_cache_size }}" }
+    - { key: work_mem, value: "{{ postgresql.work_mem }}" }
+    - { key: maintenance_work_mem, value: "{{ postgresql.maintenance_work_mem }}" }
+    - { key: max_connections, value: "{{ postgresql.max_connections }}" }
+    - { key: listen_addresses, value: "{{ postgresql.listen_addresses }}" }
+    - { key: port, value: "{{ postgresql.port }}" }
+  loop_control:
+    label: "{{ item.key }}"
+  notify: restart postgresql
+  tags: [postgresql-tune]
+
+- name: 调整后重启并回读
+  ansible.builtin.meta: flush_handlers
+  tags: [postgresql-tune]
+
+- name: 回读关键参数
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -tAc "select name||'='||setting from pg_settings where name in ('shared_buffers','work_mem','max_connections') order by 1"
+  args:
+    executable: /bin/bash
+  register: pg_after
+  changed_when: false
+  tags: [postgresql-tune]
+
+- name: 参数对比
+  ansible.builtin.debug:
+    msg:
+      - "调整前：{{ pg_before.stdout_lines | join(' ') }}"
+      - "调整后：{{ pg_after.stdout_lines | join(' ') }}"
+  tags: [postgresql-tune]

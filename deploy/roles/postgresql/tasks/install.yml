@@ -1,0 +1,57 @@
+---
+# 仅当机器上没有任何 PostgreSQL 实例时进入本文件（全新安装路径）
+# 已有实例的机器走 main.yml 的「收敛」路径，不会执行到这里
+
+- name: 判断 PGDG 源是否可用
+  ansible.builtin.stat:
+    path: /etc/yum.repos.d/pgdg-redhat-all.repo
+  register: pgdg_repo
+  tags: [postgresql]
+
+- name: 选择安装包名
+  ansible.builtin.set_fact:
+    pg_pkgs: >-
+      {{ ['postgresql17-server', 'postgresql17-contrib']
+         if pgdg_repo.stat.exists
+         else ['postgresql-server', 'postgresql-contrib'] }}
+  tags: [postgresql]
+
+- name: 安装 PostgreSQL
+  ansible.builtin.dnf:
+    name: "{{ pg_pkgs }}"
+    state: present
+  tags: [postgresql]
+
+- name: 确保未启用 EL 模块流冲突（PGDG 与内置 module 只能选一个）
+  ansible.builtin.command:
+    cmd: dnf -qy module disable postgresql
+  register: pg_module_disable
+  changed_when: "'Nothing to do' not in pg_module_disable.stdout"
+  failed_when: false
+  when: pgdg_repo.stat.exists
+  tags: [postgresql]
+
+- name: 探测新装实例的主版本
+  ansible.builtin.shell: |
+    set -o pipefail
+    rpm -q --qf '%{VERSION}\n' postgresql*-server 2>/dev/null | head -1 | cut -d. -f1
+  args:
+    executable: /bin/bash
+  register: pg_new_major
+  changed_when: false
+  tags: [postgresql]
+
+- name: 记录主版本
+  ansible.builtin.set_fact:
+    pg_major: "{{ pg_new_major.stdout | trim }}"
+  tags: [postgresql]
+
+- name: 初始化数据目录（仅首次）
+  ansible.builtin.shell: |
+    set -o pipefail
+    /usr/pgsql-{{ pg_major }}/bin/initdb -D /var/lib/pgsql/{{ pg_major }}/data --encoding=UTF8 --locale=C.UTF-8
+  args:
+    executable: /bin/bash
+    creates: /var/lib/pgsql/{{ pg_major }}/data/PG_VERSION
+  become_user: postgres
+  tags: [postgresql]

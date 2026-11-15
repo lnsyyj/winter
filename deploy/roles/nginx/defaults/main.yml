@@ -1,0 +1,21 @@
+---
+# Nginx role 默认值
+# 原则：叠加式接入。不改别人的 server block、不抢 default_server。
+nginx:
+  # 对外域名（与证书 CN 一致）；默认取平台域名
+  server_name: "{{ platform.domain }}"
+
+  http_port: 80
+  https_port: "{{ platform.https_port }}"
+
+  # 独立目录，避免与已有站点（如 argus）的 /var/www 混用
+  doc_root: "{{ platform.data_dir }}/www"
+  tls_dir: "{{ platform.data_dir }}/tls"
+  conf_path: /etc/nginx/conf.d/winter.conf
+
+  # 后端 API（本平台 Server）。
+  # 注意：8080 可能已被同机其他服务占用，默认用 8081，部署 Server 时保持一致。
+  api_upstream: "http://127.0.0.1:8081"
+
+  # 自签证书有效期（天）
+  tls_days: 825
