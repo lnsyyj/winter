@@ -7,6 +7,12 @@
 #
 # 只在「机器上没有任何 PostgreSQL 实例」时进入本文件。
 
+- name: 清理上次遗留的暂存包（避免旧包被一并安装）
+  ansible.builtin.file:
+    path: "{{ postgresql.rpm_stage_dir }}"
+    state: absent
+  tags: [postgresql]
+
 - name: 暂存目录
   ansible.builtin.file:
     path: "{{ postgresql.rpm_stage_dir }}"

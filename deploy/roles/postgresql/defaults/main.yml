@@ -37,15 +37,15 @@ postgresql_defaults:
 
   # 离线安装：从内网源（roles/local_repo）取以下 RPM，版本固定，避免现场漂移
   rpm_subdir: rpm/pgdg17
+  # 不含 contrib：contrib 依赖 libperl → perl-libs → 一整条 perl 包链，
+  # 而高可用部署用不到 contrib 的扩展（pg_stat_statements 等）。需要时单独加。
   rpm_packages:
     - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
-    - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
-  # 额外依赖（目标机可能缺，已一并入库到 rpm/base）
+  # 额外依赖（目标机可能缺）。当前为空：去掉 contrib 后无 perl 依赖
   rpm_deps_subdir: rpm/base
-  rpm_deps:
-    - perl-libs-5.32.1-484.el9.x86_64.rpm
+  rpm_deps: []
   # 本地暂存目录
   rpm_stage_dir: /var/tmp/winter-pg17
 
