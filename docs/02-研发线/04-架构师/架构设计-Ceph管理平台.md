@@ -33,7 +33,7 @@
 - 操作系统基线：CentOS Stream 9；容器运行时：podman；Ceph 编排：cephadm；**平台部署编排：Ansible（结构对齐 kolla-ansible，[ADR-17](ADR-17-部署框架.md)）**。
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
 - 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，消息队列见 [ADR-12](ADR-12-消息队列选型.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)。
-- 未定项：日志系统、认证源（PRD §11.1 的 D4/D7）。
+- 未定项：认证源（PRD §11.1 的 D7）；其余组件选型均已确认，见 ADR-11~ADR-20。
 - 假设规模：20 集群 / 500 节点（PRD §2.1）。
 
 ---
@@ -124,7 +124,7 @@ graph TB
 | cephadm | Ceph 官方 | 集群 bootstrap、服务编排、OSD 部署、升级 | 不作为常驻中心服务 |
 | 镜像仓库 | Harbor / registry | Ceph 镜像、Agent 镜像、离线制品 | 不承担业务制品 |
 | VictoriaMetrics | VM + vmalert | 指标存储、PromQL 查询、告警规则求值 | 不做业务数据存储 |
-| 日志系统 | Loki / VictoriaLogs | 任务日志、Agent 日志、访问日志 | 不替代审计日志 |
+| 日志 | VictoriaLogs | 任务日志、Agent 日志、访问日志 | 不替代审计日志 |
 | Grafana | 官方镜像 | 面板展示（经反代鉴权） | 不作为权限判定点 |
 | Nginx | 反代 | TLS 终止、静态资源、Grafana 代理、限流 | 不含业务逻辑 |
 
@@ -143,10 +143,10 @@ graph TB
 | 关系库 | PostgreSQL | ✅ 已确认（主版本待 DBA） | 图中既定；JSONB 适合存任务参数与 Ceph 原始状态；advisory lock 可做集群级互斥 | MySQL | 需自己做分区与审计表冷热分离 |
 | 消息队列 | **RabbitMQ** | ✅ 已确认（ADR-12） | 团队已有运维经验、语义完备（confirm/ack/DLX/TTL）、管理 UI 与 exporter 成熟 | NATS JetStream（更轻但团队不熟）、Kafka（过重，不选）、Redis Stream（持久化/确认语义不足，不选） | Erlang 运行时与 flow control 排障；内存基线比 JetStream 高 |
 | 镜像仓库 | **Harbor（自建在管理面）** | ✅ 已确认（ADR-16） | 镜像 GC、漏洞扫描、robot 只读凭据、配额；作为镜像唯一来源，供应链可追溯 | registry:2（无 GC/扫描）、对接客户现有仓库 | 单点；磁盘随版本增长需 GC；Trivy 漏洞库需离线更新 |
-| 指标 | VictoriaMetrics + vmalert | 待决策 **D5** | 资源省、兼容 Prometheus remote_write / PromQL 主体 | Prometheus + Thanos | 与 Prometheus 规则生态存在边界差异 |
-| 告警 | vmalert + Alertmanager | 待决策 **D5** | 复用 Prometheus 生态规则与通知渠道 | Grafana Alerting | 两套告警规则源需统一 |
-| 日志 | VictoriaLogs（推荐）/ Loki | 待决策 **D4** | 与 VM 同栈、资源轻 | ELK（重） | 生态与查询语法差异 |
-| 可视化 | Grafana（反代鉴权） | 待决策 **D5** | 面板生态成熟 | 自研图表 | 越权与多租户隔离 |
+| 指标 | VictoriaMetrics + vmalert | ✅ 已确认（ADR-18） | 资源省、兼容 Prometheus remote_write / PromQL 主体；与日志同栈 | Prometheus + Thanos | 与 Prometheus 规则生态存在边界差异 |
+| 告警 | vmalert + Alertmanager | ✅ 已确认（ADR-18） | 唯一告警规则链路，复用 Prometheus 生态规则与通知渠道 | Grafana Alerting（会双发，不选） | 两套告警规则源需统一 |
+| 日志 | **VictoriaLogs** | ✅ 已确认（ADR-18） | 与 VM 同栈、一套查询习惯、资源轻 | Loki（生态更广）、ELK（重） | 社区案例少，查询语法需自建 runbook |
+| 可视化 | Grafana（反代鉴权） | ✅ 已确认（ADR-18） | 面板生态成熟；只做面板，不开 Alerting | 自研图表 | 越权与多租户隔离 |
 | 编排 | cephadm + podman | ✅ 已确认 | 官方路径、容器化、无 K8s 依赖 | Rook（引入 K8s，超出范围） | 版本绑定、抽象泄漏 |
 | 初始化 | ansible | ✅ 已确认 | 图中既定，幂等、易审计 | SaltStack | playbook 版本管理 |
 | OS | CentOS Stream 9 | ✅ 已确认（锁定 minor） | 图中既定 | Rocky / Alma | Stream 滚动更新带来兼容风险 |
@@ -245,7 +245,7 @@ Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
   ├─ PostgreSQL ×1（+ 每日 pg_dump）
   ├─ RabbitMQ ×1（单节点，durable queue + 持久化卷）
   ├─ VictoriaMetrics 单节点 + vmalert + Alertmanager
-  ├─ 日志系统单节点
+  ├─ VictoriaLogs 单节点（日志）
   ├─ Grafana
   ├─ Harbor（镜像仓库 + Trivy；MVP 单节点，全部镜像经此拉取）
 被管节点 ×N（CentOS Stream 9 + podman）
@@ -345,7 +345,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 3. **凭据**：静态加密（密钥外置，MVP 可用文件密钥 + 权限收紧，V1 接 KMS/Vault）；明文不出现在 API 响应、日志、审计、前端。
 4. **执行**：任务模板白名单 + 参数强类型校验 + 枚举/正则/范围约束 + 参数化执行（不拼 shell 字符串）；禁止 `bash -c` 拼接。
 5. **审计**：只追加、独立存储、含执行前后状态快照；审计写入失败则任务拒绝执行（fail-closed）。
-6. **最小权限**：Agent 以专用账号运行 + sudo 精确白名单；若必须 root，则配合只读根文件系统、seccomp 与网络白名单。
+6. **最小权限**：Agent **一律不以 root 运行**——专用账号常驻，特权动作经 sudo 精确白名单（绝对路径 + 参数形态），禁止 `ALL` 与解释器（ADR-19）。
 7. **Grafana 隔离**：禁止直连，经 Nginx 反代注入身份，按 cluster 过滤数据源查询。
 
 ---
@@ -393,7 +393,10 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-12](ADR-12-消息队列选型.md) | 消息队列选 RabbitMQ（非 JetStream） | Accepted（2026-11-15） | ADR-12 §3 |
 | [ADR-16](ADR-16-镜像仓库.md) | 镜像仓库：自建 Harbor，节点统一经仓库拉取 | Accepted（2026-11-15） | ADR-16 §2 |
 | [ADR-17](ADR-17-部署框架.md) | 部署编排：Ansible 框架，结构对齐 kolla-ansible（不 fork） | Accepted（2026-11-15） | ADR-17 §2 |
+| [ADR-18](ADR-18-可观测性栈.md) | 可观测性：VictoriaLogs + 自带 VM/vmalert/Alertmanager/Grafana | Accepted（2026-11-15） | ADR-18 §1 |
+| [ADR-19](ADR-19-Agent权限模型.md) | Agent 非 root：专用账号 + sudo 精确白名单 | Accepted（2026-11-15） | ADR-19 §1 |
+| [ADR-20](ADR-20-适用下限.md) | 适用下限：≥3 集群或 ≥20 节点（推荐，非门禁） | Accepted（2026-11-15） | ADR-20 §1 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
-> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12）、D3 以 **自建 Harbor** 关闭（ADR-16），ADR-07 标记为 `Rejected` 保留理由不删。**基础组件层只剩日志与监控栈待定**。
+> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12）、D3 以 **自建 Harbor** 关闭（ADR-16），ADR-07 标记为 `Rejected` 保留理由不删。**组件层选型只剩认证源（D7）待定**，其余均已收敛。
