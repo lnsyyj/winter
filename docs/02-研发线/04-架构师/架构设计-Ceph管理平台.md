@@ -32,7 +32,8 @@
 
 - 操作系统基线：CentOS Stream 9；容器运行时：podman；部署编排：cephadm；主机初始化：ansible。
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
-- 未定项：消息队列、镜像仓库、日志系统、认证源（PRD §11.1 的 D1/D3/D4/D7）。
+- 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，消息队列见 [ADR-12](ADR-12-消息队列选型.md)。
+- 未定项：镜像仓库、日志系统、认证源（PRD §11.1 的 D3/D4/D7）。
 - 假设规模：20 集群 / 500 节点（PRD §2.1）。
 
 ---
@@ -101,7 +102,7 @@ graph TB
 | C1 | `server → cephadm` 直连调用 | 改为 `server → 任务队列 → Agent → cephadm` | 建集群/扩容是分钟级长事务，同步调用会超时、丢进度、无法重试；异步任务才能做状态机、审计与断点续跑 |
 | C2 | `cephadm` 画在中心，连镜像仓库与所有 node | 改为**集群级执行上下文**，由目标节点上的 Agent 驱动 | cephadm 是「一套集群一套状态」，不是全局中心服务；中心化会造成跨集群状态串扰与单点 |
 | C3 | `server-system-agent-1` / `server-ceph-agent-1` 两个独立组件 | **保留能力边界，合并为一个二进制的两种运行模式**（`--capability=system\|ceph`） | 两者都运行在被管节点、都需要高权限，拆两个进程并不真正缩小权限面，却让部署、鉴权、升级翻倍；能力白名单才是真正的隔离手段 |
-| C4 | 消息队列标注 `queue? rabbitmq? redis? Kafka?` | 明确为**必需组件**，建议 NATS JetStream（或 RabbitMQ） | 任务可靠性是本平台的生命线；不能靠 `goroutine + 内存队列` 糊过去 |
+| C4 | 消息队列标注 `queue? rabbitmq? redis? Kafka?` | 明确为**必需组件**，选定 RabbitMQ（ADR-12） | 任务可靠性是本平台的生命线；不能靠 `goroutine + 内存队列` 糊过去 |
 | C5 | 日志系统仅有方框 | 纳入统一检索，与任务日志、审计日志分层 | 排障需要「一次任务 → 步骤日志 → 节点日志」的可追踪链路 |
 | C6 | VictoriaMetrics / Grafana 直接前台集成 | Grafana 经反向代理统一鉴权；告警引入 vmalert + Alertmanager | 防止绕过平台 RBAC 直接看别的集群面板；补齐 Prometheus 规则生态 |
 | C7 | 无凭据与安全层 | 新增密钥管理 + Agent↔Server mTLS + 命令白名单 | Agent 具备 root 级执行能力，是最高价值攻击面 |
@@ -116,7 +117,7 @@ graph TB
 | --- | --- | --- | --- |
 | Web | React + TS | 控制台、向导、任务进度、Grafana 面板承载 | 不直连 Ceph、不直连 DB |
 | Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账、凭据加解密、告警关联 | 不执行任何节点命令 |
-| 任务队列 | NATS JetStream / RabbitMQ | 任务派发、重试、持久化、死信 | 不承载业务状态 |
+| 任务队列 | RabbitMQ（ADR-12） | 任务派发、重试、持久化、死信 | 不承载业务状态 |
 | PostgreSQL | PG 16+ | 集群/主机/用户/角色/任务/审计/凭据密文 | 不存指标、不存大段日志 |
 | Agent | Golang 单二进制双模式 | 心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态 | 不接受任意命令、不主动连 DB |
 | ansible | playbook | OS 基线检查与初始化 | 不参与运行时调度 |
@@ -140,7 +141,7 @@ graph TB
 | 前端 | React + TypeScript | ✅ 已确认 | 团队既定；生态成熟；Grafana 面板嵌入方便 | Vue | 嵌入 iframe 的鉴权与样式割裂 |
 | 控制面 | Golang | ✅ 已确认 | 单二进制、并发模型适合大量长连接/任务、静态部署简单 | Java / Python | 生态内 Ceph SDK 弱，多数靠 CLI |
 | 关系库 | PostgreSQL | ✅ 已确认（主版本待 DBA） | 图中既定；JSONB 适合存任务参数与 Ceph 原始状态；advisory lock 可做集群级互斥 | MySQL | 需自己做分区与审计表冷热分离 |
-| 消息队列 | **NATS JetStream（推荐）** | 待决策 **D1** | 单二进制、资源占用低、持久化流 + ACK + 重试语义足够任务队列；契合 G6「少组件」 | RabbitMQ（团队熟则优先）、Kafka（过重，不选）、Redis Stream（持久化/运维语义弱，不选） | 团队不熟悉；运维工具少 |
+| 消息队列 | **RabbitMQ** | ✅ 已确认（ADR-12） | 团队已有运维经验、语义完备（confirm/ack/DLX/TTL）、管理 UI 与 exporter 成熟 | NATS JetStream（更轻但团队不熟）、Kafka（过重，不选）、Redis Stream（持久化/确认语义不足，不选） | Erlang 运行时与 flow control 排障；内存基线比 JetStream 高 |
 | 镜像仓库 | Harbor（离线场景）/ 对接客户现有仓库 | 待决策 **D3** | 支持离线导入、复制、漏洞扫描、配额 | registry:2（轻但无管理能力） | Harbor 自身较重，与 G6 冲突 |
 | 指标 | VictoriaMetrics + vmalert | 待决策 **D5** | 资源省、兼容 Prometheus remote_write / PromQL 主体 | Prometheus + Thanos | 与 Prometheus 规则生态存在边界差异 |
 | 告警 | vmalert + Alertmanager | 待决策 **D5** | 复用 Prometheus 生态规则与通知渠道 | Grafana Alerting | 两套告警规则源需统一 |
@@ -170,7 +171,7 @@ sequenceDiagram
     participant W as Web
     participant S as Server
     participant DB as PostgreSQL
-    participant Q as JetStream
+    participant Q as RabbitMQ
     participant A as Agent(system)
     participant B as Agent(ceph)
     participant C as cephadm / Ceph
@@ -241,7 +242,7 @@ Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
   ├─ Nginx + Web 静态资源
   ├─ Server ×1（无状态，可起 2 副本）
   ├─ PostgreSQL ×1（+ 每日 pg_dump）
-  ├─ NATS JetStream ×1（单节点，持久化目录）
+  ├─ RabbitMQ ×1（单节点，durable queue + 持久化卷）
   ├─ VictoriaMetrics 单节点 + vmalert + Alertmanager
   ├─ 日志系统单节点
   ├─ Grafana
@@ -254,7 +255,7 @@ Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
 
 ### 6.2 V1（管理面 HA）
 
-Server 多副本 + PG 主从 + JetStream 3 节点集群 + VM 双副本；**控制面仍是「一个逻辑控制面」**，不做跨地域拆分。
+Server 多副本 + PG 主从 + RabbitMQ 3 节点集群（quorum queue）+ VM 双副本；**控制面仍是「一个逻辑控制面」**，不做跨地域拆分。
 
 ### 6.3 V2（多 Region 联邦，若确有必要）
 
@@ -323,7 +324,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 - Server 无状态 → 水平扩展；会话放 JWT/Redis（可选），不依赖本地内存。
 - PG 主从 + 定期备份 + 恢复演练（DBA 职责）。
-- JetStream 持久化流，重启不丢任务。
+- RabbitMQ durable queue + publisher confirm + manual ack，重启不丢任务；单节点故障期间无法接收新任务（不承诺零丢失，见 ADR-12 §6）。
 - Agent 断线重连、本地缓存结果、任务不丢。
 - 监控/日志/仓库属于**可降级组件**：全挂时控制台仍应能展示最近一次同步状态并允许执行预定义任务。
 - 管理面整体不可用时，保留 Ceph Dashboard 与 SSH 作为最终兜底（PRD §2.2 第 2 条）。
@@ -359,7 +360,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 | 阶段 | 变化 |
 | --- | --- |
-| MVP | 单机管理面、单 Region、NATS 单节点、只读纳管 + 新建 |
+| MVP | 单机管理面、单 Region、RabbitMQ 单节点、只读纳管 + 新建 |
 | V1 | 管理面 HA、告警闭环、离线制品、Grafana 统一鉴权 |
 | V2 | 多 Region 联邦、LDAP/OIDC、配额、升级与配置回滚 |
 
@@ -369,7 +370,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 
 ## 14. 架构决策记录（ADR 索引）
 
-状态含义：`Accepted` = 已确认，可作为约束执行，推翻需新 ADR；`Proposed` = 建议，待拍板，**不得当结论引用**；`Superseded` = 被后续 ADR 取代。
+状态含义：`Accepted` = 已确认，可作为约束执行，推翻需新 ADR；`Proposed` = 建议，待拍板，**不得当结论引用**；`Rejected` = 评估后未采纳；`Superseded` = 被后续 ADR 取代。
 
 | ADR | 决策 | 状态 | 详见 |
 | --- | --- | --- | --- |
@@ -379,10 +380,11 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | ADR-04 | 双能力合并为单二进制双模式 | Accepted | §2 R4 |
 | ADR-05 | cephadm 定位为集群级执行器而非中心服务 | Accepted | §2 R5 |
 | ADR-06 | DB 只存元数据，指标/日志分离；Ceph 实际状态为真相 | Accepted | §2 R6 / §4 B3 |
-| ADR-07 | 消息队列选 NATS JetStream（备选 RabbitMQ） | **Proposed**（D1 待拍板） | §2 R7 |
+| ADR-07 | 消息队列选 NATS JetStream（备选 RabbitMQ） | **Rejected**（改选 RabbitMQ，见 ADR-12） | §2 R7 |
 | ADR-08 | 引入 Reconciler 主动对账 | Accepted | §2 R8 |
 | ADR-09 | Grafana 经反代统一鉴权，禁止直连 | Accepted | §2 R9 |
 | ADR-10 | MVP 单机管理面，HA 延后到 V1 | Accepted | §2 R10 |
 | [ADR-11](ADR-11-技术栈基线.md) | 技术栈基线：React+TS / Golang / PostgreSQL / cephadm+podman / ansible / CentOS Stream 9 | Accepted（2026-11-15） | ADR-11 §2 |
+| [ADR-12](ADR-12-消息队列选型.md) | 消息队列选 RabbitMQ（非 JetStream） | Accepted（2026-11-15） | ADR-12 §3 |
 
-> ADR-07 与 D1 曾出现「ADR 记为已决策、D1 仍写待决策」的矛盾，现已统一为 `Proposed`——**消息队列是唯一还没定的基础组件**。ADR-11 只覆盖 7 项技术栈，不代表架构评审已完成。
+> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12），ADR-07 标记为 `Rejected` 保留理由不删。**基础组件层现已无待定项**，剩余待决策集中在镜像仓库、日志、监控栈与业务前提。

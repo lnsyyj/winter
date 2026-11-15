@@ -80,7 +80,7 @@ stateDiagram-v2
 | --- | --- |
 | 幂等键 | `idempotency_key = sha256(fsid + task_type + canonical(params))`，`tasks` 表唯一索引 |
 | 集群互斥 | `pg_advisory_xact_lock(hashtext(cluster_fsid))`，同一集群同时只跑一个变更任务 |
-| 分片并发 | JetStream 按 `cluster_fsid` 分 subject，每个 consumer 有并发上限 |
+| 分片并发 | RabbitMQ 按 `cluster_fsid` 划分独立队列 + routing key，prefetch 与消费者数共同限定并发上限（同集群串行） |
 | 重复投递 | Agent 本地持久化最近 N 条 `idempotency_key → 结果`，命中直接回报，不重新执行 |
 | 前置守卫 | 执行前向 Ceph 查询真实状态，若目标已达期望则直接返回成功（幂等兜底） |
 | 死信 | 超过重试上限 / 参数非法 → 死信 subject + 告警 + 人工处理入口 |
