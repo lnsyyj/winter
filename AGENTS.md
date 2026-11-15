@@ -517,4 +517,5 @@ trim_trailing_whitespace = false
 | 2026-11-15 | 审计落点定案：**独立审计库 + 两段式写入**（`ADR-29`）。跨库无共同事务，故 fail-closed 落在 intent、result 幂等补写 + 每日对账；新增 §5.8 链路；业务库撤 `audit_logs`；部署资源 14C/22G/300G → 15C/24G/350G；新增 TC-35 | `cbd5399` |
 | 2026-11-15 | 镜像拉取定案：**Ceph 镜像由 cephadm 直拉，平台不预拉**（`ADR-30`）；管理面组件仍走 `pull` 阶段。补三件兜底：digest 引用禁裸 tag、`image_pull_failed` 错误码、拉取专用超时；`image_inventory` 表与 `clusters.image_digest`；新增 §5.9 链路与 TC-36 | `d0ba3ac` |
 | 2026-11-15 | 备份恢复定案：**备数据/密钥/CA/配置，不备镜像与日志**（`ADR-31`，RPO ≤15min / RTO ≤2h）。硬约束：密钥与备份包**物理分离**、备份包加密、每季演练、连续失败升级告警；新增 §5.10 链路、备份卷 ≥100G（不计入 350G）、TC-37 | `e139d5f` |
-| 2026-11-15 | 保留期定案：**可配置 + 审计 180 天硬下限 + 容量校验**（`ADR-32`）。默认 30/30/90/180/7；`clusters` 补 `drift_state`/`last_drift_at`；`group_vars` 增 `platform.retention`；分区 DROP 与元审计；新增 TC-38 | 本次提交 |
+| 2026-11-15 | 保留期定案：**可配置 + 审计 180 天硬下限 + 容量校验**（`ADR-32`）。默认 30/30/90/180/7；`clusters` 补 `drift_state`/`last_drift_at`；`group_vars` 增 `platform.retention`；分区 DROP 与元审计；新增 TC-38 | `e346102` |
+| 2026-11-15 | 日志与告警链路定案：**Agent 直推 VictoriaLogs（mTLS 鉴权）+ 告警 HMAC webhook 回流**（`ADR-33`）。Server 不代理日志字节；**日志不可用不阻塞任务**；告警可丢、审计不可丢；§5.4 重写为指标/日志/告警/面板四段；新增 TC-39 | 本次提交 |
