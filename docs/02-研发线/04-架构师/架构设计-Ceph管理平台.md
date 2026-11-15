@@ -119,8 +119,8 @@ graph TB
 | Server | Golang | REST/WS、RBAC、审计、任务编排 DAG、状态对账、凭据加解密、告警关联 | 不执行任何节点命令 |
 | 任务队列 | RabbitMQ（ADR-12） | 任务派发、重试、持久化、死信 | 不承载业务状态 |
 | PostgreSQL | PG 16+ | 集群/主机/用户/角色/任务/审计/凭据密文 | 不存指标、不存大段日志 |
-| Agent | Golang 单二进制双模式 | 心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态 | 不接受任意命令、不主动连 DB |
-| ansible | playbook | OS 基线检查与初始化 | 不参与运行时调度 |
+| Agent | Golang 单二进制双模式 | 心跳注册、拉取任务、执行白名单参数化命令、回报步骤日志与状态 | 不接受任意命令、不主动连 DB、**不负责节点纳管前的自检**（那时它还不存在） |
+| 管理面 Runner | ansible（复用 `deploy/`） | **仅**在节点尚未纳管时执行预检与初始化（SSH，`executor=runner`） | 不参与运行期调度；不得执行日常运维任务（ADR-23） |
 | cephadm | Ceph 官方 | 集群 bootstrap、服务编排、OSD 部署、升级 | 不作为常驻中心服务 |
 | 镜像仓库 | Harbor / registry | Ceph 镜像、Agent 镜像、离线制品 | 不承担业务制品 |
 | VictoriaMetrics | VM + vmalert | 指标存储、PromQL 查询、告警规则求值 | 不做业务数据存储 |
@@ -172,33 +172,47 @@ graph TB
 sequenceDiagram
     participant W as Web
     participant S as Server
+    participant R as 管理面 Runner<br/>(ansible)
     participant DB as PostgreSQL
     participant Q as RabbitMQ
-    participant A as Agent(system)
-    participant B as Agent(ceph)
+    participant A as Agent<br/>(system / ceph 双模式)
     participant C as cephadm / Ceph
-    W->>S: POST /v1/clusters (主机/网络/版本/仓库)
-    S->>DB: 集群+任务 DAG 落库(PENDING) + 审计
-    S->>Q: 发布 step-1 主机前置检查
-    Q->>A: 拉取 step-1
-    A->>A: ansible precheck（OS/NTP/磁盘/podman/仓库可达）
-    A-->>DB: 步骤日志 + SUCCEEDED（经 Server 回写）
-    S->>Q: 发布 step-2 系统初始化
-    Q->>A: ansible init
+
+    W->>S: POST /v1/clusters（主机/网络/版本/仓库 + 一次性 SSH 凭据）
+    S->>DB: 集群 + 任务 DAG 落库(PENDING) + 审计（记录凭据来源与用途）
+    Note over S,R: 节点此时还没有 Agent，step-1/2 只能由管理面推过去
+    S->>Q: 发布 step-1 主机预检（executor=runner）
+    Q->>R: 领取任务
+    R->>R: 执行 deploy/roles/prechecks（复用，只读）
+    R-->>S: 检查结果（不改系统）
+    S->>DB: 步骤状态 + 日志回写
+    S->>Q: 发布 step-2 系统初始化（executor=runner）
+    Q->>R: 装 podman / 分发 Agent / 签发 mTLS 证书
+    R-->>S: 完成
+    S->>Q: 发布 step-3 bootstrap（executor=agent）
+    Q->>A: Agent 拉取（自此不再使用 SSH）
+    A->>C: cephadm bootstrap
+    C-->>A: FSID
+    A-->>S: FSID + 步骤日志
+    S->>DB: 回写 fsid / 凭据密文
+    S->>Q: step-4~6（add hosts / OSD / 服务）
+    Q->>A: 按 DAG 顺序拉取
+    A->>C: ceph orch apply / osd create
+    C-->>A: ceph -s
     A-->>S: SUCCEEDED
-    S->>Q: 发布 step-3 bootstrap
-    Q->>B: cephadm bootstrap（拉取镜像）
-    B->>C: 创建 MON/MGR，返回 FSID
-    B-->>S: FSID + 日志
-    S->>DB: 回写 fsid、凭据密文
-    S->>Q: step-4 add hosts / step-5 deploy OSD / step-6 服务
-    Q->>B: 按 DAG 顺序执行
-    B->>C: ceph orch apply / osd create
-    C-->>B: ceph -s
     S->>Q: step-7 验收 HEALTH_OK
     S-->>W: WS 推送进度 → 完成
-    Note over S,DB: 任一步失败 → FAILED + 保留现场 + 支持从该步重试
+    Note over S,A: 任一步失败 → FAILED + 保留现场 + 支持从该步重试
 ```
+
+**执行者有两种，互斥**（ADR-23）：
+
+| executor | 谁执行 | 适用 |
+| --- | --- | --- |
+| `runner` | 管理面 Runner（ansible，SSH） | 节点尚未纳管：预检、初始化、装 Agent |
+| `agent` | 目标节点 Agent（拉模式） | Agent 上线后的全部步骤与日常运维 |
+
+同一集群同一时刻只允许一种执行者，由集群级 advisory lock 保证。**Agent 上线后 SSH 通道即可关闭，平台不再依赖它**（验收见 TC-29）。
 
 ### 5.2 任务下发与执行语义
 
@@ -303,7 +317,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | `clusters` | id, fsid(uk), az_id, name, deploy_mode, ceph_version, capability(managed/limited), health, last_sync_at | 集群主表 |
 | `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version | 节点 |
 | `credentials` | id, cluster_id, type, cipher_text, key_id, rotated_at | 只存密文，明文不落任何日志 |
-| `tasks` | id, cluster_id, type, params_jsonb, status, idempotency_key(uk), created_by, started_at, finished_at | 任务主表 |
+| `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), idempotency_key(uk), created_by, started_at, finished_at | 任务主表 |
 | `task_steps` | id, task_id, seq, name, status, log_ref, output_jsonb, retry_count | DAG 步骤 |
 | `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, created_at | 只追加，按月分区 |
 | `users` / `roles` / `grants` | 标准 RBAC + scope(region/az/cluster) | 三级授权 |
@@ -318,7 +332,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | 场景 | 策略 |
 | --- | --- |
 | 任务重复投递 | `idempotency_key` 唯一索引 + Agent 本地结果缓存 |
-| 同一集群并发变更 | PG advisory lock（`hashtext(cluster_fsid)`） |
+| 同一集群并发变更 | PG advisory lock（`hashtext(cluster_fsid)`）；同时保证同一集群只有一个 executor（runner 或 agent）在跑（ADR-23） |
 | 长事务失败 | **补偿式 Saga**，不做分布式事务；不可逆步骤标记 `compensable=false`，只允许人工清理后重跑 |
 | DB 与 Ceph 漂移 | Reconciler 定时对账，UI 以 Ceph 实际状态为准 |
 | Agent 上报丢包 | 步骤状态带单调递增 `seq`，Server 按序合并，乱序丢弃 |
@@ -400,6 +414,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-20](ADR-20-适用下限.md) | 适用下限：≥3 集群或 ≥20 节点（推荐，非门禁） | Accepted（2026-11-15） | ADR-20 §1 |
 | [ADR-21](ADR-21-认证源.md) | 认证源：MVP 本地账号，V1 预留 LDAP/OIDC | **Superseded**（→ ADR-22） | ADR-21 §1 |
 | [ADR-22](ADR-22-LDAP接入.md) | 认证源：本地账号 + LDAP 可配置（客户自行对接） | Accepted（2026-11-15） | ADR-22 §2 |
+| [ADR-23](ADR-23-建集群预检执行者.md) | 建集群预检由管理面 Runner 复用 deploy prechecks 执行 | Accepted（2026-11-15） | ADR-23 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
