@@ -45,6 +45,7 @@
 - [`ADR-21-认证源.md`](./ADR-21-认证源.md) — （已被取代）MVP 本地账号 + V1 预留 LDAP/OIDC 的原判断（2026-11-15）
 - [`ADR-22-LDAP接入.md`](./ADR-22-LDAP接入.md) — 本地账号 + LDAP 可配置：认证模型、强制 TLS、组映射 deny-by-default、验收场景（2026-11-15）
 - [`ADR-23-建集群预检执行者.md`](./ADR-23-建集群预检执行者.md) — 预检由管理面 Runner 复用 deploy prechecks：executor 模型与 SSH 窗口边界（2026-11-15）
+- [`ADR-24-SSH凭据管理.md`](./ADR-24-SSH凭据管理.md) — SSH 凭据内存态一次性：不落库、不走队列、终态擦除、一次性 token（2026-11-15）
 
 ---
 

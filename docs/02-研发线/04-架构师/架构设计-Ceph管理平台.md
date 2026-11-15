@@ -315,8 +315,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | --- | --- | --- |
 | `regions` / `azs` | id, name, parent_id | 自定义三级模型前两级 |
 | `clusters` | id, fsid(uk), az_id, name, deploy_mode, ceph_version, capability(managed/limited), health, last_sync_at | 集群主表 |
-| `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version | 节点 |
-| `credentials` | id, cluster_id, type, cipher_text, key_id, rotated_at | 只存密文，明文不落任何日志 |
+| `hosts` | id, cluster_id, hostname, mgmt_ip, labels, agent_status, os_version, **ssh_host_key_fp** | 节点；指纹是公钥信息，允许持久化（ADR-24） |
+| `credentials` | id, cluster_id, type, cipher_text, key_id, rotated_at | 只存密文；**只存 Ceph 接入凭据，不含 SSH 登录凭据**（ADR-24） |
 | `tasks` | id, cluster_id, type, params_jsonb, status, executor(agent/runner), idempotency_key(uk), created_by, started_at, finished_at | 任务主表 |
 | `task_steps` | id, task_id, seq, name, status, log_ref, output_jsonb, retry_count | DAG 步骤 |
 | `audit_logs` | id, actor, action, target, params_jsonb, src_ip, result, created_at | 只追加，按月分区 |
@@ -363,6 +363,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 6. **最小权限**：Agent **一律不以 root 运行**——专用账号常驻，特权动作经 sudo 精确白名单（绝对路径 + 参数形态），禁止 `ALL` 与解释器（ADR-19）。
 7. **Grafana 隔离**：禁止直连，经 Nginx 反代注入身份，按 cluster 过滤数据源查询。
 8. **认证**：本地账号（Argon2id + HttpOnly 会话 + 登录限流）+ **可选 LDAP**（配置文件开启，强制 TLS、`default_role: none`、本地管理员保留为 break-glass）；**认证与 RBAC 分离**（ADR-22）。
+9. **临时凭据**：SSH 登录凭据只存活于任务会话内存，终态即擦除；不走队列、不入日志、页面不回显；多副本用一次性 token 领取（ADR-24）。
 
 ---
 
