@@ -65,6 +65,23 @@
   when: ansible_facts.selinux.status == 'enabled'
   tags: [haproxy]
 
+- name: 允许 haproxy 连接任意端口（SELinux 出站限制）
+  # 后端是 PG 5433 与 Patroni REST 8008，都不在 http_port_t 白名单里；
+  # 不开这个布尔值时表现是「端口能连上但立刻被断开」
+  ansible.builtin.shell: |
+    set -o pipefail
+    if [ "$(getsebool haproxy_connect_any | awk '{print $3}')" != "on" ]; then
+      setsebool -P haproxy_connect_any on && echo changed
+    else
+      echo unchanged
+    fi
+  args:
+    executable: /bin/bash
+  register: haproxy_sebool
+  changed_when: "'changed' in haproxy_sebool.stdout"
+  when: ansible_facts.selinux.status == 'enabled'
+  tags: [haproxy]
+
 - name: 启动并开机自启
   ansible.builtin.systemd:
     name: haproxy
