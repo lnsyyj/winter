@@ -13,6 +13,26 @@
 
 未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
 
+## 实机验证记录（2026-11-15 · CentOS Stream 9）
+
+在 M0 环境跑通 `./deploy.sh deploy`，`ok=25 changed=2 failed=0`；二次运行 `changed=0`（幂等）。
+
+| 验证项 | 结果 |
+| --- | --- |
+| PostgreSQL | 复用已有 17.11 实例，新增 `winter` 库与角色；应用账号可连、错误口令被拒 |
+| 既有库 | `appdb`/`postgres`/`template*` 未被改动 |
+| Nginx 叠加 | `winter.local` 站点 200、`/healthz` 返回 ok；**同机既有站点（argus）80/443 仍为 200** |
+| 密码来源 | `deploy/passwords.yml`（gitignore），未进入版本库 |
+
+实机暴露并修复的五个问题（都是「纸面看不出、跑起来才炸」的）：
+
+1. `deploy/passwords.yml` 不在 Ansible 自动加载路径 → 改为 pre_tasks 显式 `include_vars`；
+2. `deploy.sh` 在 clone 后无执行位 → `git update-index --chmod=+x`；
+3. PGDG 的 `pg_isready` 不在 postgres 用户 PATH → 改用 `psql -tAc "select 1"` 探活；
+4. nginx 已安装仍触发 `dnf`，被不可达的 `pgdg-common` 源拖死 → 先 stat 再决定装；
+5. **`group_vars/all.yml` 从未被加载**（不在 playbook/inventory 目录旁）→ 两个 playbook 加 `vars_files`；
+   且 role 默认字典被 group_vars 整块替换 → 改为 `*_overrides` + `combine` 合并。
+
 > **交付期 vs 运行期**（ADR-35）：本目录是**交付期**工具，用 ansible 装 Agent、注册证书、下发配置。
 > 平台**运行期不持 SSH 凭据**，所有节点操作经 Agent；因此 `prechecks` 只用于装机前确认，
 > 纳管与运维时的预检由 Agent 本地执行（Go 实现，检查项与本 role 保持一致）。
