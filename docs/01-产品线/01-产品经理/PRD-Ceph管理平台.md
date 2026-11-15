@@ -49,7 +49,7 @@ Ceph 集群的生命周期操作（主机初始化、bootstrap、OSD 创建、Po
 | 降低运维门槛 | 常用运维动作（查看状态/扩容 OSD/建 Pool/查看告警）100% 可在 Web 完成，无需 SSH |
 | 多集群管理 | 单管理面支持 ≥ 20 套集群、≥ 500 节点，跨自定义 Region / AZ 分组 |
 | 可追溯 | 所有变更类操作 100% 留痕，审计记录可导出，保留 ≥ 180 天 |
-| 部署可落地 | 管理面在离线环境用交付包「一条命令」完成部署，失败可回滚；无编译、无外网依赖 |
+| 部署可落地 | 在有网环境预下载制包 → 搬入内网 → 远程安装；目标环境零外网依赖、不编译，失败可回滚 |
 
 ### 2.2 明确不做（Non-Goals）
 
@@ -130,7 +130,7 @@ graph LR
 | FR-07 | 操作审计 | P0 | 登录与变更全留痕、可检索导出 |
 | FR-08 | 监控与告警 | P1 | VictoriaMetrics + Grafana 面板 + Prometheus 告警生态 |
 | FR-09 | 日志 | P1 | 任务日志、Agent 日志、平台操作日志 |
-| FR-10 | 镜像仓库与离线制品 | P1 | 镜像/包管理、离线导入、复制粘贴级部署 |
+| FR-10 | 镜像仓库与离线制品 | P1 | 制包（镜像/包/playbook）、搬运与校验、远程安装；BOM 与 digest 清单 |
 | FR-11 | 主机初始化 | P0 | ansible 前置检查与初始化 |
 | FR-12 | 升级与配置管理 | P2 | Ceph 版本升级、spec 配置对比与回滚 |
 
@@ -340,7 +340,7 @@ MVP 必须同时满足：
 | D3 | 镜像仓库 | Harbor / registry:2 / 客户现有仓库 | 开放 | 离线导入方式 | SRE + 交付 |
 | D4 | 日志系统 | Loki / VictoriaLogs / ELK | 开放 | 资源占用与检索能力 | SRE |
 | D5 | 监控栈 | VictoriaMetrics + vmalert + Grafana + Alertmanager | 开放 | 与 Prometheus 生态兼容边界 | SRE |
-| D6 | 「复制粘贴就能部署」的形态 | 单条 shell 脚本 / docker-compose / podman pod / ansible playbook | 部分收敛（podman 已定） | 直接决定交付形态 | 交付 + SRE |
+| D6 | 交付形态（编排方式） | podman kube play / compose / 单条 install.sh | 部分收敛（podman + 三段式交付模型已定，编排形态待定） | 直接决定交付形态 | 交付 + SRE |
 | D7 | 认证源 | 本地账号 / LDAP / OIDC | 开放 | 企业客户接入成本 | 产品 + 安全 |
 | D8 | 纳管范围 | 仅 cephadm / 兼容 Rook、手工部署 | 开放 | 产品承诺边界 | 产品 + 架构 |
 
