@@ -27,8 +27,9 @@ bootstrap:
       use_pg_rewind: true
       use_slots: true
       parameters:
-        listen_addresses: '*'
-        port: {{ pg_cluster.port }}
+        # 注意：listen_addresses / port 不能写在这里 —— Patroni 会校验失败并忽略
+        # （实机表现：主库只监听 localhost，副本 pg_basebackup 挂住）。
+        # 监听地址与端口由下面 postgresql.listen / port 决定。
         hot_standby: 'on'
         wal_level: replica
         wal_log_hints: 'on'
