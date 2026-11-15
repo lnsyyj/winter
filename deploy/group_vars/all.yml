@@ -21,6 +21,27 @@ platform:
   # 数据目录：数据卷与离线包分离存放，避免升级时被清理
   data_dir: /var/lib/winter
 
+  # 认证（ADR-22）：默认只开本地账号；客户有目录服务时填 ldap 并置 enabled: true
+  # 约束：必须 TLS；组未命中 role_map 一律无权限（default_role: none）；
+  #      本地管理员始终保留（break-glass），目录服务故障不影响其登录
+  auth:
+    providers: [local, ldap]
+    ldap:
+      enabled: false
+      url: ""                          # 例：ldaps://dc01.corp.local:636
+      starttls: false                  # url 为 ldap:// 时必须置 true
+      tls_verify: true
+      bind_dn: ""                      # 搜索用服务账号；密码放 passwords.yml（vault_ldap_bind_password）
+      base_dn: ""                      # 例：ou=people,dc=corp,dc=local
+      # 占位符 {login} / {user_dn} 由平台在登录时替换，**不是 Ansible 变量**（不要写成 {{ }}）
+      user_filter: "(sAMAccountName={login})"
+      group_base_dn: ""
+      group_filter: "(member={user_dn})"
+      role_map: {}                     # LDAP 组 DN -> 平台角色，例 {"CN=ceph-admins,OU=groups,DC=corp,DC=local": admin}
+      default_role: none               # 未命中映射 = 无权限
+      timeout_seconds: 5
+      group_cache_ttl_seconds: 300
+
 # 部署前检查阈值（与部署方案 §1 的资源估算对齐；Harbor 与可观测性栈占大头）
 prechecks:
   management_min_vcpus: 14

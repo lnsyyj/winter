@@ -151,7 +151,7 @@ graph TB
 | 初始化 | ansible | ✅ 已确认 | 图中既定，幂等、易审计 | SaltStack | playbook 版本管理 |
 | OS | CentOS Stream 9 | ✅ 已确认（锁定 minor） | 图中既定 | Rocky / Alma | Stream 滚动更新带来兼容风险 |
 | 部署框架 | Ansible，结构对齐 kolla-ansible | ✅ 已确认（ADR-17） | inventory 表达拓扑、单一 group_vars、分阶段 playbook、role 粒度=组件；prechecks 只读 | 零散手写 playbook、Terraform、K8s Operator | 自建框架易退化成脚本；须守住「幂等 + 配置单一入口」 |
-| 认证源 | 本地账号（Argon2id + 服务端会话），V1 预留 LDAP/OIDC | ✅ 已确认（ADR-21） | 零外部依赖、离线可用；认证与 RBAC 分离 | LDAP/AD 优先、OIDC 优先、三者全做 | 企业客户早期要 SSO 时需提前实现；多租户不支持 |
+| 认证源 | 本地账号（Argon2id）+ **可选 LDAP（配置项）** | ✅ 已确认（ADR-22） | 默认只开本地，客户填配置即可接目录服务；本地管理员始终保留作 break-glass | OIDC（V1 后评估）、多 LDAP 并存 | 组映射配错会导致「能登录但无权限」；目录服务故障只影响 LDAP 用户 |
 
 > 已确认项的版本策略、放弃项与推翻条件全部记录在 [ADR-11](ADR-11-技术栈基线.md)，本节只保留摘要，避免两处各自演化。
 
@@ -348,7 +348,7 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 5. **审计**：只追加、独立存储、含执行前后状态快照；审计写入失败则任务拒绝执行（fail-closed）。
 6. **最小权限**：Agent **一律不以 root 运行**——专用账号常驻，特权动作经 sudo 精确白名单（绝对路径 + 参数形态），禁止 `ALL` 与解释器（ADR-19）。
 7. **Grafana 隔离**：禁止直连，经 Nginx 反代注入身份，按 cluster 过滤数据源查询。
-8. **认证**：MVP 本地账号（Argon2id + HttpOnly 会话 + 登录限流），**认证与 RBAC 分离**；V1 预留 LDAP/OIDC 字段与接口但不实现（ADR-21）。
+8. **认证**：本地账号（Argon2id + HttpOnly 会话 + 登录限流）+ **可选 LDAP**（配置文件开启，强制 TLS、`default_role: none`、本地管理员保留为 break-glass）；**认证与 RBAC 分离**（ADR-22）。
 
 ---
 
@@ -398,7 +398,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-18](ADR-18-可观测性栈.md) | 可观测性：VictoriaLogs + 自带 VM/vmalert/Alertmanager/Grafana | Accepted（2026-11-15） | ADR-18 §1 |
 | [ADR-19](ADR-19-Agent权限模型.md) | Agent 非 root：专用账号 + sudo 精确白名单 | Accepted（2026-11-15） | ADR-19 §1 |
 | [ADR-20](ADR-20-适用下限.md) | 适用下限：≥3 集群或 ≥20 节点（推荐，非门禁） | Accepted（2026-11-15） | ADR-20 §1 |
-| [ADR-21](ADR-21-认证源.md) | 认证源：MVP 本地账号，V1 预留 LDAP/OIDC | Accepted（2026-11-15） | ADR-21 §1 |
+| [ADR-21](ADR-21-认证源.md) | 认证源：MVP 本地账号，V1 预留 LDAP/OIDC | **Superseded**（→ ADR-22） | ADR-21 §1 |
+| [ADR-22](ADR-22-LDAP接入.md) | 认证源：本地账号 + LDAP 可配置（客户自行对接） | Accepted（2026-11-15） | ADR-22 §2 |
 
 > ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
 
