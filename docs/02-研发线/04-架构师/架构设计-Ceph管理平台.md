@@ -30,7 +30,7 @@
 
 ### 1.2 约束
 
-- 操作系统基线：CentOS Stream 9；容器运行时：podman；部署编排：cephadm；主机初始化：ansible。
+- 操作系统基线：CentOS Stream 9；容器运行时：podman；Ceph 编排：cephadm；**平台部署编排：Ansible（结构对齐 kolla-ansible，[ADR-17](ADR-17-部署框架.md)）**。
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
 - 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，消息队列见 [ADR-12](ADR-12-消息队列选型.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)。
 - 未定项：日志系统、认证源（PRD §11.1 的 D4/D7）。
@@ -150,6 +150,7 @@ graph TB
 | 编排 | cephadm + podman | ✅ 已确认 | 官方路径、容器化、无 K8s 依赖 | Rook（引入 K8s，超出范围） | 版本绑定、抽象泄漏 |
 | 初始化 | ansible | ✅ 已确认 | 图中既定，幂等、易审计 | SaltStack | playbook 版本管理 |
 | OS | CentOS Stream 9 | ✅ 已确认（锁定 minor） | 图中既定 | Rocky / Alma | Stream 滚动更新带来兼容风险 |
+| 部署框架 | Ansible，结构对齐 kolla-ansible | ✅ 已确认（ADR-17） | inventory 表达拓扑、单一 group_vars、分阶段 playbook、role 粒度=组件；prechecks 只读 | 零散手写 playbook、Terraform、K8s Operator | 自建框架易退化成脚本；须守住「幂等 + 配置单一入口」 |
 
 > 已确认项的版本策略、放弃项与推翻条件全部记录在 [ADR-11](ADR-11-技术栈基线.md)，本节只保留摘要，避免两处各自演化。
 
@@ -391,5 +392,8 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | [ADR-11](ADR-11-技术栈基线.md) | 技术栈基线：React+TS / Golang / PostgreSQL / cephadm+podman / ansible / CentOS Stream 9 | Accepted（2026-11-15） | ADR-11 §2 |
 | [ADR-12](ADR-12-消息队列选型.md) | 消息队列选 RabbitMQ（非 JetStream） | Accepted（2026-11-15） | ADR-12 §3 |
 | [ADR-16](ADR-16-镜像仓库.md) | 镜像仓库：自建 Harbor，节点统一经仓库拉取 | Accepted（2026-11-15） | ADR-16 §2 |
+| [ADR-17](ADR-17-部署框架.md) | 部署编排：Ansible 框架，结构对齐 kolla-ansible（不 fork） | Accepted（2026-11-15） | ADR-17 §2 |
 
-> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12），ADR-07 标记为 `Rejected` 保留理由不删。**基础组件层现已无待定项**，剩余待决策集中在镜像仓库、日志、监控栈与业务前提。
+> ADR-17 改变了部署的**执行方式**（从手敲命令变成分阶段 playbook），不改任何运行期架构。它同时也是 G6「可重复」与 B1「交付成本可控」的落地手段。
+
+> ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12）、D3 以 **自建 Harbor** 关闭（ADR-16），ADR-07 标记为 `Rejected` 保留理由不删。**基础组件层只剩日志与监控栈待定**。
