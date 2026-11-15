@@ -130,7 +130,7 @@ graph LR
 | FR-07 | 操作审计 | P0 | 登录与变更全留痕、可检索导出 |
 | FR-08 | 监控与告警 | P1 | VictoriaMetrics + Grafana 面板 + Prometheus 告警生态 |
 | FR-09 | 日志 | P1 | 任务日志、Agent 日志、平台操作日志 |
-| FR-10 | 镜像仓库与离线制品 | P1 | 制包（镜像/包/playbook）、内网源（Nginx + 签名）、ansible 批量安装；BOM 与 digest 清单 |
+| FR-10 | 镜像仓库与离线制品 | P1 | 制包（镜像/包/playbook）、内网源（Nginx + 签名）、Harbor 镜像仓库、ansible 批量安装；BOM 与 digest 清单 |
 | FR-11 | 主机初始化 | P0 | ansible 前置检查与初始化 |
 | FR-12 | 升级与配置管理 | P2 | Ceph 版本升级、spec 配置对比与回滚 |
 
@@ -331,13 +331,13 @@ MVP 必须同时满足：
 
 ### 11.1 待决策项（对应设想图 TODO，需拍板）
 
-> 2026-11-15 更新：技术栈基线 7 项已确认（[ADR-11](../../02-研发线/04-架构师/ADR-11-技术栈基线.md)）——React + TypeScript、Golang、PostgreSQL、cephadm + podman、ansible、CentOS Stream 9。对应 D2 / D6 收敛为剩余细节，其余不变。
+> 2026-11-15 更新：技术栈基线 7 项已确认（[ADR-11](../../02-研发线/04-架构师/ADR-11-技术栈基线.md)）——React + TypeScript、Golang、PostgreSQL、cephadm + podman、ansible、CentOS Stream 9。D1 以 RabbitMQ 关闭（[ADR-12](../../02-研发线/04-架构师/ADR-12-消息队列选型.md)），D3 以自建 Harbor 关闭（[ADR-16](../../02-研发线/04-架构师/ADR-16-镜像仓库.md)）。对应 D2 / D6 收敛为剩余细节，其余不变。
 
 | ID | 待决策 | 备选 | 状态 | 影响 | 建议责任方 |
 | --- | --- | --- | --- | --- | --- |
 | D1 | 消息队列 | RabbitMQ（已确认，[ADR-12](../../02-研发线/04-架构师/ADR-12-消息队列选型.md)） | **已关闭** | 任务可靠性、部署复杂度 | 架构师 + SRE |
 | D2 | 数据库 | PostgreSQL（已确认）/ 主版本与审计表分区分策略 | 部分收敛 | 指标与业务库边界 | 架构师 + DBA |
-| D3 | 镜像仓库 | Harbor / registry:2 / 客户现有仓库 | 开放 | 离线导入方式 | SRE + 交付 |
+| D3 | 镜像仓库 | Harbor（已确认，[ADR-16](../../02-研发线/04-架构师/ADR-16-镜像仓库.md)） | **已关闭** | 离线导入方式 | SRE + 交付 |
 | D4 | 日志系统 | Loki / VictoriaLogs / ELK | 开放 | 资源占用与检索能力 | SRE |
 | D5 | 监控栈 | VictoriaMetrics + vmalert + Grafana + Alertmanager | 开放 | 与 Prometheus 生态兼容边界 | SRE |
 | D6 | 交付形态（编排方式） | podman kube play / compose / 单条 install.sh | 部分收敛（podman + 三段式交付模型已定，编排形态待定） | 直接决定交付形态 | 交付 + SRE |

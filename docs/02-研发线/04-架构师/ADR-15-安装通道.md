@@ -50,10 +50,8 @@ ansible 侧只做三件事：配 repo 文件（`yum_repository`）→ 触发安�
 
 平台组件（Server、RabbitMQ、PostgreSQL、VictoriaMetrics、Grafana…）都是容器镜像，`dnf` 装不了。两条路：
 
-- **走 registry**：Harbor 或 `registry:2`，节点 `podman pull`（D3 待定）；
-- **走静态 tar**：Nginx 提供 `images/*.tar` + `images.digest`，ansible 拉取后 `podman load`。
-
-> 第二条是 **D3 新增的候选方案**：不引入 Harbor 也能完成离线镜像分发，代价是没有漏洞扫描、配额与 GC，镜像多了会很难管。选它还是选 Harbor，仍待 D3 拍板。
+- **走 registry**：Harbor 或 `registry:2`，节点 `podman pull`；**已定为自建 Harbor（[ADR-16](ADR-16-镜像仓库.md)）**；
+- **走静态 tar**：Nginx 提供 `images/*.tar` + `images.digest`，ansible 拉取后 `podman load`。**该路径已降级为应急方案**——仅在 Harbor 不可用时手工兜底，不作为常规分发方式。
 
 ### 4.2 HTTP 明文 + 不校验签名 = 新的投毒面
 

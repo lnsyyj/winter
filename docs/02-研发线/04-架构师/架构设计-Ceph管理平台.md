@@ -32,8 +32,8 @@
 
 - 操作系统基线：CentOS Stream 9；容器运行时：podman；部署编排：cephadm；主机初始化：ansible。
 - 已有组件倾向：React（Web）、Golang（Server / Agent）、PostgreSQL、VictoriaMetrics、Grafana。
-- 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，消息队列见 [ADR-12](ADR-12-消息队列选型.md)。
-- 未定项：镜像仓库、日志系统、认证源（PRD §11.1 的 D3/D4/D7）。
+- 已定项：技术栈 7 项见 [ADR-11](ADR-11-技术栈基线.md)，消息队列见 [ADR-12](ADR-12-消息队列选型.md)，镜像仓库见 [ADR-16](ADR-16-镜像仓库.md)。
+- 未定项：日志系统、认证源（PRD §11.1 的 D4/D7）。
 - 假设规模：20 集群 / 500 节点（PRD §2.1）。
 
 ---
@@ -142,7 +142,7 @@ graph TB
 | 控制面 | Golang | ✅ 已确认 | 单二进制、并发模型适合大量长连接/任务、静态部署简单 | Java / Python | 生态内 Ceph SDK 弱，多数靠 CLI |
 | 关系库 | PostgreSQL | ✅ 已确认（主版本待 DBA） | 图中既定；JSONB 适合存任务参数与 Ceph 原始状态；advisory lock 可做集群级互斥 | MySQL | 需自己做分区与审计表冷热分离 |
 | 消息队列 | **RabbitMQ** | ✅ 已确认（ADR-12） | 团队已有运维经验、语义完备（confirm/ack/DLX/TTL）、管理 UI 与 exporter 成熟 | NATS JetStream（更轻但团队不熟）、Kafka（过重，不选）、Redis Stream（持久化/确认语义不足，不选） | Erlang 运行时与 flow control 排障；内存基线比 JetStream 高 |
-| 镜像仓库 | Harbor（离线场景）/ 对接客户现有仓库 | 待决策 **D3** | 支持离线导入、复制、漏洞扫描、配额 | registry:2（轻但无管理能力） | Harbor 自身较重，显著增加离线包体积与升级面 |
+| 镜像仓库 | **Harbor（自建在管理面）** | ✅ 已确认（ADR-16） | 镜像 GC、漏洞扫描、robot 只读凭据、配额；作为镜像唯一来源，供应链可追溯 | registry:2（无 GC/扫描）、对接客户现有仓库 | 单点；磁盘随版本增长需 GC；Trivy 漏洞库需离线更新 |
 | 指标 | VictoriaMetrics + vmalert | 待决策 **D5** | 资源省、兼容 Prometheus remote_write / PromQL 主体 | Prometheus + Thanos | 与 Prometheus 规则生态存在边界差异 |
 | 告警 | vmalert + Alertmanager | 待决策 **D5** | 复用 Prometheus 生态规则与通知渠道 | Grafana Alerting | 两套告警规则源需统一 |
 | 日志 | VictoriaLogs（推荐）/ Loki | 待决策 **D4** | 与 VM 同栈、资源轻 | ELK（重） | 生态与查询语法差异 |
@@ -246,7 +246,7 @@ Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
   ├─ VictoriaMetrics 单节点 + vmalert + Alertmanager
   ├─ 日志系统单节点
   ├─ Grafana
-  └─ 镜像仓库（可对接客户现有，不强制自建）
+  ├─ Harbor（镜像仓库 + Trivy；MVP 单节点，全部镜像经此拉取）
 被管节点 ×N（CentOS Stream 9 + podman）
   └─ Agent 单二进制（system + ceph 能力，按标签启用）
 ```
@@ -259,7 +259,7 @@ Grafana → 经 Nginx 反代（注入统一鉴权头）→ 查询 VM
 
 ### 6.2 V1（管理面 HA）
 
-Server 多副本 + PG 主从 + RabbitMQ 3 节点集群（quorum queue）+ VM 双副本；**控制面仍是「一个逻辑控制面」**，不做跨地域拆分。
+Server 多副本 + PG 主从 + RabbitMQ 3 节点集群（quorum queue）+ VM 双副本 + Harbor 多副本（外部 PG/Redis）；**控制面仍是「一个逻辑控制面」**，不做跨地域拆分。
 
 ### 6.3 V2（多 Region 联邦，若确有必要）
 
@@ -390,5 +390,6 @@ REST 资源分组（详见 [API 与数据模型设计](../03-开发工程师/API
 | ADR-10 | MVP 单机管理面，HA 延后到 V1 | Accepted | §2 R10 |
 | [ADR-11](ADR-11-技术栈基线.md) | 技术栈基线：React+TS / Golang / PostgreSQL / cephadm+podman / ansible / CentOS Stream 9 | Accepted（2026-11-15） | ADR-11 §2 |
 | [ADR-12](ADR-12-消息队列选型.md) | 消息队列选 RabbitMQ（非 JetStream） | Accepted（2026-11-15） | ADR-12 §3 |
+| [ADR-16](ADR-16-镜像仓库.md) | 镜像仓库：自建 Harbor，节点统一经仓库拉取 | Accepted（2026-11-15） | ADR-16 §2 |
 
 > ADR-07 曾被记为「已决策」而 D1 仍写「待决策」，是一处真实矛盾。2026-11-15 D1 以 **RabbitMQ** 关闭（ADR-12），ADR-07 标记为 `Rejected` 保留理由不删。**基础组件层现已无待定项**，剩余待决策集中在镜像仓库、日志、监控栈与业务前提。
