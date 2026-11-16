@@ -1,0 +1,23 @@
+---
+# Platform uninstall (ADR-17 destroy stage). Data volumes are preserved by default.
+# All tunables live in group_vars/all.yml as uninstall_overrides.
+
+uninstall_defaults:
+  enabled: true
+
+  # Destructive options are off by default. purge_data requires an explicit non-empty data_dirs list.
+  purge_data: false
+  data_dirs: []
+  remove_users: false
+
+  services: []
+  unit_paths: []
+  file_paths: []
+  users: []
+
+  firewall:
+    remove_rule: false
+    cidr: ""
+    port: 0
+
+uninstall: "{{ uninstall_defaults | combine(uninstall_overrides | default({}, true), recursive=True) }}"

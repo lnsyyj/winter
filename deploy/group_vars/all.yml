@@ -108,6 +108,50 @@ agent_overrides:
     remove_user: false
     revoke_cert: false
 
+# Platform uninstall (ADR-17 destroy stage). Review these paths if any deployment path was customized.
+# purge_data is off by default; an explicit data_dirs list is required to remove anything irreversible.
+uninstall_overrides:
+  services:
+    - winter-server
+    - winter-victoriametrics
+    - winter-vmalert
+    - winter-victorialogs
+    - winter-alertmanager
+    - winter-grafana
+  unit_paths:
+    - /etc/systemd/system/winter-server.service
+    - /etc/systemd/system/winter-victoriametrics.service
+    - /etc/systemd/system/winter-vmalert.service
+    - /etc/systemd/system/winter-victorialogs.service
+    - /etc/systemd/system/winter-alertmanager.service
+    - /etc/systemd/system/winter-grafana.service
+  file_paths:
+    - /etc/nginx/conf.d/winter.conf
+    - /etc/nginx/conf.d/winter-repo.conf
+    - "{{ winter_server.env_file }}"
+    - "{{ winter_server.config_dir }}"
+    - "{{ winter_server.bin_dir }}/{{ winter_server.artifact }}"
+    - "{{ observability.config_dir }}"
+    - /usr/local/bin/victoria-metrics-prod
+    - /usr/local/bin/vmalert-prod
+    - /usr/local/bin/victoria-logs-prod
+    - /usr/local/bin/alertmanager
+    - /opt/winter/grafana
+    - /var/tmp/winter-server
+    - /var/tmp/winter-observability
+    - "{{ platform.data_dir }}/www"
+    - "{{ platform.data_dir }}/tls"
+  users:
+    - winter-server
+    - winter-monitor
+  firewall:
+    remove_rule: true
+    cidr: "192.168.101.0/24"
+    port: 8082
+  purge_data: false
+  data_dirs: []
+  remove_users: false
+
 # Database (role defaults are in roles/postgresql/defaults; only differences are written here)
 # Note: you must use postgresql_overrides — writing postgresql: directly replaces the role's default dict wholesale,
 #       causing uncovered keys (such as data_dir) to become undefined.

@@ -13,7 +13,8 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
 | Scale out (install Agent) | `./deploy.sh scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
-| pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ Not implemented |
+| Destroy (uninstall) | `./deploy.sh destroy -i inventory/multinode` | ✅ **Implemented** (data preserved by default; explicit purge required to delete) |
+| pull / post-deploy / reconfigure / upgrade | — | ⬜ Not implemented |
 
 Unimplemented stages exit with an explicit error (exit code 2); they **do not pretend to succeed**.
 
@@ -207,10 +208,11 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / scale-out / scale-in
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / scale-out / scale-in / destroy
 └── roles/
     ├── bootstrap/             # base packages + optional kernel/data-disk settings
-    ├── agent/                 # Agent pre-install and removal (scale-out / scale-in)
+    ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
+    ├── uninstall/             # platform removal with data preserved by default
     ├── prechecks/             # read-only checks
     ├── local_repo/            # publishes the internal artifact repo (8082)
     ├── postgresql/ nginx/     # database and access layer
@@ -239,9 +241,12 @@ cp passwords.yml.example passwords.yml && vi passwords.yml
 
 # 6. Run again to confirm idempotency (should be changed=0)
 ./deploy.sh deploy -i inventory/multinode
+
+# 7. Uninstall when needed (data volumes are preserved)
+./deploy.sh destroy -i inventory/multinode
 ```
 
-Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
+Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
 as well as `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`.
 
 ## Design Constraints (Read Before Making Changes)
