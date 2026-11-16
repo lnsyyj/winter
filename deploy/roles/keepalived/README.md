@@ -29,6 +29,21 @@ HTTPS `/healthz` endpoint answers with the platform `Host` header. On SELinux En
 allow the script to run (for example a local policy for `keepalived_t` executing shell scripts)
 before relying on failover.
 
+## LVS/DR load balancing
+
+VRRP alone is failover only: the VIP lives on one node at a time, so every connection reaches the
+same Nginx. Enable `ha.lvs.enabled: true` to use Keepalived's native LVS in DR mode. The Director
+still holds the VIP (with VRRP failover), but `virtual_server` schedules connections across every
+`[nginx_nodes]` backend using `ha.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`).
+
+Real servers need the VIP on `lo` plus ARP suppression; that is the job of `roles/realserver`,
+applied by `ha-setup` to `[nginx_nodes]`. Return traffic goes straight from the real server to the
+client with the VIP as source, so the Director only handles inbound packets.
+
+Requirements: at least two `[nginx_nodes]`, `ha.vip`, and the `ip_vs` kernel module (loaded by
+this role). `ha.lvs.persistence_timeout: 0` disables session affinity; raise it only when an
+upstream needs sticky connections.
+
 ## Common commands
 
 ```bash

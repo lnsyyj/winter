@@ -1,0 +1,10 @@
+---
+- name: apply sysctl settings
+  ansible.builtin.command: sysctl --system
+  changed_when: false
+
+- name: restart loopback VIP service
+  ansible.builtin.systemd:
+    name: "{{ realserver_unit }}"
+    state: restarted
+    daemon_reload: true

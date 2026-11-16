@@ -206,18 +206,27 @@ Scope and boundaries:
 Server is stateless and Harbor is shared-storage based, so both are deployed as multiple replicas
 behind Nginx, with Keepalived providing a floating VIP on the `[lb]` nodes.
 
+**VRRP alone is failover, not load balancing**: the VIP lives on one node at a time, so every
+connection reaches the same Nginx. Enable `ha.lvs.enabled: true` to use Keepalived's native LVS in
+DR mode. The VIP still moves with VRRP, but connections are scheduled across all `[nginx_nodes]`
+backends and real servers answer directly with the VIP as source, bypassing the Director.
+
 ```bash
 ./deploy.sh ha-setup -i inventory/multinode
 ```
 
-Inventory groups: `[lb]` (Nginx + Keepalived), `[server_nodes]` (Server replicas) and
-`[harbor_nodes]` (Harbor replicas). All three default to `management` in the shipped inventories,
-so single-node runs are unchanged. Split them across hosts for real HA.
+Inventory groups: `[lb]` (LVS Director + Keepalived), `[nginx_nodes]` (real Nginx backends),
+`[server_nodes]` (Server replicas) and `[harbor_nodes]` (Harbor replicas). All default to
+`management` in the shipped inventories, so single-node runs are unchanged. With LVS enabled,
+`[lb]` and `[nginx_nodes]` must be disjoint and share an L2 network — the stage refuses an overlap.
 
 Configuration in `group_vars/all.yml`:
 
 - `ha.vip`, `ha.interface`, `ha.priority` — VRRP address and election; the shared
   `vault_keepalived_auth_pass` comes from `passwords.yml`. Priority descends across `[lb]`.
+- `ha.lvs.enabled: true` and `ha.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`) — four-layer load
+  balancing; requires at least two `[nginx_nodes]`. The `realserver` role puts the VIP on `lo`
+  with ARP suppression on each backend, and persists it with a oneshot systemd unit.
 - `server_ha.database_host` / `audit_database_host` — must point at the PG HA access point once
   Server replicas span nodes; the stage refuses `127.0.0.1` in that case.
 - `harbor.enabled: true` plus `harbor.database.*`, `harbor.redis.*`, `harbor.storage.*` — all
@@ -305,7 +314,8 @@ deploy/
     ├── observability/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
     ├── winter-server/         # Go single binary + systemd (multi-replica via ha-setup)
     ├── harbor/                # Harbor replicas (external DB/Redis/NFS + docker-compose)
-    └── keepalived/            # VRRP VIP for the Nginx access layer
+    ├── keepalived/            # VRRP VIP + LVS/DR virtual_server (Director)
+    └── realserver/            # LVS/DR real servers (loopback VIP + ARP suppression)
 ```
 
 ## Quick Start

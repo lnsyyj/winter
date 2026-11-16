@@ -12,6 +12,23 @@
     quiet: true
   tags: [ha, keepalived]
 
+- name: Validate LVS load balancing configuration
+  ansible.builtin.assert:
+    that:
+      - ha.lvs.real_servers | default([]) | length >= 2
+      - ha.vip | default('') | length > 0
+    fail_msg: "ha.lvs.enabled requires at least two [nginx_nodes] and ha.vip"
+    quiet: true
+  when: ha.lvs.enabled | default(false) | bool
+  tags: [ha, keepalived, lvs]
+
+- name: Load the ip_vs kernel module
+  ansible.builtin.modprobe:
+    name: ip_vs
+    state: present
+  when: ha.lvs.enabled | default(false) | bool
+  tags: [ha, keepalived, lvs]
+
 - name: Check whether keepalived is installed
   ansible.builtin.stat:
     path: /usr/sbin/keepalived
@@ -40,6 +57,15 @@
     mode: "0755"
   notify: restart keepalived
   tags: [ha, keepalived]
+
+- name: Install the LVS health-check script
+  ansible.builtin.template:
+    src: check_lvs.sh.j2
+    dest: "{{ keepalived_lvs_check_script }}"
+    mode: "0755"
+  notify: restart keepalived
+  when: ha.lvs.enabled | default(false) | bool
+  tags: [ha, keepalived, lvs]
 
 - name: Render keepalived configuration
   ansible.builtin.template:

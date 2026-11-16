@@ -1,0 +1,14 @@
+#!/usr/bin/env bash
+# {{ ansible_managed | default('managed by ansible') }}
+# Exit 0 only when the ip_vs module is loaded and keepalived is running.
+set -u
+
+if ! grep -q '^ip_vs ' /proc/modules 2>/dev/null; then
+    exit 1
+fi
+
+if ! pgrep -x keepalived >/dev/null 2>&1; then
+    exit 1
+fi
+
+exit 0

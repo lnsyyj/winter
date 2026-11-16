@@ -327,6 +327,16 @@ ha:
   auth_type: PASS
   nginx_check_interval: 2                 # health-check script interval in seconds
   peer_addresses: []                      # other [lb] addresses; computed by the playbook when empty
+  # LVS/DR four-layer load balancing (Keepalived native). Without it the VIP only provides
+  # failover and every connection lands on the single node holding the VIP.
+  lvs:
+    enabled: false                        # requires at least two [nginx_nodes]
+    scheduler: rr                         # rr / wrr / lc / wlc
+    persistence_timeout: 0                # seconds, 0 = no session affinity
+    health_interval: 6
+    connect_timeout: 3
+    real_server_port: "{{ platform.https_port }}"
+    real_servers: []                      # computed by ha-setup from [nginx_nodes]
 
 # Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
 # Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with

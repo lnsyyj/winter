@@ -2,4 +2,5 @@
 # Fallback values only; ha.* is governed by group_vars/all.yml (ADR-17 single configuration entry point).
 keepalived_config_path: /etc/keepalived/keepalived.conf
 keepalived_check_script: /etc/keepalived/check_nginx.sh
+keepalived_lvs_check_script: /etc/keepalived/check_lvs.sh
 keepalived_service: keepalived

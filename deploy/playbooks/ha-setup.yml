@@ -1,9 +1,11 @@
 ---
 # High availability convergence (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas
-# sit behind Nginx; Keepalived provides a floating VIP on the [lb] nodes.
+# sit behind Nginx; Keepalived provides a floating VIP on the [lb] nodes. With ha.lvs.enabled=true
+# the [lb] nodes are LVS Directors and [nginx_nodes] are real servers, so the VIP dispatches across
+# every Nginx replica instead of pinning all traffic to the node currently holding it.
 #
 # Prerequisites are asserted, never silently assumed:
-# - [lb], [server_nodes], [harbor_nodes] groups exist in the inventory
+# - [lb], [server_nodes], [harbor_nodes], [nginx_nodes] groups exist in the inventory
 # - ha.vip and vault_keepalived_auth_pass are set when ha.enabled=true
 # - server_ha.database_host points at the PG HA access point when servers span multiple nodes
 # - Harbor has external PostgreSQL / Redis / NFS, Docker, and its offline installer in the repo
@@ -77,7 +79,38 @@
       when: harbor.enabled | bool
       tags: [harbor]
 
-- name: Configure Nginx load balancing and the Keepalived VIP
+- name: Configure the Nginx real servers behind the LVS VIP
+  hosts: nginx_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Confirm this is a supported distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == "RedHat"
+        fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
+        quiet: true
+      tags: [always]
+
+  roles:
+    - role: realserver
+      when: ha.lvs.enabled | bool
+      tags: [ha, lvs, realserver]
+    - role: nginx
+      tags: [nginx, web]
+
+- name: Configure the Keepalived Director with LVS load balancing
   hosts: lb
   become: true
   gather_facts: true
@@ -93,11 +126,24 @@
       no_log: true
       tags: [always]
 
-    - name: Compute replica addresses for the upstreams and VRRP peers
+    - name: Reject overlapping Director and real server roles
+      ansible.builtin.assert:
+        that: (not (ha.lvs.enabled | bool)) or (groups['lb'] | intersect(groups['nginx_nodes']) | length == 0)
+        fail_msg: "LVS/DR requires [lb] and [nginx_nodes] to be disjoint; otherwise the Director and a real server share the same VIP"
+        quiet: true
+      tags: [always]
+
+    - name: Compute replica addresses for upstreams, LVS backends and VRRP peers
       ansible.builtin.set_fact:
         server_upstreams: "{{ groups['server_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
         harbor_upstreams: "{{ groups['harbor_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        nginx_lvs_backends: "{{ groups['nginx_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
         ha_peer_addresses: "{{ groups['lb'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+      tags: [always]
+
+    - name: Inject LVS real servers into the Keepalived configuration
+      ansible.builtin.set_fact:
+        ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
       tags: [always]
 
     - name: Assign descending VRRP priority across the load balancers
@@ -106,8 +152,6 @@
       tags: [always]
 
   roles:
-    - role: nginx
-      tags: [nginx, web]
     - role: keepalived
       when: ha.enabled | bool
       tags: [ha, keepalived]
@@ -118,5 +162,6 @@
         msg:
           - "Server upstream: {{ server_upstreams | join(', ') }}"
           - "Harbor upstream: {{ harbor_upstreams | default([]) | join(', ') }}"
+          - "LVS/DR backends: {{ nginx_lvs_backends | default([]) | join(', ') }}"
           - "Keepalived VIP: {{ ha.vip | default('(disabled)') }} on {{ ha.interface }}"
       tags: [always]

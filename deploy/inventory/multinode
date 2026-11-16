@@ -20,6 +20,10 @@ management
 [harbor_nodes:children]
 management
 
+# Real Nginx backends for LVS/DR; split from [lb] for multi-active load balancing.
+[nginx_nodes:children]
+management
+
 [ceph_nodes]
 node01 ansible_host=10.0.0.21
 node02 ansible_host=10.0.0.22
