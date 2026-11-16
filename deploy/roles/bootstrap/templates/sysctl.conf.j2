@@ -1,0 +1,5 @@
+# Managed by the winter bootstrap-servers stage (ADR-17).
+# Do not edit by hand; change bootstrap_overrides.sysctl in deploy/group_vars/all.yml and rerun.
+{% for key, value in bootstrap.sysctl.items() %}
+{{ key }} = {{ value }}
+{% endfor %}

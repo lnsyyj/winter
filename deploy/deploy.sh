@@ -11,8 +11,8 @@ usage() {
 Usage: ./deploy.sh <stage> [-i inventory] [--tags tag,...] [ansible arguments...]
 
 Stages:
+  bootstrap-servers    Install base dependencies and OS settings (podman, chrony, sysctl, data disk)
   prechecks            Pre-deployment checks (read-only, implemented)
-  bootstrap-servers    Install base dependencies (not implemented)
   pull                 Pull images from Harbor (not implemented)
   deploy               Converge to the target state (internal repo + PostgreSQL + Nginx + observability stack + Server)
   pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
@@ -42,6 +42,9 @@ case "$STAGE" in
 esac
 
 case "$STAGE" in
+    bootstrap-servers)
+        PLAYBOOK="$ROOT/playbooks/bootstrap-servers.yml"
+        ;;
     prechecks)
         PLAYBOOK="$ROOT/playbooks/prechecks.yml"
         ;;
@@ -51,7 +54,7 @@ case "$STAGE" in
     pg-ha)
         PLAYBOOK="$ROOT/playbooks/pg-ha.yml"
         ;;
-    bootstrap-servers|pull|post-deploy|reconfigure|upgrade|destroy)
+    pull|post-deploy|reconfigure|upgrade|destroy)
         echo "Stage '$STAGE' is not implemented yet (see the plan in docs/02-研发线/04-架构师/ADR-17-部署框架.md)." >&2
         echo "Currently available: prechecks. For manual operations, temporarily refer to stage C of the installation and deployment manual." >&2
         exit 2

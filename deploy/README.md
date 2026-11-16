@@ -6,11 +6,11 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 
 | Stage | Command | Status |
 | --- | --- | --- |
+| Bootstrap servers | `./deploy.sh bootstrap-servers -i inventory/multinode` | ✅ **Implemented** (base packages + optional kernel/data-disk settings) |
 | Prechecks | `./deploy.sh prechecks -i inventory/multinode` | ✅ **Implemented** (read-only, for the provisioning phase) |
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
 | Converge monitoring stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
-| bootstrap-servers | — | ⬜ Not implemented |
 | pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ Not implemented |
 
 Unimplemented stages exit with an explicit error (exit code 2); they **do not pretend to succeed**.
@@ -181,8 +181,9 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # prechecks / deploy / pg-ha
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha
 └── roles/
+    ├── bootstrap/             # base packages + optional kernel/data-disk settings
     ├── prechecks/             # read-only checks
     ├── local_repo/            # publishes the internal artifact repo (8082)
     ├── postgresql/ nginx/     # database and access layer
@@ -200,17 +201,20 @@ ansible-playbook --version
 # 2. Adapt inventory and group_vars/all.yml to the site, and prepare passwords.yml
 cp passwords.yml.example passwords.yml && vi passwords.yml
 
-# 3. Read-only prechecks
+# 3. Base dependencies (run once on every managed host)
+./deploy.sh bootstrap-servers -i inventory/multinode
+
+# 4. Read-only prechecks
 ./deploy.sh prechecks -i inventory/multinode
 
-# 4. Full converge (database + access layer + monitoring stack + Server)
+# 5. Full converge (database + access layer + monitoring stack + Server)
 ./deploy.sh deploy -i inventory/multinode
 
-# 5. Run again to confirm idempotency (should be changed=0)
+# 6. Run again to confirm idempotency (should be changed=0)
 ./deploy.sh deploy -i inventory/multinode
 ```
 
-Available tags: `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
+Available tags: `bootstrap` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
 as well as `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`.
 
 ## Design Constraints (Read Before Making Changes)

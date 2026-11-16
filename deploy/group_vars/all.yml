@@ -78,6 +78,18 @@ prechecks:
   # Set to true only after stage C1 brings up the internal repo, to check repo and Harbor reachability
   check_artifacts: false
 
+# Base layer (roles/bootstrap): OS packages and the settings that prechecks only reports.
+# Keep enforce_kernel in sync with prechecks.enforce_kernel above.
+# Merge rule: write only differences here; the role combines them with its own defaults.
+bootstrap_overrides:
+  enforce_kernel: false
+  data_disk:
+    device: ""
+    mount_point: /data
+    filesystem: xfs
+    format_if_empty: false
+    mount: false
+
 # Database (role defaults are in roles/postgresql/defaults; only differences are written here)
 # Note: you must use postgresql_overrides — writing postgresql: directly replaces the role's default dict wholesale,
 #       causing uncovered keys (such as data_dir) to become undefined.
