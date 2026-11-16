@@ -15,6 +15,7 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | PG HA scale in | `./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
 | Monitoring scale out | `./deploy.sh monitor-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[monitor]`) |
 | Monitoring scale in | `./deploy.sh monitor-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
+| HA converged deployment | `./deploy.sh ha-setup -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
 | Scale out (install Agent) | `./deploy.sh scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
 | Destroy (uninstall) | `./deploy.sh destroy -i inventory/multinode` | ✅ **Implemented** (data preserved by default; explicit purge required to delete) |
@@ -200,6 +201,35 @@ Scope and boundaries:
 - Data is preserved by default: `monitoring_scale.purge_data: true` requires an explicit non-empty
   `monitoring_scale.data_dirs` list.
 
+### High Availability (Server / Harbor)
+
+Server is stateless and Harbor is shared-storage based, so both are deployed as multiple replicas
+behind Nginx, with Keepalived providing a floating VIP on the `[lb]` nodes.
+
+```bash
+./deploy.sh ha-setup -i inventory/multinode
+```
+
+Inventory groups: `[lb]` (Nginx + Keepalived), `[server_nodes]` (Server replicas) and
+`[harbor_nodes]` (Harbor replicas). All three default to `management` in the shipped inventories,
+so single-node runs are unchanged. Split them across hosts for real HA.
+
+Configuration in `group_vars/all.yml`:
+
+- `ha.vip`, `ha.interface`, `ha.priority` — VRRP address and election; the shared
+  `vault_keepalived_auth_pass` comes from `passwords.yml`. Priority descends across `[lb]`.
+- `server_ha.database_host` / `audit_database_host` — must point at the PG HA access point once
+  Server replicas span nodes; the stage refuses `127.0.0.1` in that case.
+- `harbor.enabled: true` plus `harbor.database.*`, `harbor.redis.*`, `harbor.storage.*` — all
+  required for Harbor replicas; the offline installer must be present in the internal repo.
+
+Harbor hard prerequisites: Docker and `docker-compose` on every Harbor node, an external
+PostgreSQL, an external Redis, and an NFS share mounted by the role. The role fails with an
+actionable message when any is missing; it never deploys an NFS or Redis server itself.
+
+Nginx gains `upstream winter_api` and `upstream winter_harbor`: `/api/v1/` stays with the Server,
+while `/api/v2.0/`, `/v2/`, `/service/` and `/harbor/` are routed to Harbor.
+
 ### Common Operations Commands
 
 ```bash
@@ -263,7 +293,7 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / monitor-scale-out / monitor-scale-in / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / monitor-scale-out / monitor-scale-in / ha-setup / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
 └── roles/
     ├── bootstrap/             # base packages + optional kernel/data-disk settings
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
@@ -273,7 +303,9 @@ deploy/
     ├── postgresql/ nginx/     # database and access layer
     ├── etcd/ patroni/ haproxy/# PG high availability
     ├── observability/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
-    └── winter-server/         # Go single binary + systemd
+    ├── winter-server/         # Go single binary + systemd (multi-replica via ha-setup)
+    ├── harbor/                # Harbor replicas (external DB/Redis/NFS + docker-compose)
+    └── keepalived/            # VRRP VIP for the Nginx access layer
 ```
 
 ## Quick Start

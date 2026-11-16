@@ -1,0 +1,129 @@
+---
+# Harbor HA replica (ADR-16): fetch the offline installer from the internal repo, configure it
+# against external PostgreSQL / Redis / NFS, then start it with docker-compose.
+# Docker and docker-compose are site prerequisites; this role fails explicitly when they are absent.
+
+- name: Validate Harbor HA prerequisites
+  ansible.builtin.assert:
+    that:
+      - harbor.enabled | bool
+      - harbor.hostname | default('') | length > 0
+      - harbor.database.host | default('') | length > 0
+      - harbor.redis.host | default('') | length > 0
+      - harbor.storage.nfs_server | default('') | length > 0
+      - harbor.storage.nfs_path | default('') | length > 0
+      - vault_harbor_db_password is defined and vault_harbor_db_password | length > 0
+      - vault_harbor_redis_password is defined and vault_harbor_redis_password | length > 0
+      - vault_harbor_admin_password is defined and vault_harbor_admin_password | length > 0
+    fail_msg: "Harbor HA requires hostname, external DB/Redis addresses, an NFS share and the vault passwords"
+    quiet: true
+  tags: [harbor]
+
+- name: Check docker-compose is available
+  ansible.builtin.command: "{{ harbor_compose_command }} version"
+  register: harbor_compose_version
+  changed_when: false
+  failed_when: false
+  tags: [harbor]
+
+- name: Fail with an actionable message when docker-compose is missing
+  ansible.builtin.assert:
+    that: harbor_compose_version.rc == 0
+    fail_msg: "docker-compose is required on Harbor nodes but was not found; install Docker and compose before running this stage"
+    quiet: true
+  tags: [harbor]
+
+- name: Create Harbor directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ harbor.install_dir }}"
+    - "{{ harbor.storage.mount_point }}"
+    - "{{ harbor_staging_dir }}"
+  tags: [harbor]
+
+- name: Persist the NFS share in fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    regexp: "^{{ harbor.storage.nfs_server }}:{{ harbor.storage.nfs_path }} "
+    line: "{{ harbor.storage.nfs_server }}:{{ harbor.storage.nfs_path }} {{ harbor.storage.mount_point }} nfs {{ harbor.storage.options }} 0 0"
+    state: present
+    backup: true
+  tags: [harbor]
+
+- name: Mount the shared NFS storage
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if ! findmnt -T "{{ harbor.storage.mount_point }}" >/dev/null 2>&1; then
+      mount -t nfs -o "{{ harbor.storage.options }}" \
+        "{{ harbor.storage.nfs_server }}:{{ harbor.storage.nfs_path }}" \
+        "{{ harbor.storage.mount_point }}"
+      echo mounted
+    else
+      echo already-mounted
+    fi
+  args:
+    executable: /bin/bash
+  register: harbor_mount
+  changed_when: harbor_mount.stdout | trim == 'mounted'
+  tags: [harbor]
+
+- name: Fetch the Harbor offline installer from the internal repo
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ harbor.tarball_subdir }}/{{ harbor.tarball }}"
+    dest: "{{ harbor_staging_dir }}/{{ harbor.tarball }}"
+    mode: "0644"
+    timeout: 600
+  tags: [harbor]
+
+- name: Extract the Harbor offline installer
+  ansible.builtin.unarchive:
+    src: "{{ harbor_staging_dir }}/{{ harbor.tarball }}"
+    dest: "{{ harbor.install_dir }}"
+    remote_src: true
+    extra_opts: [--strip-components=1]
+    creates: "{{ harbor.install_dir }}/install.sh"
+  tags: [harbor]
+
+- name: Render harbor.yml (external DB / Redis / shared storage)
+  ansible.builtin.template:
+    src: harbor.yml.j2
+    dest: "{{ harbor.install_dir }}/harbor.yml"
+    owner: root
+    group: root
+    mode: "0640"
+    backup: true
+  tags: [harbor]
+
+- name: Prepare and start Harbor
+  ansible.builtin.shell: |
+    set -euo pipefail
+    cd "{{ harbor.install_dir }}"
+    ./prepare
+    {{ harbor_compose_command }} up -d
+  args:
+    executable: /bin/bash
+  register: harbor_start
+  changed_when: "'Creating' in harbor_start.stdout or 'Recreating' in harbor_start.stdout or 'Starting' in harbor_start.stdout"
+  tags: [harbor]
+
+- name: Wait for the Harbor health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ harbor.bind_addr }}:{{ harbor.http_port }}{{ harbor.health_path }}"
+    status_code: 200
+  register: harbor_health
+  until: harbor_health.status is defined and harbor_health.status == 200
+  retries: "{{ obs_health_retries | default(30) | int }}"
+  delay: "{{ obs_health_delay | default(2) | int }}"
+  tags: [harbor]
+
+- name: Print Harbor summary
+  ansible.builtin.debug:
+    msg:
+      - "Harbor replica: {{ harbor.hostname }} (bind {{ harbor.bind_addr }}:{{ harbor.http_port }})"
+      - "Shared data: {{ harbor.storage.nfs_server }}:{{ harbor.storage.nfs_path }} on {{ harbor.storage.mount_point }}"
+      - "External PostgreSQL: {{ harbor.database.host }}:{{ harbor.database.port }}/{{ harbor.database.name }}"
+      - "External Redis: {{ harbor.redis.host }}:{{ harbor.redis.port }}"
+  tags: [harbor]

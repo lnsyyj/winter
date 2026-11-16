@@ -312,3 +312,55 @@ winter_server:
   admin_user: admin
   artifact: winter-server
   bin_subdir: bin
+
+# High availability (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas sit behind
+# Nginx, with Keepalived providing a floating VIP on the [lb] nodes. Single-node inventories keep
+# everything on management and leave ha.enabled=false.
+ha:
+  enabled: false
+  interface: eth0                         # NIC that carries the VIP
+  vip: ""                                 # required when ha.enabled=true
+  virtual_router_id: 51                   # 1-255, must be unique on the LAN
+  priority: 100                           # override per host for master/backup (e.g. 100 / 90)
+  advertise_interval: 1
+  preempt: true
+  auth_type: PASS
+  nginx_check_interval: 2                 # health-check script interval in seconds
+  peer_addresses: []                      # other [lb] addresses; computed by the playbook when empty
+
+# Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
+# Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with
+# each replica's internal address. database_host must point at the PG HA access point (HAProxy/VIP)
+# once replicas are spread across nodes.
+server_ha:
+  database_host: 127.0.0.1
+  audit_database_host: 127.0.0.1
+
+# Harbor HA (ADR-16): multiple Harbor replicas share PostgreSQL, Redis and object storage.
+# External PostgreSQL reuses the platform PG HA cluster. External Redis and NFS storage are site
+# prerequisites — this framework never deploys a Redis or NFS server on its own.
+harbor:
+  enabled: false
+  version: v2.11.0
+  tarball: harbor-offline-installer-v2.11.0.tgz
+  tarball_subdir: tarball
+  install_dir: /opt/winter/harbor
+  data_dir: /var/lib/winter/harbor
+  hostname: "{{ platform.registry_host }}"
+  bind_addr: 127.0.0.1
+  http_port: 80
+  database:
+    host: ""                              # external PostgreSQL address, required
+    port: "{{ pg_cluster.haproxy.listen_port }}"
+    name: registry
+    user: harbor
+  redis:
+    host: ""                              # external Redis address, required
+    port: 6379
+    db: 0
+  storage:
+    nfs_server: ""                        # NFS server address, required
+    nfs_path: ""                          # exported share path, required
+    mount_point: /var/lib/winter/harbor/shared
+    options: "vers=4.1,rw"
+  health_path: /api/v2.0/health

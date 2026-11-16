@@ -26,6 +26,13 @@ Therefore this role's rules are:
 | `nginx.tls_dir` | `/var/lib/winter/tls` | Self-signed certificate (generated on first run, left untouched if present) |
 | `nginx.api_upstream` | `http://127.0.0.1:8081` | Server address; **8080 may be occupied by another service on the same host** |
 
+## High availability upstreams
+
+When `./deploy.sh ha-setup` runs, the site gains `upstream winter_api` and `upstream winter_harbor`,
+built from the `[server_nodes]` and `[harbor_nodes]` inventory groups. `/api/v1/` continues to reach the
+Server pool, while `/api/v2.0/`, `/v2/`, `/service/` and `/harbor/` are routed to Harbor. Without those
+references the original single `nginx.api_upstream` is kept, so existing deployments are unchanged.
+
 ## Verification
 
 ```bash

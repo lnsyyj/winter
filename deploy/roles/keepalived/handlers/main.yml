@@ -1,0 +1,7 @@
+---
+# Restart, not reload: a running keepalived keeps its old VRRP state on SIGHUP in some builds.
+- name: restart keepalived
+  ansible.builtin.systemd:
+    name: keepalived
+    state: restarted
+    daemon_reload: true

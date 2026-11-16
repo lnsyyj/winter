@@ -20,6 +20,7 @@ Stages:
   pg-scale-in          Remove replica nodes from the PG HA cluster (data preserved by default)
   monitor-scale-out    Add monitor nodes (Alertmanager HA, Grafana replicas, vmalert notifiers)
   monitor-scale-in     Remove monitor nodes from all references, then tear them down (data preserved)
+  ha-setup             Deploy multi-replica Server/Harbor behind Nginx + Keepalived VIP
   scale-out            Pre-install the Agent on new managed nodes (use --limit)
   scale-in             Remove the Agent from managed nodes (use --limit)
   post-deploy          Acceptance checks and deployment manifest
@@ -71,6 +72,9 @@ case "$STAGE" in
         ;;
     monitor-scale-in)
         PLAYBOOK="$ROOT/playbooks/monitor-scale-in.yml"
+        ;;
+    ha-setup)
+        PLAYBOOK="$ROOT/playbooks/ha-setup.yml"
         ;;
     scale-out)
         PLAYBOOK="$ROOT/playbooks/scale-out.yml"

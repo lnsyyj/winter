@@ -1,0 +1,122 @@
+---
+# High availability convergence (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas
+# sit behind Nginx; Keepalived provides a floating VIP on the [lb] nodes.
+#
+# Prerequisites are asserted, never silently assumed:
+# - [lb], [server_nodes], [harbor_nodes] groups exist in the inventory
+# - ha.vip and vault_keepalived_auth_pass are set when ha.enabled=true
+# - server_ha.database_host points at the PG HA access point when servers span multiple nodes
+# - Harbor has external PostgreSQL / Redis / NFS, Docker, and its offline installer in the repo
+#
+# Usage:
+#   ./deploy.sh ha-setup -i inventory/multinode
+
+- name: Deploy stateless Server replicas
+  hosts: server_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Confirm this is a supported distribution
+      ansible.builtin.assert:
+        that:
+          - ansible_facts.os_family == "RedHat"
+        fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
+        quiet: true
+      tags: [always]
+
+    - name: Reject localhost database address for multi-replica Server
+      ansible.builtin.assert:
+        that: (groups['server_nodes'] | length) == 1 or server_ha.database_host != '127.0.0.1'
+        fail_msg: "Server replicas require server_ha.database_host pointing at the PG HA access point (HAProxy/VIP), not 127.0.0.1"
+        quiet: true
+      tags: [always]
+
+    - name: Bind this Server replica to its internal address
+      ansible.builtin.set_fact:
+        winter_server: "{{ winter_server | combine({'listen_addr': ansible_host | default(winter_server.listen_addr)}) }}"
+      tags: [always]
+
+  roles:
+    - role: winter-server
+      tags: [server]
+
+- name: Deploy Harbor replicas
+  hosts: harbor_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Bind this Harbor replica to its internal address
+      ansible.builtin.set_fact:
+        harbor: "{{ harbor | combine({'bind_addr': ansible_host | default(harbor.bind_addr)}) }}"
+      tags: [always]
+
+  roles:
+    - role: harbor
+      when: harbor.enabled | bool
+      tags: [harbor]
+
+- name: Configure Nginx load balancing and the Keepalived VIP
+  hosts: lb
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Compute replica addresses for the upstreams and VRRP peers
+      ansible.builtin.set_fact:
+        server_upstreams: "{{ groups['server_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        harbor_upstreams: "{{ groups['harbor_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        ha_peer_addresses: "{{ groups['lb'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+      tags: [always]
+
+    - name: Assign descending VRRP priority across the load balancers
+      ansible.builtin.set_fact:
+        ha: "{{ ha | combine({'priority': (ha.priority | int) - (groups['lb'].index(inventory_hostname))}) }}"
+      tags: [always]
+
+  roles:
+    - role: nginx
+      tags: [nginx, web]
+    - role: keepalived
+      when: ha.enabled | bool
+      tags: [ha, keepalived]
+
+  post_tasks:
+    - name: Print HA summary
+      ansible.builtin.debug:
+        msg:
+          - "Server upstream: {{ server_upstreams | join(', ') }}"
+          - "Harbor upstream: {{ harbor_upstreams | default([]) | join(', ') }}"
+          - "Keepalived VIP: {{ ha.vip | default('(disabled)') }} on {{ ha.interface }}"
+      tags: [always]

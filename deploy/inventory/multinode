@@ -10,6 +10,16 @@ mgr01 ansible_host=10.0.0.11
 [monitor:children]
 management
 
+# HA roles default to the management node; move them to dedicated hosts for HA.
+[lb:children]
+management
+
+[server_nodes:children]
+management
+
+[harbor_nodes:children]
+management
+
 [ceph_nodes]
 node01 ansible_host=10.0.0.21
 node02 ansible_host=10.0.0.22

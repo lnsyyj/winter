@@ -17,6 +17,30 @@ upstream winter_grafana {
 {% set winter_grafana_target = 'http://' ~ monitoring_listen_addr ~ ':' ~ (monitoring_ports.grafana | string) %}
 {% endif %}
 
+# Server replicas (ADR-35): stateless, load-balanced across [server_nodes].
+{% if server_upstreams | default([]) | length > 0 %}
+upstream winter_api {
+{% for backend in server_upstreams %}
+    server {{ backend }}:{{ winter_server.port }} max_fails=3 fail_timeout=10s;
+{% endfor %}
+    keepalive 32;
+}
+{% set winter_api_target = 'http://winter_api' %}
+{% else %}
+{% set winter_api_target = nginx.api_upstream %}
+{% endif %}
+
+# Harbor replicas (ADR-16): registry APIs are load-balanced across [harbor_nodes].
+{% if harbor_upstreams | default([]) | length > 0 %}
+upstream winter_harbor {
+{% for backend in harbor_upstreams %}
+    server {{ backend }}:{{ harbor.http_port }} max_fails=3 fail_timeout=10s;
+{% endfor %}
+    keepalive 16;
+}
+{% set winter_harbor_target = 'http://winter_harbor' %}
+{% endif %}
+
 server {
     listen      {{ nginx.http_port }};
     listen      [::]:{{ nginx.http_port }};
@@ -55,14 +79,31 @@ server {
 
     # Management plane API (effective once the Server is up; returns 502 before then, expected)
     location /api/ {
-        proxy_pass         {{ nginx.api_upstream }}/;
+        proxy_pass         {{ winter_api_target }}/;
         proxy_http_version 1.1;
         proxy_set_header   Host              $host;
         proxy_set_header   X-Real-IP         $remote_addr;
         proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
         proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
         proxy_read_timeout 300s;
     }
+
+{% if harbor_upstreams | default([]) | length > 0 %}
+    # Harbor registry (ADR-16): /api/v1/ stays with the Server, /api/v2.0/ goes to Harbor.
+    # Empty client_max_body_size is required for large image layers.
+    location ~ ^/(v2/|service/|api/v2\.0/|harbor/) {
+        proxy_pass         {{ winter_harbor_target }};
+        proxy_http_version 1.1;
+        proxy_set_header   Host              $host;
+        proxy_set_header   X-Real-IP         $remote_addr;
+        proxy_set_header   X-Forwarded-For   $proxy_add_x_forwarded_for;
+        proxy_set_header   X-Forwarded-Proto $scheme;
+        proxy_set_header   Connection        "";
+        proxy_read_timeout 300s;
+        client_max_body_size 0;
+    }
+{% endif %}
 
     # Grafana: always enter via the platform domain; direct access to port 3000 bypassing platform RBAC is forbidden (ADR-09)
     # Port comes from group_vars' monitoring_ports.grafana, not hardcoded in this template

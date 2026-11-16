@@ -1,0 +1,15 @@
+#!/usr/bin/env bash
+# {{ ansible_managed | default('managed by ansible') }}
+# Exit 0 only when Nginx is running and its HTTPS health endpoint answers.
+set -u
+
+if ! pgrep -x nginx >/dev/null 2>&1; then
+    exit 1
+fi
+
+if ! curl -ksS --max-time 2 -H "Host: {{ nginx.server_name }}" \
+    "https://127.0.0.1:{{ nginx.https_port }}/healthz" >/dev/null 2>&1; then
+    exit 1
+fi
+
+exit 0

@@ -2,9 +2,19 @@
 # Usage: ./deploy.sh prechecks            (this file is used by default when -i is not passed)
 
 [management]
-localhost ansible_connection=local
+localhost ansible_connection=local ansible_host=127.0.0.1
 
 [monitor:children]
+management
+
+# HA roles default to the same node until the topology is split.
+[lb:children]
+management
+
+[server_nodes:children]
+management
+
+[harbor_nodes:children]
 management
 
 [ceph_nodes]

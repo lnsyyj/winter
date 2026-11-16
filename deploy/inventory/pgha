@@ -21,6 +21,16 @@ pg-c
 [monitor:children]
 management
 
+# HA roles default to the PG nodes; move them to dedicated hosts for HA.
+[lb:children]
+management
+
+[server_nodes:children]
+management
+
+[harbor_nodes:children]
+management
+
 [ceph_nodes]
 
 [all:vars]
