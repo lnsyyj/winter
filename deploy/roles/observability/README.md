@@ -15,8 +15,9 @@ the target machine does not compile or connect to the external network (ADR-14 /
 
 Ports, versions, retention and command-line arguments are all changed in `deploy/group_vars/all.yml` under
 `monitoring_ports` / `observability.components`; this role does not hardcode ports.
-All processes listen only on `monitoring_listen_addr` (default `127.0.0.1`), run as the non-root
-account `winter-monitor`, and their systemd units are named `winter-<component>`.
+All processes listen only on `monitoring_listen_addr` (default `127.0.0.1`) in single-node mode, run as the
+non-root account `winter-monitor`, and their systemd units are named `winter-<component>`. The monitoring scale
+stages override the bind address with `0.0.0.0` and advertise each node's internal address; see below.
 
 ## Configuration and tailoring
 
@@ -46,6 +47,25 @@ with `SHA256SUMS.txt` for transfer verification. Note two points:
   toolkit and **repackages** it, avoiding bringing the 140MB toolkit into the repository; the original version is recorded in the BOM.
 - Grafana 9.5.20 is chosen because it is the last stable release whose tar.gz is under GitHub's 100MB single-file limit;
   upgrading to 11.x+ requires switching to sharding or transport media.
+
+## Scale-out / scale-in (ADR-18 / ADR-33)
+
+This role is reused by the two monitoring scale stages. Both stages are idempotent and keep single-node
+behaviour unchanged.
+
+- `./deploy.sh monitor-scale-out`: converge the stack on all `[monitor]` nodes, form an Alertmanager gossip
+  cluster (`monitoring_scale.cluster_port`, default 9094), point every vmalert instance at all Alertmanager
+  replicas, and publish all Grafana replicas to the Nginx upstream.
+- `./deploy.sh monitor-scale-in`: rewire the remaining nodes first, then run `tasks/remove.yml` on the
+  removed nodes, and finally drop their Grafana upstream entries.
+
+Multi-node runs bind components to `0.0.0.0` and advertise each node's `ansible_host`. Scaling back to a
+single node restores the localhost-only binding. At least one monitor node must remain.
+
+**Boundary**: VictoriaMetrics and VictoriaLogs use the single-node binaries with local storage. Adding a monitor
+node does **not** create a distributed datastore. Set `monitoring_scale.metrics_query_url` to a central
+VictoriaMetrics endpoint for aggregation; `remote_write` is never configured implicitly. Data is preserved by
+default; `monitoring_scale.purge_data: true` requires a non-empty `monitoring_scale.data_dirs` list.
 
 ## Common commands
 

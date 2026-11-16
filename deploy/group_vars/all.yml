@@ -220,9 +220,33 @@ monitoring_ports:
   alertmanager: 9093
   grafana: 3000
 monitoring_listen_addr: 127.0.0.1
+# Single-node mode: bind and advertise both follow monitoring_listen_addr, so the existing
+# localhost-only behaviour is preserved. The scale playbooks override these per host:
+#   monitoring_bind_addr      -> 0.0.0.0              (accept internal traffic)
+#   monitoring_advertise_addr -> the node internal IP (used by peers and reverse proxies)
+monitoring_bind_addr: "{{ monitoring_listen_addr }}"
+monitoring_advertise_addr: "{{ monitoring_listen_addr }}"
 monitoring_data_dir: /var/lib/winter/monitoring
 monitoring_config_dir: /etc/winter/monitoring
 monitoring_retention_days: 30       # 30 days each for metrics and logs; audits live in PG, not in the logging system
+
+# Monitoring scale-out / scale-in (ADR-18 / ADR-33).
+# Scope: stateless and HA layers only — Alertmanager gossip HA, Grafana replicas behind Nginx,
+# and vmalert instances. VictoriaMetrics / VictoriaLogs use the single-node binaries with local
+# storage and therefore stay one authoritative replica; set remote_write_url to aggregate
+# additional replicas into a central VictoriaMetrics, but the playbooks never do that implicitly.
+# Single-node default keeps the local Alertmanager; monitoring scale playbooks override this with
+# the addresses of all Alertmanager replicas so alerts are de-duplicated by the gossip cluster.
+monitoring_vmalert_notifiers:
+  - "{{ monitoring_listen_addr }}"
+
+monitoring_scale:
+  nodes: []                  # scale-out targets, must already be listed in the [monitor] group
+  removed_nodes: []          # scale-in targets, kept in [monitor] but excluded from all references
+  purge_data: false          # never remove monitoring data unless explicitly requested
+  data_dirs: []              # required and non-empty when purge_data is true
+  cluster_port: 9094         # Alertmanager gossip port
+  metrics_query_url: ""      # Grafana datasource target; empty resolves to the first active monitor node
 
 observability:
   enabled: true
@@ -249,8 +273,9 @@ observability:
       port: "{{ monitoring_ports.vmalert }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      # Single alert-rule chain (ADR-18): M0 uses placeholder rules; replace with disk-usage/task-backlog rules once collection is wired up
-      args: "-datasource.url=http://{{ monitoring_listen_addr }}:{{ monitoring_ports.victoriametrics }} -notifier.url=http://{{ monitoring_listen_addr }}:{{ monitoring_ports.alertmanager }} -rule={{ monitoring_config_dir }}/rules/*.yml -evaluationInterval=15s"
+      # Single alert-rule chain (ADR-18): M0 uses placeholder rules; replace with disk-usage/task-backlog rules once collection is wired up.
+      # notifier.url is appended from monitoring_vmalert_notifiers so the scale playbooks can point at every Alertmanager replica.
+      args: "-datasource.url=http://{{ monitoring_metrics_url | default(monitoring_listen_addr) }}:{{ monitoring_ports.victoriametrics }} -rule={{ monitoring_config_dir }}/rules/*.yml -evaluationInterval=15s"
     victorialogs:
       enabled: true
       tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz

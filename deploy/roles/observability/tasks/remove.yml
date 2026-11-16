@@ -1,0 +1,69 @@
+---
+# Remove the observability stack from a node (ADR-18 / ADR-33 monitoring scale-in).
+# Data is preserved by default. Purging is opt-in and requires an explicit non-empty data_dirs list.
+
+- name: Validate monitoring scale-in options
+  ansible.builtin.assert:
+    that:
+      - not (monitoring_scale.purge_data | bool) or (monitoring_scale.data_dirs | default([]) | length > 0)
+    fail_msg: "monitoring_scale.purge_data=true requires a non-empty monitoring_scale.data_dirs list; monitoring data is never removed implicitly"
+    quiet: true
+  tags: [observability]
+
+- name: Compute components enabled on this node
+  ansible.builtin.set_fact:
+    obs_components: "{{ observability.components | dict2items | selectattr('value.enabled', 'equalto', true) | list }}"
+  tags: [observability]
+
+- name: Stop and disable monitoring services
+  ansible.builtin.systemd:
+    name: "winter-{{ item.key }}"
+    state: stopped
+    enabled: false
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  failed_when: false
+  tags: [observability]
+
+- name: Remove monitoring systemd units
+  ansible.builtin.file:
+    path: "/etc/systemd/system/winter-{{ item.key }}.service"
+    state: absent
+  loop: "{{ obs_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags: [observability]
+
+- name: Reload systemd manager configuration
+  ansible.builtin.systemd:
+    daemon_reload: true
+  tags: [observability]
+
+- name: Remove monitoring configuration
+  ansible.builtin.file:
+    path: "{{ observability.config_dir }}"
+    state: absent
+  tags: [observability]
+
+- name: Remove artifact staging directory
+  ansible.builtin.file:
+    path: /var/tmp/winter-observability
+    state: absent
+  tags: [observability]
+
+- name: Purge monitoring data (only when explicitly requested)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ monitoring_scale.data_dirs | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when: monitoring_scale.purge_data | bool
+  tags: [observability]
+
+- name: Print scale-in summary
+  ansible.builtin.debug:
+    msg:
+      - "Monitoring stack removed from {{ inventory_hostname }}; data preserved unless purge_data=true"
+  tags: [observability]

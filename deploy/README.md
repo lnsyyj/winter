@@ -13,6 +13,8 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
 | PG HA scale out | `./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
 | PG HA scale in | `./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
+| Monitoring scale out | `./deploy.sh monitor-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[monitor]`) |
+| Monitoring scale in | `./deploy.sh monitor-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
 | Scale out (install Agent) | `./deploy.sh scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
 | Destroy (uninstall) | `./deploy.sh destroy -i inventory/multinode` | ✅ **Implemented** (data preserved by default; explicit purge required to delete) |
@@ -172,6 +174,32 @@ Safety rules enforced by the playbooks:
 
 After a successful scale-in, remove the hosts from `[management]` in the inventory so future runs match the real topology.
 
+### Scaling the Monitoring Stack
+
+Add the new hosts to `[monitor]` in the inventory first; topology is always expressed by inventory groups. Every name in
+`monitoring_scale.nodes` / `removed_nodes` must already be a member of that group.
+
+```bash
+# Add a monitor node: gossip peer + Grafana replica + vmalert notifier
+./deploy.sh monitor-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
+
+# Remove a monitor node: rewire references first, then tear down services
+./deploy.sh monitor-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'
+```
+
+Scope and boundaries:
+
+- **Stateless / HA layers scale horizontally**: Alertmanager forms a gossip cluster (`monitoring_scale.cluster_port`,
+  default 9094), vmalert notifies every Alertmanager replica, and Nginx load-balances Grafana across all monitor nodes.
+- **VictoriaMetrics / VictoriaLogs stay single-node**: they use the single-node binaries with local storage, so adding a
+  monitor node does **not** create a distributed datastore. Point `monitoring_scale.metrics_query_url` at a central
+  VictoriaMetrics endpoint when replicas must be aggregated; the playbooks never configure `remote_write` implicitly.
+- Multi-node runs bind components to `0.0.0.0` and advertise each node's `ansible_host`; scaling back to one node
+  restores the localhost-only binding.
+- At least one monitor node must remain; scale-in refuses to remove the last one.
+- Data is preserved by default: `monitoring_scale.purge_data: true` requires an explicit non-empty
+  `monitoring_scale.data_dirs` list.
+
 ### Common Operations Commands
 
 ```bash
@@ -235,7 +263,7 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / monitor-scale-out / monitor-scale-in / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
 └── roles/
     ├── bootstrap/             # base packages + optional kernel/data-disk settings
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)

@@ -15,7 +15,7 @@ route:
 receivers:
   - name: winter-webhook
     webhook_configs:
-      - url: http://{{ observability.listen_addr }}:8081/v1/alerts/webhook
+      - url: http://{{ monitoring_server_url | default(observability.listen_addr) }}:{{ winter_server.port }}/v1/alerts/webhook
         send_resolved: true
         max_alerts: 20
 

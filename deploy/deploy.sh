@@ -18,6 +18,8 @@ Stages:
   pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
   pg-scale-out         Add replica nodes to the PG HA cluster (odd final etcd count)
   pg-scale-in          Remove replica nodes from the PG HA cluster (data preserved by default)
+  monitor-scale-out    Add monitor nodes (Alertmanager HA, Grafana replicas, vmalert notifiers)
+  monitor-scale-in     Remove monitor nodes from all references, then tear them down (data preserved)
   scale-out            Pre-install the Agent on new managed nodes (use --limit)
   scale-in             Remove the Agent from managed nodes (use --limit)
   post-deploy          Acceptance checks and deployment manifest
@@ -63,6 +65,12 @@ case "$STAGE" in
         ;;
     pg-scale-in)
         PLAYBOOK="$ROOT/playbooks/pg-scale-in.yml"
+        ;;
+    monitor-scale-out)
+        PLAYBOOK="$ROOT/playbooks/monitor-scale-out.yml"
+        ;;
+    monitor-scale-in)
+        PLAYBOOK="$ROOT/playbooks/monitor-scale-in.yml"
         ;;
     scale-out)
         PLAYBOOK="$ROOT/playbooks/scale-out.yml"

@@ -540,3 +540,5 @@ trim_trailing_whitespace = false
 | 2026-11-16 | Ansible 全英文约束入契约：§0 铁律新增第 12 条、§4.4 明确范围与例外（覆盖 §4.7 中文撰写）、§11 No-Go 新增 Ansible 行、§12 AI 约定新增第 12 条；`deploy/` 全量英文化已先行单独提交 | 本次提交 |
 | 2026-11-16 | 提交纪律变更：**每次 commit 后立即 push 到远程仓库**取代原「不自动 push」约定。§0 第 1/9 条、§2.4（新增第 9 步并改标题）、§2.6、§7.4、§11、§12 第 2 条同步；force push 仍禁止 | 本次提交 |
 | 2026-11-16 | 部署框架补齐 ADR-17 剩余阶段（五个独立提交，均已 push）：`bootstrap-servers`（基础依赖 + 可选内核/数据盘）、`scale-out`/`scale-in`（Agent 预装与卸载，数据默认保留）、`destroy`（卸载，purge 需显式列目录）、`post-deploy`/`reconfigure`/`upgrade`；新增 `roles/agent`、`roles/uninstall` 与 `scripts/verify-ansible.sh` 静态校验；`pull` 标记为刻意废弃（ADR-30）。Agent 二进制、控制机 CA、Nginx grpc_pass 为外部前提，缺失时显式失败 | 本次提交 |
+| 2026-11-16 | 新增 PG HA 数据库扩缩容（`pg-scale-out` / `pg-scale-in`）：etcd 成员增删 + `initial-cluster-state=existing`、Patroni/HAProxy 成员感知、奇数最终成员数校验、仅缩容 replica、数据默认保留 | `3b260c7` |
+| 2026-11-16 | 新增监控栈扩缩容（`monitor-scale-out` / `monitor-scale-in`）：Alertmanager gossip HA、Grafana 多副本经 Nginx upstream、vmalert 全量 notifier；多节点自动切 `0.0.0.0`/内网地址，缩回单节点恢复 localhost；VM/VL 单机版边界明确，不隐式配 remote_write；新增 `roles/observability/tasks/remove.yml`，数据默认保留 | 本次提交 |
