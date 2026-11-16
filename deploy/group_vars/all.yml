@@ -108,6 +108,12 @@ agent_overrides:
     remove_user: false
     revoke_cert: false
 
+# Version upgrade (ADR-17): versions are pinned in group_vars and in artifacts/repo/SHA256SUMS.txt.
+# Pass target_version at runtime with -e; empty by default so an upgrade cannot be run accidentally.
+upgrade:
+  target_version: ""
+  require_checksums: true
+
 # Platform uninstall (ADR-17 destroy stage). Review these paths if any deployment path was customized.
 # purge_data is off by default; an explicit data_dirs list is required to remove anything irreversible.
 uninstall_overrides:

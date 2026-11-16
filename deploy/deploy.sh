@@ -18,9 +18,9 @@ Stages:
   pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
   scale-out            Pre-install the Agent on new managed nodes (use --limit)
   scale-in             Remove the Agent from managed nodes (use --limit)
-  post-deploy          Initialization (not implemented)
-  reconfigure          Rerun after configuration changes (not implemented)
-  upgrade              Version upgrade (not implemented)
+  post-deploy          Acceptance checks and deployment manifest
+  reconfigure          Validate configuration, then re-converge
+  upgrade              Verify artifacts, converge to pinned versions, re-run acceptance
   destroy              Uninstall the platform (data preserved by default)
 
 Examples:
@@ -65,7 +65,16 @@ case "$STAGE" in
     destroy)
         PLAYBOOK="$ROOT/playbooks/destroy.yml"
         ;;
-    pull|post-deploy|reconfigure|upgrade)
+    post-deploy)
+        PLAYBOOK="$ROOT/playbooks/post-deploy.yml"
+        ;;
+    reconfigure)
+        PLAYBOOK="$ROOT/playbooks/reconfigure.yml"
+        ;;
+    upgrade)
+        PLAYBOOK="$ROOT/playbooks/upgrade.yml"
+        ;;
+    pull)
         echo "Stage '$STAGE' is not implemented yet (see the plan in docs/02-研发线/04-架构师/ADR-17-部署框架.md)." >&2
         echo "Currently available: prechecks. For manual operations, temporarily refer to stage C of the installation and deployment manual." >&2
         exit 2

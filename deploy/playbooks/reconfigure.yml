@@ -1,0 +1,51 @@
+---
+# reconfigure · validate the changed configuration, then converge (ADR-17 stage semantics)
+#
+# Run after editing group_vars/all.yml. It refuses obviously broken values before touching the hosts,
+# then delegates to the normal deploy stage so reconfigure follows exactly the same idempotent path.
+# Usage: ./deploy.sh reconfigure -i inventory/multinode
+
+- name: Validate configuration before reconfigure
+  hosts: management
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+    - name: Load deployment passwords (deploy/passwords.yml, skip if absent)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Confirm audit retention meets the hard floor (ADR-32)
+      ansible.builtin.assert:
+        that: platform.retention.audit_online_days >= 180
+        fail_msg: "platform.retention.audit_online_days must be at least 180 (ADR-32 hard floor); actual: {{ platform.retention.audit_online_days }}"
+        quiet: true
+      tags: [reconfigure]
+
+    - name: Confirm configured ports are unique
+      ansible.builtin.assert:
+        that: candidate_ports | length == candidate_ports | unique | length
+        fail_msg: "Duplicate listening ports configured: {{ candidate_ports }}"
+        quiet: true
+      vars:
+        # The internal repo port is fixed by the local_repo role; uninstall.firewall.port records it.
+        repo_port: "{{ uninstall.firewall.port }}"
+        candidate_ports: "{{ [platform.https_port, winter_server.port, pg_cluster.port, pg_cluster.rest_port, pg_cluster.haproxy.listen_port, repo_port] + monitoring_ports.values() | list }}"
+      tags: [reconfigure]
+
+    - name: Report effective configuration
+      ansible.builtin.debug:
+        msg:
+          - "Domain {{ platform.domain }}; HTTPS {{ platform.https_port }}; Server {{ winter_server.port }}"
+          - "PG {{ pg_cluster.port }} → entry {{ pg_cluster.haproxy.listen_port }}; Patroni REST {{ pg_cluster.rest_port }}"
+          - "Retention logs/metrics/tasks/audit: {{ platform.retention.logs_days }}/{{ platform.retention.metrics_days }}/{{ platform.retention.tasks_days }}/{{ platform.retention.audit_online_days }}"
+      tags: [reconfigure]
+
+- name: Converge to the new configuration
+  ansible.builtin.import_playbook: deploy.yml

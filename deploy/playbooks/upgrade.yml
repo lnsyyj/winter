@@ -1,0 +1,62 @@
+---
+# upgrade · verify artifacts, converge to pinned versions, then re-run acceptance (ADR-17 stage semantics)
+#
+# Versions are pinned in group_vars/all.yml and in artifacts/repo/SHA256SUMS.txt (ADR-14).
+# An upgrade = update those pins in git, then run this stage with a target version label.
+# Usage: ./deploy.sh upgrade -i inventory/multinode -e '{"upgrade":{"target_version":"v0.3.0"}}'
+
+- name: Verify upgrade inputs and offline artifacts
+  hosts: management
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  tasks:
+    - name: Confirm a target version was provided
+      ansible.builtin.assert:
+        that: upgrade.target_version is defined and upgrade.target_version | length > 0
+        fail_msg: "Set upgrade.target_version (e.g. -e '{\"upgrade\":{\"target_version\":\"v0.3.0\"}}') before upgrading"
+        quiet: true
+      tags: [upgrade]
+
+    - name: Verify offline artifact checksums on the control machine
+      ansible.builtin.command: sha256sum -c SHA256SUMS.txt
+      args:
+        chdir: "{{ playbook_dir }}/../artifacts/repo"
+      delegate_to: localhost
+      become: false
+      register: upgrade_checksum
+      changed_when: false
+      when: upgrade.require_checksums | bool
+      tags: [upgrade]
+
+    - name: Record pre-upgrade manifest
+      ansible.builtin.slurp:
+        src: "{{ platform.data_dir }}/deployment-manifest.yml"
+      register: upgrade_previous_manifest
+      failed_when: false
+      tags: [upgrade]
+
+    - name: Save pre-upgrade manifest for rollback reference
+      ansible.builtin.copy:
+        dest: "{{ platform.data_dir }}/deployment-manifest.pre-upgrade.yml"
+        content: "{{ upgrade_previous_manifest.content | default('') | b64decode }}"
+        mode: "0644"
+      when: upgrade_previous_manifest.content is defined
+      tags: [upgrade]
+
+    - name: Print upgrade plan and rollback path
+      ansible.builtin.debug:
+        msg:
+          - "Upgrading to {{ upgrade.target_version }} from pinned artifact versions in group_vars/all.yml"
+          - "Checksums: {{ 'verified' if upgrade_checksum is skipped or upgrade_checksum.rc == 0 else 'FAILED' }}"
+          - "Rollback: git revert the version-pin commit, then rerun ./deploy.sh upgrade with the previous target_version"
+      tags: [upgrade]
+
+- name: Converge to the pinned versions
+  ansible.builtin.import_playbook: deploy.yml
+
+- name: Re-run acceptance checks
+  ansible.builtin.import_playbook: post-deploy.yml

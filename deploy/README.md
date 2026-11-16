@@ -14,7 +14,10 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | Scale out (install Agent) | `./deploy.sh scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
 | Destroy (uninstall) | `./deploy.sh destroy -i inventory/multinode` | ✅ **Implemented** (data preserved by default; explicit purge required to delete) |
-| pull / post-deploy / reconfigure / upgrade | — | ⬜ Not implemented |
+| Post-deploy | `./deploy.sh post-deploy -i inventory/multinode` | ✅ **Implemented** (entry-point checks + release manifest) |
+| Reconfigure | `./deploy.sh reconfigure -i inventory/multinode` | ✅ **Implemented** (validates config, then re-converges) |
+| Upgrade | `./deploy.sh upgrade -i inventory/multinode -e '{"upgrade":{"target_version":"v0.3.0"}}'` | ✅ **Implemented** (SHA256 verification + converge + acceptance) |
+| pull | — | ⬜ Not implemented — intentionally obsolete: management components are static artifacts, Ceph images are pulled by cephadm (ADR-30) |
 
 Unimplemented stages exit with an explicit error (exit code 2); they **do not pretend to succeed**.
 
@@ -208,7 +211,7 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / scale-out / scale-in / destroy
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
 └── roles/
     ├── bootstrap/             # base packages + optional kernel/data-disk settings
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
