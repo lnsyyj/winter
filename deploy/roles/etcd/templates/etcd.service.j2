@@ -17,9 +17,9 @@ ExecStart={{ etcd_role.bin_dir }}/etcd \
   --advertise-client-urls http://{{ ansible_host }}:{{ pg_cluster.etcd.client_port }} \
   --listen-peer-urls http://{{ ansible_host }}:{{ pg_cluster.etcd.peer_port }} \
   --initial-advertise-peer-urls http://{{ ansible_host }}:{{ pg_cluster.etcd.peer_port }} \
-  --initial-cluster {% for h in groups['management'] %}{{ h }}=http://{{ hostvars[h]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}{% if not loop.last %},{% endif %}{% endfor %} \
+  --initial-cluster {% if etcd_joining | default(false) and etcd_initial_cluster is defined %}{{ etcd_initial_cluster }}{% else %}{% set members = groups['management'] | difference((pg_scale | default({})).removed_nodes | default([])) %}{% for h in members %}{{ h }}=http://{{ hostvars[h]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %} \
   --initial-cluster-token winter-etcd \
-  --initial-cluster-state new \
+  --initial-cluster-state {% if etcd_joining | default(false) and etcd_initial_cluster is defined %}existing{% else %}new{% endif %} \
   --heartbeat-interval 1000 \
   --election-timeout 5000
 Restart=always

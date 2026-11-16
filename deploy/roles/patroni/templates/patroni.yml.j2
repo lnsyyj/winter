@@ -13,7 +13,7 @@ restapi:
 
 etcd3:
   hosts:
-{% for h in groups['management'] %}
+{% for h in groups['management'] | difference((pg_scale | default({})).removed_nodes | default([])) %}
     - {{ hostvars[h]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }}
 {% endfor %}
 

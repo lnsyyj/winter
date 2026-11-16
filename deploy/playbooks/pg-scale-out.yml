@@ -1,0 +1,95 @@
+---
+# pg-scale-out · add replica nodes to the PostgreSQL HA cluster (etcd + Patroni + HAProxy)
+#
+# Nodes must already be present in [management] in inventory/pgha (ADR-17: topology is expressed by inventory groups).
+# etcd requires an odd final member count, so add nodes in a quantity that keeps the total odd (e.g. 3 -> 5).
+#
+# Usage:
+#   ./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'
+
+- name: Scale out the PostgreSQL HA cluster
+  hosts: management
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Validate scale-out plan
+      ansible.builtin.assert:
+        that:
+          - pg_scale.nodes | length > 0
+          - pg_scale.nodes | unique | length == pg_scale.nodes | length
+          - pg_scale.nodes | difference(groups['management']) | length == 0
+          - (groups['management'] | length + pg_scale.nodes | length) % 2 == 1
+        fail_msg: "pg_scale.nodes must be unique hosts already in [management], and the final etcd count must be odd"
+        quiet: true
+      run_once: true
+      tags: [always]
+
+    - name: Record the expected member count
+      ansible.builtin.set_fact:
+        pg_expected_members: "{{ groups['management'] | length + pg_scale.nodes | length }}"
+      tags: [always]
+
+  tasks:
+    - name: Register new etcd members
+      ansible.builtin.command: >-
+        {{ etcd_role.bin_dir }}/etcdctl
+        --endpoints=http://{{ hostvars[groups['management'] | difference(pg_scale.nodes) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }}
+        member add {{ item }}
+        --peer-urls=http://{{ hostvars[item]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
+      loop: "{{ pg_scale.nodes }}"
+      delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+      run_once: true
+      register: pg_etcd_add
+      changed_when: true
+      tags: [etcd, scale-out]
+
+    - name: Configure joining nodes with the member list returned by etcd
+      ansible.builtin.set_fact:
+        etcd_joining: true
+        etcd_initial_cluster: >-
+          {{ (pg_etcd_add.results | selectattr('item', 'equalto', inventory_hostname) | first).stdout_lines
+             | select('search', '^ETCD_INITIAL_CLUSTER=') | first
+             | regex_replace('^ETCD_INITIAL_CLUSTER="?(.*?)"?$', '\\1') }}
+      when: inventory_hostname in pg_scale.nodes
+      tags: [etcd, scale-out]
+
+  roles:
+    - role: postgresql
+      when: inventory_hostname in pg_scale.nodes
+      tags: [postgresql, db]
+    - role: etcd
+      when: inventory_hostname in pg_scale.nodes
+      tags: [etcd]
+    - role: patroni
+      when: inventory_hostname in pg_scale.nodes
+      tags: [patroni]
+    - role: haproxy
+      tags: [haproxy]
+
+  post_tasks:
+    - name: Verify the new nodes are streaming replicas
+      ansible.builtin.uri:
+        url: "http://{{ hostvars[item]['ansible_host'] }}:{{ pg_cluster.rest_port }}/replica"
+        status_code: 200
+      loop: "{{ pg_scale.nodes }}"
+      delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+      tags: [scale-out]
+
+    - name: Report scale-out result
+      ansible.builtin.debug:
+        msg:
+          - "Added {{ pg_scale.nodes | join(', ') }}; etcd members: {{ pg_expected_members }}"
+          - "Remove the staged join facts after a successful rollout is not required; they are host facts for this run only"
+      run_once: true
+      tags: [always]

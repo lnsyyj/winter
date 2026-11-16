@@ -108,6 +108,14 @@ agent_overrides:
     remove_user: false
     revoke_cert: false
 
+# PostgreSQL HA membership changes (ADR-17 / ADR-37). Nodes must already be in [management] in inventory/pgha.
+# The final etcd member count must stay odd and >= 3. Data is preserved unless purge_data is set.
+pg_scale:
+  nodes: []            # scale-out targets, e.g. [pg-d, pg-e]
+  removed_nodes: []    # scale-in targets, e.g. [pg-e]
+  purge_data: false
+  data_dirs: []
+
 # Version upgrade (ADR-17): versions are pinned in group_vars and in artifacts/repo/SHA256SUMS.txt.
 # Pass target_version at runtime with -e; empty by default so an upgrade cannot be run accidentally.
 upgrade:

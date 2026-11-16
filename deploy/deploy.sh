@@ -16,6 +16,8 @@ Stages:
   pull                 Pull images from Harbor (not implemented)
   deploy               Converge to the target state (internal repo + PostgreSQL + Nginx + observability stack + Server)
   pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
+  pg-scale-out         Add replica nodes to the PG HA cluster (odd final etcd count)
+  pg-scale-in          Remove replica nodes from the PG HA cluster (data preserved by default)
   scale-out            Pre-install the Agent on new managed nodes (use --limit)
   scale-in             Remove the Agent from managed nodes (use --limit)
   post-deploy          Acceptance checks and deployment manifest
@@ -55,6 +57,12 @@ case "$STAGE" in
         ;;
     pg-ha)
         PLAYBOOK="$ROOT/playbooks/pg-ha.yml"
+        ;;
+    pg-scale-out)
+        PLAYBOOK="$ROOT/playbooks/pg-scale-out.yml"
+        ;;
+    pg-scale-in)
+        PLAYBOOK="$ROOT/playbooks/pg-scale-in.yml"
         ;;
     scale-out)
         PLAYBOOK="$ROOT/playbooks/scale-out.yml"

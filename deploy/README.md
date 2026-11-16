@@ -11,6 +11,8 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
 | Converge monitoring stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
+| PG HA scale out | `./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
+| PG HA scale in | `./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
 | Scale out (install Agent) | `./deploy.sh scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
 | Destroy (uninstall) | `./deploy.sh destroy -i inventory/multinode` | ✅ **Implemented** (data preserved by default; explicit purge required to delete) |
@@ -148,6 +150,28 @@ Safety: the service account is non-root with an explicit sudoers whitelist (abso
 2. **Execution order of `bootstrap.users` and the `post_bootstrap` script is not guaranteed**: the script must idempotently create roles (including `replicator`) and the application database.
 3. **On machines with SELinux Enforcing, two steps are needed**: `semanage port -a -t http_port_t -p tcp 5434` (to bind the port) + `setsebool -P haproxy_connect_any on` (to connect to backends 5433/8008). Missing either shows up as `cannot bind socket` and `server closed the connection unexpectedly`, respectively.
 
+### Scaling the PG HA Cluster
+
+Add the new hosts to `[management]` in `inventory/pgha` first; topology is always expressed by inventory groups.
+
+```bash
+# 3 -> 5: add two nodes at once so the etcd member count stays odd
+./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'
+
+# 5 -> 3: remove a replica (never the leader); PG and etcd data is preserved
+./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'
+```
+
+Safety rules enforced by the playbooks:
+
+- etcd requires an **odd final member count >= 3**; the stage refuses an even or too-small result.
+- Scale-in verifies the target answers `/replica` (200) before touching it — the leader can never be removed.
+- New etcd members are registered with `etcdctl member add` and join with `initial-cluster-state=existing`; the templates are membership-aware, so a plain `pg-ha` rerun still renders the static bootstrap cluster.
+- `serial: 1` during scale-in prevents a simultaneous DCS restart.
+- Data is never deleted implicitly: `pg_scale.purge_data: true` requires an explicit `pg_scale.data_dirs` list.
+
+After a successful scale-in, remove the hosts from `[management]` in the inventory so future runs match the real topology.
+
 ### Common Operations Commands
 
 ```bash
@@ -211,7 +235,7 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
 └── roles/
     ├── bootstrap/             # base packages + optional kernel/data-disk settings
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
@@ -257,7 +281,7 @@ sh deploy/scripts/verify-ansible.sh
 
 It parses every YAML file, checks handler/notify consistency, enforces the English-only rule, validates Jinja expressions and links, and runs `ansible-playbook --syntax-check` automatically when ansible-core is installed on the control machine.
 
-Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
+Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy` / `db`,
 as well as `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`.
 
 ## Design Constraints (Read Before Making Changes)

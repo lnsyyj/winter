@@ -73,11 +73,11 @@
     set -o pipefail
     for i in $(seq 1 60); do
       {{ etcd_role.bin_dir }}/etcdctl \
-        --endpoints=http://{{ hostvars[groups['management'][0]].ansible_host }}:{{ pg_cluster.etcd.client_port }} \
-        endpoint health --cluster 2>/dev/null | grep -c "is healthy" | grep -q 3 && exit 0
+        --endpoints=http://{{ hostvars[groups['management'] | difference((pg_scale | default({})).removed_nodes | default([])) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }} \
+        endpoint health --cluster 2>/dev/null | grep -c "is healthy" | grep -q "{{ pg_expected_members | default(groups['management'] | length) }}" && exit 0
       sleep 2
     done
-    echo "etcd cluster did not reach 3 healthy members within 120s" >&2
+    echo "etcd cluster did not reach {{ pg_expected_members | default(groups['management'] | length) }} healthy members within 120s" >&2
     exit 1
   args:
     executable: /bin/bash
