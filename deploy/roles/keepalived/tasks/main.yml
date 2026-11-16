@@ -6,9 +6,9 @@
   ansible.builtin.assert:
     that:
       - ha.enabled | bool
-      - ha.vip | default('') | length > 0
+      - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
       - vault_keepalived_auth_pass is defined and vault_keepalived_auth_pass | length > 0
-    fail_msg: "ha.enabled=true requires ha.vip and vault_keepalived_auth_pass (see passwords.yml.example)"
+    fail_msg: "ha.enabled=true requires ha.vip or ha.vips, plus vault_keepalived_auth_pass (see passwords.yml.example)"
     quiet: true
   tags: [ha, keepalived]
 
@@ -16,8 +16,8 @@
   ansible.builtin.assert:
     that:
       - ha.lvs.real_servers | default([]) | length >= 2
-      - ha.vip | default('') | length > 0
-    fail_msg: "ha.lvs.enabled requires at least two [nginx_nodes] and ha.vip"
+      - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
+    fail_msg: "ha.lvs.enabled requires at least two [nginx_nodes] and ha.vip or ha.vips"
     quiet: true
   when: ha.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]
@@ -91,6 +91,6 @@
 - name: Print Keepalived summary
   ansible.builtin.debug:
     msg:
-      - "Keepalived VIP {{ ha.vip }} on {{ ha.interface }} (priority {{ ha.priority }})"
-      - "The VIP is released when the local Nginx health check fails"
+      - "Keepalived VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
+      - "The VIP is released when the local health check fails"
   tags: [ha, keepalived]

@@ -11,7 +11,8 @@ health check fails, the VIP moves to a peer.
 | Key | Meaning |
 | --- | --- |
 | `ha.enabled` | Enables the role; `false` keeps single-node behaviour |
-| `ha.vip` | Floating address (required when enabled) |
+| `ha.vip` | Single floating address (active-standby) |
+| `ha.vips` | Multiple addresses for active-active Directors; one per `[lb]` node |
 | `ha.interface` | NIC that carries the VIP |
 | `ha.virtual_router_id` | VRRP router ID, must be unique on the LAN |
 | `ha.priority` | Higher value becomes master; override per host for master/backup |
@@ -28,6 +29,17 @@ a split-brain at startup.
 HTTPS `/healthz` endpoint answers with the platform `Host` header. On SELinux Enforcing systems,
 allow the script to run (for example a local policy for `keepalived_t` executing shell scripts)
 before relying on failover.
+
+## Active-active Directors (multi-VIP)
+
+A single VIP with VRRP is failover only: the standby Director stays idle. Set `ha.vips` to a list
+with one address per `[lb]` node (for example `[10.0.0.100, 10.0.0.101]`) to run every Director at
+once. The role generates one `vrrp_instance` per VIP; each Director is MASTER for one instance and
+BACKUP for the rest. If a node fails, its VIPs move to the surviving node.
+
+Publish **every** VIP as an A record for the platform domain so DNS resolution spreads clients
+across Directors. Multi-A DNS is a site prerequisite — this framework does not manage external
+DNS. With a single `ha.vip` the original active-standby behaviour is unchanged.
 
 ## LVS/DR load balancing
 

@@ -146,11 +146,6 @@
         ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
       tags: [always]
 
-    - name: Assign descending VRRP priority across the load balancers
-      ansible.builtin.set_fact:
-        ha: "{{ ha | combine({'priority': (ha.priority | int) - (groups['lb'].index(inventory_hostname))}) }}"
-      tags: [always]
-
   roles:
     - role: keepalived
       when: ha.enabled | bool
@@ -163,5 +158,5 @@
           - "Server upstream: {{ server_upstreams | join(', ') }}"
           - "Harbor upstream: {{ harbor_upstreams | default([]) | join(', ') }}"
           - "LVS/DR backends: {{ nginx_lvs_backends | default([]) | join(', ') }}"
-          - "Keepalived VIP: {{ ha.vip | default('(disabled)') }} on {{ ha.interface }}"
+          - "Keepalived VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
       tags: [always]

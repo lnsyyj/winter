@@ -319,8 +319,12 @@ winter_server:
 ha:
   enabled: false
   interface: eth0                         # NIC that carries the VIP
-  vip: ""                                 # required when ha.enabled=true
-  virtual_router_id: 51                   # 1-255, must be unique on the LAN
+  vip: ""                                 # single VIP (active-standby)
+  # Multiple VIPs enable active-active Directors: each [lb] node owns one VIP as MASTER and
+  # backs up the rest. Publish every VIP as an A record for the platform domain so clients
+  # spread across Directors. Empty falls back to the single ha.vip.
+  vips: []                                # e.g. [10.0.0.100, 10.0.0.101]
+  virtual_router_id: 51                   # base VRRP ID; each extra VIP increments it
   priority: 100                           # override per host for master/backup (e.g. 100 / 90)
   advertise_interval: 1
   preempt: true

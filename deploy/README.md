@@ -220,6 +220,11 @@ Inventory groups: `[lb]` (LVS Director + Keepalived), `[nginx_nodes]` (real Ngin
 `management` in the shipped inventories, so single-node runs are unchanged. With LVS enabled,
 `[lb]` and `[nginx_nodes]` must be disjoint and share an L2 network — the stage refuses an overlap.
 
+To avoid an idle standby Director, set `ha.vips` to one address per `[lb]` node. Each Director then
+owns one VIP as MASTER and backs up the others (active-active). Publish **all** VIPs as A records
+for the platform domain so clients spread across Directors; DNS multi-A is an external
+prerequisite. A single `ha.vip` keeps the original active-standby behaviour.
+
 Configuration in `group_vars/all.yml`:
 
 - `ha.vip`, `ha.interface`, `ha.priority` — VRRP address and election; the shared
