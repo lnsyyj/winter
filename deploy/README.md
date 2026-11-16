@@ -8,6 +8,7 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | --- | --- | --- |
 | Bootstrap servers | `./deploy.sh bootstrap-servers -i inventory/multinode` | ✅ **Implemented** (base packages + optional kernel/data-disk settings) |
 | Prechecks | `./deploy.sh prechecks -i inventory/multinode` | ✅ **Implemented** (read-only, for the provisioning phase) |
+| Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|dns> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
 | Converge monitoring stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
@@ -25,6 +26,29 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | pull | — | ⬜ Not implemented — intentionally obsolete: management components are static artifacts, Ceph images are pulled by cephadm (ADR-30) |
 
 Unimplemented stages exit with an explicit error (exit code 2); they **do not pretend to succeed**.
+
+## Single-Component Deployment and Per-Component Prechecks
+
+Every component has its own stage, playbook and read-only prechecks. A standalone stage runs the
+matching prechecks automatically before convergence. Pass `--tags precheck.<component>` to run only
+the checks. Prechecks never install packages, write configuration or change firewall rules — every
+command task uses `changed_when: false` and every failure message states the expected value, the
+actual value and how to fix it.
+
+| Component | Stage | Inventory group | Precheck tag | Checks |
+| --- | --- | --- | --- | --- |
+| Internal repo | `./deploy.sh repo -i inventory/multinode` | `[repo_nodes]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
+| PostgreSQL | `./deploy.sh postgresql -i inventory/multinode` | `[db_nodes]` | `precheck.postgresql` | OS, password, offline RPMs, database port |
+| Nginx | `./deploy.sh nginx -i inventory/multinode` | `[nginx_nodes]` | `precheck.nginx` | domain, upstream, web ports, parent paths |
+| Monitoring stack | `./deploy.sh monitoring -i inventory/multinode` | `[monitor]` | `precheck.monitoring` | component tarballs, ports, Grafana secret |
+| Server | `./deploy.sh server -i inventory/multinode` | `[server_nodes]` | `precheck.server` | JWT secret, binary, DB address, API port |
+| Harbor | `./deploy.sh harbor -i inventory/multinode` | `[harbor_nodes]` | `precheck.harbor` | external PG/Redis/NFS, installer, docker |
+| Keepalived / LVS | `./deploy.sh keepalived -i inventory/multinode` | `[lb]` + `[nginx_nodes]` | `precheck.keepalived` | VIP, interface, VRRP secret, ip_vs, group split |
+| DNS (BIND 9) | `./deploy.sh dns -i inventory/multinode` | `[dns_nodes]` | `precheck.dns` | domain, VIPs, TSIG, RPMs, port 53 |
+
+The groups default to `management` in all shipped inventories, so existing single-node behaviour is
+unchanged. Split them onto dedicated hosts to deploy any component independently. The full converge
+stage (`deploy`) and the HA stage (`ha-setup`) remain available for one-shot delivery.
 
 ## Offline Artifact Repository (ADR-14 / ADR-15)
 
@@ -222,8 +246,8 @@ Inventory groups: `[lb]` (LVS Director + Keepalived), `[nginx_nodes]` (real Ngin
 
 To avoid an idle standby Director, set `ha.vips` to one address per `[lb]` node. Each Director then
 owns one VIP as MASTER and backs up the others (active-active). Publish **all** VIPs as A records
-for the platform domain so clients spread across Directors; DNS multi-A is an external
-prerequisite. A single `ha.vip` keeps the original active-standby behaviour.
+for the platform domain so clients spread across Directors — the `dns` stage (BIND 9) does this
+automatically, otherwise use an external DNS. A single `ha.vip` keeps the original active-standby behaviour.
 
 Configuration in `group_vars/all.yml`:
 
@@ -243,6 +267,37 @@ actionable message when any is missing; it never deploys an NFS or Redis server 
 
 Nginx gains `upstream winter_api` and `upstream winter_harbor`: `/api/v1/` stays with the Server,
 while `/api/v2.0/`, `/v2/`, `/service/` and `/harbor/` are routed to Harbor.
+
+### DNS (BIND 9) and VIP Round-Robin
+
+```bash
+./deploy.sh dns -i inventory/multinode                       # deploy BIND 9
+./deploy.sh dns -i inventory/multinode --tags precheck.dns   # checks only
+```
+
+`dns` is the authoritative internal DNS for `platform.domain`. It publishes one A record per
+active-active VIP, resolved in this order: `dns.vips` → `ha.vips` → `[ha.vip]`. BIND rotates the
+answer order, so clients spread across Directors. A VIP failover does not change its address, so
+the record stays valid. This completes the multi-VIP design: DNS spreads clients across Directors,
+and LVS/DR spreads them across Nginx backends.
+
+| Key | Meaning |
+| --- | --- |
+| `dns.enabled` | Enables the role; `false` keeps DNS out of the deployment |
+| `dns.domain` | Zone name, defaults to `platform.domain` |
+| `dns.vips` | Explicit A records; empty falls back to the `ha.*` VIPs |
+| `dns.master_addresses` / `dns.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
+| `dns.forwarders` | Upstream resolvers for external names; empty means authoritative-only |
+| `dns.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
+| `dns.rpm_files` / `dns.rpm_subdir` | BIND RPMs when `install_method=repo` |
+| `dns.manage_firewall` | Open `dns.listen_port`/tcp and /udp with firewalld; `false` for an external firewall |
+| `dns.tsig_key_name` | TSIG key name; the secret is `vault_dns_tsig_secret` in `passwords.yml` |
+
+Topology is in inventory: `[dns_nodes]` (all servers), `[dns_masters]` (defaults to nodes minus
+slaves) and `[dns_slaves]` (optional). The master renders a full zone with a deterministic serial
+derived from the domain and VIP set; slaves pull a TSIG-signed copy. With no slave group the single
+node is the master. Generate the TSIG secret with `openssl rand -base64 32` and place it only in
+`deploy/passwords.yml`.
 
 ### Common Operations Commands
 
@@ -308,6 +363,7 @@ deploy/
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
 ├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / monitor-scale-out / monitor-scale-in / ha-setup / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
+│                              # plus single-component stages: repo / postgresql / nginx / monitoring / server / harbor / keepalived / dns
 └── roles/
     ├── bootstrap/             # base packages + optional kernel/data-disk settings
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
@@ -320,8 +376,11 @@ deploy/
     ├── winter-server/         # Go single binary + systemd (multi-replica via ha-setup)
     ├── harbor/                # Harbor replicas (external DB/Redis/NFS + docker-compose)
     ├── keepalived/            # VRRP VIP + LVS/DR virtual_server (Director)
-    └── realserver/            # LVS/DR real servers (loopback VIP + ARP suppression)
+    ├── realserver/            # LVS/DR real servers (loopback VIP + ARP suppression)
+    └── dns/                   # BIND 9 authoritative DNS with multi-VIP round-robin A records
 ```
+
+Every role ships `tasks/prechecks.yml`; the single-component stages include it automatically.
 
 ## Quick Start
 
@@ -344,6 +403,10 @@ cp passwords.yml.example passwords.yml && vi passwords.yml
 # 6. Run again to confirm idempotency (should be changed=0)
 ./deploy.sh deploy -i inventory/multinode
 
+# 6b. Deploy a single component (its read-only prechecks run first)
+./deploy.sh dns -i inventory/multinode
+./deploy.sh dns -i inventory/multinode --tags precheck.dns   # run only the checks
+
 # 7. Uninstall when needed (data volumes are preserved)
 ./deploy.sh destroy -i inventory/multinode
 ```
@@ -356,8 +419,9 @@ sh deploy/scripts/verify-ansible.sh
 
 It parses every YAML file, checks handler/notify consistency, enforces the English-only rule, validates Jinja expressions and links, and runs `ansible-playbook --syntax-check` automatically when ansible-core is installed on the control machine.
 
-Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy` / `db`,
-as well as `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`.
+Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `monitoring` / `observability` / `server` / `harbor` / `keepalived` / `lvs` / `realserver` / `dns` / `etcd` / `patroni` / `haproxy` / `db`.
+
+Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups` (global), and `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.dns` (per component).
 
 ## Design Constraints (Read Before Making Changes)
 
