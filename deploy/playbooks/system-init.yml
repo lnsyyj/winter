@@ -1,0 +1,44 @@
+---
+# system-init · Standalone system initialization stage (ADR-17).
+# Installs base OS tools and enables chrony clock synchronization. The bootstrap-servers stage
+# reuses the same role, so running both is idempotent.
+# Read-only prechecks run before convergence; use --tags precheck.system-init to run only the checks.
+#
+# Usage:
+#   ./deploy.sh system-init -i inventory/multinode
+#   ./deploy.sh system-init -i inventory/multinode --tags precheck.system-init
+
+- name: Initialize hosts with base tools and clock sync
+  hosts: system_init_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Run system initialization prechecks
+      ansible.builtin.include_role:
+        name: system-init
+        tasks_from: prechecks
+      tags: [precheck, precheck.system-init]
+
+  roles:
+    - role: system-init
+      when: system_init.enabled | bool
+      tags: [system-init]
+
+  post_tasks:
+    - name: Summarize system initialization
+      ansible.builtin.debug:
+        msg:
+          - "Base packages: {{ system_init.packages | join(', ') }}"
+          - "Clock sync: {{ system_init.chrony.enabled | bool }} ({{ system_init.chrony.service }})"
+      tags: [always]

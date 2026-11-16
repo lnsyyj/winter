@@ -90,6 +90,15 @@ bootstrap_overrides:
     format_if_empty: false
     mount: false
 
+# System initialization (ADR-17): base OS tools and chrony, extracted from bootstrap so it can be
+# deployed alone. Deploy independently with: ./deploy.sh system-init -i inventory/multinode
+# Write only differences; the role combines them with its own defaults.
+system_init_overrides:
+  # packages: [podman, python3, python3-pip, curl, wget, chrony]
+  # chrony:
+  #   enabled: true
+  #   servers: []              # e.g. [time.corp.local, 10.0.0.1] to add explicit NTP sources
+
 # Managed-node Agent (ADR-35 / ADR-19 / ADR-28), driven by scale-out and scale-in.
 # Prerequisites before scale-out: the winter-agent binary in the internal repo, a CA certificate
 # on the control machine, and Nginx grpc_pass on the documented outbound port 443.

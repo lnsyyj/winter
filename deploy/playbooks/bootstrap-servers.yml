@@ -25,6 +25,11 @@
       tags: [always]
 
   roles:
+    # system-init is single-purpose and reusable; bootstrap-servers keeps its original full behaviour.
+    # The role-level bootstrap tag preserves `./deploy.sh bootstrap-servers --tags bootstrap`.
+    - role: system-init
+      tags: [bootstrap, system-init]
+      when: system_init.enabled | bool
     - role: bootstrap
       tags: [bootstrap]
       when: bootstrap.enabled | bool

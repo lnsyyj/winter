@@ -11,7 +11,8 @@ usage() {
 Usage: ./deploy.sh <stage> [-i inventory] [--tags tag,...] [ansible arguments...]
 
 Stages:
-  bootstrap-servers    Install base dependencies and OS settings (podman, chrony, sysctl, data disk)
+  bootstrap-servers    Install base dependencies and OS settings (runs system-init + sysctl + data disk)
+  system-init          Install base OS tools and enable chrony only (single component, all hosts)
   prechecks            Pre-deployment checks (read-only, implemented)
   repo                 Deploy the internal artifact repository only (single component)
   postgresql           Deploy PostgreSQL only (single component; use pg-ha for HA)
@@ -61,6 +62,9 @@ esac
 case "$STAGE" in
     bootstrap-servers)
         PLAYBOOK="$ROOT/playbooks/bootstrap-servers.yml"
+        ;;
+    system-init)
+        PLAYBOOK="$ROOT/playbooks/system-init.yml"
         ;;
     prechecks)
         PLAYBOOK="$ROOT/playbooks/prechecks.yml"

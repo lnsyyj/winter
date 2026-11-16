@@ -10,32 +10,7 @@
     quiet: true
   tags: [bootstrap]
 
-- name: Collect installed RPM names
-  ansible.builtin.shell: |
-    set -o pipefail
-    rpm -qa --qf '%{NAME}\n' | sort -u
-  args:
-    executable: /bin/bash
-  register: bootstrap_installed_rpms
-  changed_when: false
-  tags: [bootstrap]
-
-- name: Install missing base packages
-  # Query first, then install only what is missing: on sites with unreachable third-party repos,
-  # a blind dnf call hangs even when every package is already present.
-  ansible.builtin.dnf:
-    name: "{{ bootstrap.packages | difference(bootstrap_installed_rpms.stdout_lines) }}"
-    state: present
-  when: bootstrap.packages | difference(bootstrap_installed_rpms.stdout_lines) | length > 0
-  tags: [bootstrap]
-
-- name: Enable and start chronyd
-  ansible.builtin.systemd:
-    name: chronyd
-    state: started
-    enabled: true
-  when: bootstrap.enable_chrony | bool and 'chrony' in bootstrap.packages
-  tags: [bootstrap]
+# Base packages and chrony live in roles/system-init; bootstrap-servers runs that role first.
 
 - name: Render winter sysctl profile
   ansible.builtin.template:
@@ -94,7 +69,7 @@
 - name: Report bootstrap result
   ansible.builtin.debug:
     msg:
-      - "Base packages: {{ bootstrap.packages | join(', ') }}"
+      - "Base packages and clock sync: handled by roles/system-init (system_init_overrides)"
       - "Kernel settings applied: {{ bootstrap.enforce_kernel | bool }} (profile {{ bootstrap.sysctl_file }})"
       - "Data device: {{ bootstrap.data_disk.device | default('none', true) }} (format={{ bootstrap.data_disk.format_if_empty }}, mount={{ bootstrap.data_disk.mount }})"
   tags: [bootstrap]

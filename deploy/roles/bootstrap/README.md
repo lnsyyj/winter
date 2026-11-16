@@ -1,11 +1,12 @@
 # role · bootstrap
 
-Base layer of the ADR-17 stage model. Installs OS packages that the platform needs and applies the settings that `roles/prechecks` only reports.
+Base layer of the ADR-17 stage model. Applies the kernel and data-disk settings that `roles/prechecks` only reports; base packages and clock synchronization are handled by `roles/system-init`.
 
 ## What it does
 
-- Installs missing base packages (podman, python3, chrony, curl, wget) from the OS installation media. It queries `rpm -qa` first: on sites with unreachable third-party repos a blind `dnf` call hangs even when everything is already installed.
-- Enables `chronyd` (mTLS/certificate checks depend on clock sync).
+- Base packages and clock synchronization were extracted into `roles/system-init`, a single-purpose
+  role that can also run on its own. The `bootstrap-servers` stage runs it first; configure it with
+  `system_init_overrides` in `group_vars/all.yml`.
 - Optionally writes `/etc/sysctl.d/99-winter.conf` and loads `br_netfilter`.
 - Optionally formats and mounts a data disk. Both steps are opt-in and off by default.
 
@@ -26,7 +27,7 @@ bootstrap_overrides:
 
 - `enforce_kernel: false` by default during M0, matching `prechecks.enforce_kernel: false`.
 - `data_disk.format_if_empty` and `data_disk.mount` are false by default; formatting only runs when the device has no filesystem signature.
-- Re-running is idempotent: packages are queried before install, `template` only writes on content change, and `mount` uses `state: mounted`.
+- Re-running is idempotent: `template` only writes on content change, `modprobe` is a no-op when already loaded, and `mount` uses `state: mounted`.
 
 ## Failure messages
 

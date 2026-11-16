@@ -31,6 +31,10 @@ management
 [dns_nodes:children]
 management
 
+# System initialization runs on every host (management and managed nodes).
+[system_init_nodes:children]
+management
+
 [ceph_nodes]
 
 [all:vars]
