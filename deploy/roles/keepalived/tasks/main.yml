@@ -22,11 +22,20 @@
   when: ha.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]
 
-- name: Load the ip_vs kernel module
-  ansible.builtin.modprobe:
-    name: ip_vs
-    state: present
+# modprobe was removed from ansible-core; use command guarded by a /sys/module check.
+- name: Check whether ip_vs is loaded
+  ansible.builtin.stat:
+    path: /sys/module/ip_vs
+  register: keepalived_ip_vs_loaded
+  changed_when: false
   when: ha.lvs.enabled | default(false) | bool
+  tags: [ha, keepalived, lvs]
+
+- name: Load the ip_vs kernel module
+  ansible.builtin.command: modprobe ip_vs
+  when:
+    - ha.lvs.enabled | default(false) | bool
+    - not keepalived_ip_vs_loaded.stat.exists
   tags: [ha, keepalived, lvs]
 
 - name: Check whether keepalived is installed

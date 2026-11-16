@@ -21,11 +21,20 @@
   when: bootstrap.enforce_kernel | bool
   tags: [bootstrap]
 
-- name: Load br_netfilter module
-  ansible.builtin.modprobe:
-    name: br_netfilter
-    state: present
+# modprobe was removed from ansible-core; use command guarded by a /sys/module check.
+- name: Check whether br_netfilter is loaded
+  ansible.builtin.stat:
+    path: /sys/module/br_netfilter
+  register: bootstrap_br_netfilter_loaded
+  changed_when: false
   when: bootstrap.enforce_kernel | bool
+  tags: [bootstrap]
+
+- name: Load br_netfilter module
+  ansible.builtin.command: modprobe br_netfilter
+  when:
+    - bootstrap.enforce_kernel | bool
+    - not bootstrap_br_netfilter_loaded.stat.exists
   tags: [bootstrap]
 
 - name: Apply winter sysctl profile
@@ -44,26 +53,54 @@
     - bootstrap.data_disk.format_if_empty | bool or bootstrap.data_disk.mount | bool
   tags: [bootstrap]
 
+# filesystem and mount were removed from ansible-core; use builtin command/file/lineinfile.
 - name: Create filesystem on data device (only when explicitly enabled and empty)
-  ansible.builtin.filesystem:
-    fstype: "{{ bootstrap.data_disk.filesystem }}"
-    dev: "{{ bootstrap.data_disk.device }}"
+  ansible.builtin.command: "mkfs.{{ bootstrap.data_disk.filesystem }} {{ bootstrap.data_disk.device }}"
   when:
     - bootstrap.data_disk.device | length > 0
     - bootstrap.data_disk.format_if_empty | bool
     - bootstrap_disk_fstype.stdout | trim | length == 0
   tags: [bootstrap]
 
-- name: Mount data device
-  ansible.builtin.mount:
+- name: Ensure data mount point directory exists
+  ansible.builtin.file:
     path: "{{ bootstrap.data_disk.mount_point }}"
-    src: "{{ bootstrap.data_disk.device }}"
-    fstype: "{{ bootstrap.data_disk.filesystem }}"
-    state: mounted
-    opts: defaults
+    state: directory
+    mode: "0755"
   when:
     - bootstrap.data_disk.device | length > 0
     - bootstrap.data_disk.mount | bool
+  tags: [bootstrap]
+
+- name: Persist data device in fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "{{ bootstrap.data_disk.device }} {{ bootstrap.data_disk.mount_point }} {{ bootstrap.data_disk.filesystem }} defaults 0 0"
+    regexp: "^{{ bootstrap.data_disk.device | regex_escape('python') }}[[:space:]]"
+    state: present
+    create: false
+    backup: true
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.mount | bool
+  tags: [bootstrap]
+
+- name: Check whether data device is mounted
+  ansible.builtin.command: "findmnt -n -o SOURCE --target {{ bootstrap.data_disk.mount_point }}"
+  register: bootstrap_mount_source
+  changed_when: false
+  failed_when: false
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.mount | bool
+  tags: [bootstrap]
+
+- name: Mount data device
+  ansible.builtin.command: "mount {{ bootstrap.data_disk.mount_point }}"
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.mount | bool
+    - bootstrap_mount_source.stdout | trim | length == 0
   tags: [bootstrap]
 
 - name: Report bootstrap result

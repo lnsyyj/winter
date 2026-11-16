@@ -27,7 +27,7 @@ bootstrap_overrides:
 
 - `enforce_kernel: false` by default during M0, matching `prechecks.enforce_kernel: false`.
 - `data_disk.format_if_empty` and `data_disk.mount` are false by default; formatting only runs when the device has no filesystem signature.
-- Re-running is idempotent: `template` only writes on content change, `modprobe` is a no-op when already loaded, and `mount` uses `state: mounted`.
+- Re-running is idempotent: `template` only writes on content change, `br_netfilter` is loaded only when `/sys/module/br_netfilter` is absent, and the data device is formatted and mounted only when the matching checks report it is needed.
 
 ## Failure messages
 

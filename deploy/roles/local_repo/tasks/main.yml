@@ -53,7 +53,7 @@
   ansible.builtin.shell: |
     set -euo pipefail
     rule='rule family=ipv4 source address={{ local_repo.allow_cidr }} port port={{ local_repo.listen_port }} protocol=tcp accept'
-    # Use --query-rich-rule to decide, rather than treating --reload's "success" as a change:
+    # Use --query-rich-rule to decide, rather than treating the --reload success as a change:
     # the latter would report changed on every deploy (TC-26 requires changed=0 on the second run).
     if firewall-cmd --permanent --query-rich-rule="$rule" >/dev/null 2>&1; then
       echo unchanged
