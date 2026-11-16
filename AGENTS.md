@@ -19,6 +19,7 @@
 9. **不自动 `git push`、不自动创建 PR、不自动安装 git hook**，除非用户明确要求。
 10. **改动文档时同步更新 `docs/README.md` 索引**；改动架构时留 ADR。
 11. **每次 commit 之前都要检查并按需修改 `.gitignore`**（§2.5）：`git status` 里出现任何不该入库的文件类型，先补忽略规则再 `git add`，绝不让日志、缓存、备份、密钥、生成物混进仓库。
+12. **Ansible 内容全英文**（§4.4）：`deploy/` 下所有人类可读文本一律英文；变量名、Jinja 表达式、命令、路径、tag、ADR 引用不变。
 
 ---
 
@@ -248,7 +249,8 @@ git reflog                            # 兜底：找回误操作前的 HEAD
 - ansible playbook 使用 **FQCN**（`ansible.builtin.*`），任务写 `name`，全部幂等，禁止在 playbook 里写业务逻辑分支。
 - 部署框架（`deploy/`）遵循 ADR-17：`roles/<组件>/{tasks,defaults,README.md}`，配置只在 `group_vars/all.yml`，任务按类别拆文件并打 `prechecks.<类别>` 之类 tag。
 - **`prechecks` 类任务必须只读**：所有 `command` / `shell` 带 `changed_when: false`；不得装包、写 sysctl、改防火墙。
-- **`fail_msg` 必须可操作**：写清「期望值 / 实际值 / 怎么修」，只写「检查失败」视为未完成。
+- **`fail_msg` 必须可操作**：写清「期望值 / 实际值 / 怎么修」，只写「检查失败」视为未完成；文本同样用英文。
+- **Ansible 内容一律英文**：`deploy/` 下所有人类可读文本——注释、play/task/handler `name`、`debug`/`fail`/`assert` 消息、shell `echo`、模板说明、各 role 的 `README.md`——全部用英文（此条覆盖 §4.7 的「中文撰写」）。仅当引用真实存在的中文文档路径时可保留汉字，以免链接失效。变量名、`{{ ... }}`、命令、路径、包名、正则、tag、配置键/值、ADR 引用保持原样；提交前扫描 `[\p{Han}]`，除上述路径例外外应为零命中。
 - 敏感值只出现在 `passwords.yml`（已被 `.gitignore` 排除），role 内用变量引用，禁止写默认口令。
 - playbook 版本受控，与平台版本对应；变更需回归 3 节点 e2e。
 - Shell 脚本首行 `set -euo pipefail`，变量加引号，路径用绝对路径或基于脚本位置推导；不使用 `rm -rf`、不写含非 ASCII 路径的 `.bat`/`.ps1`。
@@ -427,6 +429,7 @@ PY
 | 安全 | 提交密钥；跳过鉴权校验；`bash -c` 拼接用户输入；打印凭据明文 |
 | 架构 | 让业务 IO 经过控制面；把 cephadm 中心化；把 DB 状态当真相；绕过 Grafana 反代 |
 | 流程 | **提交前未检查 / 未按需更新 `.gitignore`**；未自检就提交；自检失败仍标记「完成」；把待决策项写成结论；改动文档不更新索引 |
+| Ansible | `deploy/` 中出现中文注释 / task name / 消息文案 / role 文档正文（真实中文文档路径引用除外）；翻译时改动变量、Jinja、命令、路径或 tag |
 | 环境 | 擅自安装 git hook / CI / 全局工具；在 `main` 上做不可逆实验；修改用户未授权的外部系统 |
 
 ---
@@ -444,6 +447,7 @@ PY
 9. **遇到 §6 不变量冲突**：先停下来说明冲突与备选方案，等确认，不擅自绕过。
 10. **大改动先说计划**：涉及多个岗位文档或跨语言代码时，先列出将产生的提交拆分，再动手。
 11. **每次 commit 前先过 `.gitignore` 检查**（§2.5）：先看 `git status --short`，发现新的无用文件类型就先补忽略规则、复查 `status`，再 `git add`；不把「临时文件这次先带上」当作可接受理由，也不为了凑改动写无意义的忽略规则。
+12. **Ansible 一律英文**（§0 / §4.4 / §11）：新增或修改 `deploy/` 下任何文件时，所有人类可读文本用英文；提交前扫描 `[\p{Han}]`，除真实中文文档路径引用外应为零命中。
 
 ---
 
@@ -530,3 +534,4 @@ trim_trailing_whitespace = false
 | 2026-11-15 | `deploy` 阶段落地：新增 `roles/postgresql`（收敛式：复用已有实例、只增库与账号、默认不改参数）与 `roles/nginx`（叠加式：只写 conf.d、不抢 default_server、靠 server_name 分流）+ `playbooks/deploy.yml`。在 CentOS Stream 9 实机跑通（ok=25/failed=0，二次运行 changed=0，既有站点与库未受影响）。修掉 5 个实机才暴露的问题：passwords.yml 不被自动加载、deploy.sh 执行位、pg_isready 不在 PATH、dnf 被 pgdg 源拖死、**group_vars 从未被加载**（+字典整块替换改 combine） | 本次提交 |
 | 2026-11-15 | `server/`（Go + Gin）落地：M0 可运行骨架（配置/双连接池/embed 迁移/JWT/审计两段式/REST）、`ADR-36` 任务表队列（`SKIP LOCKED` + 租约 + 退避 + 死信 + 队列深度）、幂等键与任务模板白名单、表驱动单测与真实 PG 集成测试；修复骨架中 `audit.VerifyChain` 的 `prev` 类型错误与 `Queue.Stats` 的非法 `FILTER`；§1 目录约定登记 `server/`、阶段状态更新；`.gitignore` 排除 Go 构建产物与 vendor；`server/README.md` 记录配置、接口与实机验证结果 | 本次提交 |
 | 2026-11-15 | 离线交付补齐可观测性栈与 Server 部署：新增 `scripts/fetch-artifacts.sh`（有网制包、版本固定 + `SHA256SUMS.txt`），5 个监控组件静态包与 Go 单二进制入库；新增 `roles/observability`（VM/vmalert/VictoriaLogs/Alertmanager/Grafana 数据驱动，端口全在 group_vars）与 `roles/winter-server`（systemd + `mv` 原子替换避 ETXTBSY）；`deploy.yml` 收敛顺序扩展、Nginx 增 `/grafana/` 反代（ADR-09）、`passwords.yml.example`；Grafana 锁 9.5.20、vmalert 二次打包，以规避 GitHub 单文件 100MB 上限；§1 目录约定与 `deploy/README.md` 同步 | 本次提交 |
+| 2026-11-16 | Ansible 全英文约束入契约：§0 铁律新增第 12 条、§4.4 明确范围与例外（覆盖 §4.7 中文撰写）、§11 No-Go 新增 Ansible 行、§12 AI 约定新增第 12 条；`deploy/` 全量英文化已先行单独提交 | 本次提交 |
