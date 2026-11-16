@@ -249,6 +249,14 @@ cp passwords.yml.example passwords.yml && vi passwords.yml
 ./deploy.sh destroy -i inventory/multinode
 ```
 
+Static checks before a commit (no ansible-core required):
+
+```bash
+sh deploy/scripts/verify-ansible.sh
+```
+
+It parses every YAML file, checks handler/notify consistency, enforces the English-only rule, validates Jinja expressions and links, and runs `ansible-playbook --syntax-check` automatically when ansible-core is installed on the control machine.
+
 Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
 as well as `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`.
 
