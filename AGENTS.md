@@ -548,3 +548,5 @@ trim_trailing_whitespace = false
 | 2026-11-16 | 新增 BIND 9 DNS role 并接入统一配置：为平台域名发布多条 A 记录把客户端轮询到各 Director VIP（`dns.vips` → `ha.vips` → `ha.vip` 自动回退）；TSIG 主从同步、install_method=package/repo、firewalld、只读 prechecks；三份 inventory 增 repo/db/dns 分组，passwords.yml.example 增 TSIG 密钥项 | `4848512` |
 | 2026-11-16 | 每个软件支持独立部署并自带前置检查：新增 repo/postgresql/nginx/monitoring/server/harbor/keepalived/dns 单组件 stage 与 playbook，部署前自动执行对应只读 prechecks，支持 `--tags precheck.<组件>` 仅检查；为 7 个已有 role 补 `tasks/prechecks.yml`（DNS 前置检查随 role 一并落地） | `546b9f9` |
 | 2026-11-16 | 文档同步：`deploy/README.md` 登记 8 个单组件 stage、每组件前置检查表、BIND 9 配置与多 VIP 轮询说明；AGENTS.md 变更记录 | 本次提交 |
+| 2026-11-16 | 抽出 system-init role：基础系统工具与 chrony 时间同步从 bootstrap 拆出为单职责 role，支持独立 stage `system-init` 与只读 prechecks；bootstrap-servers 显式复用该 role 并保持 `--tags bootstrap` 兼容；新增 system_init_overrides 与 `[system_init_nodes]` 分组 | `5043412` |
+| 2026-11-16 | 文档同步：`deploy/README.md` 登记 system-init stage、配置说明、目录结构与可用 tag；AGENTS.md 变更记录 | 本次提交 |

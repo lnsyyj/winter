@@ -6,9 +6,10 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 
 | Stage | Command | Status |
 | --- | --- | --- |
-| Bootstrap servers | `./deploy.sh bootstrap-servers -i inventory/multinode` | ✅ **Implemented** (base packages + optional kernel/data-disk settings) |
+| Bootstrap servers | `./deploy.sh bootstrap-servers -i inventory/multinode` | ✅ **Implemented** (runs system-init + optional kernel/data-disk settings) |
 | Prechecks | `./deploy.sh prechecks -i inventory/multinode` | ✅ **Implemented** (read-only, for the provisioning phase) |
-| Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|dns> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
+| System initialization | `./deploy.sh system-init -i inventory/multinode` | ✅ **Implemented** (base OS tools + chrony; standalone stage, also reused by bootstrap) |
+| Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|dns\|system-init> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
 | Converge monitoring stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
@@ -37,6 +38,7 @@ actual value and how to fix it.
 
 | Component | Stage | Inventory group | Precheck tag | Checks |
 | --- | --- | --- | --- | --- |
+| System initialization | `./deploy.sh system-init -i inventory/multinode` | `[system_init_nodes]` | `precheck.system-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
 | Internal repo | `./deploy.sh repo -i inventory/multinode` | `[repo_nodes]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
 | PostgreSQL | `./deploy.sh postgresql -i inventory/multinode` | `[db_nodes]` | `precheck.postgresql` | OS, password, offline RPMs, database port |
 | Nginx | `./deploy.sh nginx -i inventory/multinode` | `[nginx_nodes]` | `precheck.nginx` | domain, upstream, web ports, parent paths |
@@ -49,6 +51,30 @@ actual value and how to fix it.
 The groups default to `management` in all shipped inventories, so existing single-node behaviour is
 unchanged. Split them onto dedicated hosts to deploy any component independently. The full converge
 stage (`deploy`) and the HA stage (`ha-setup`) remain available for one-shot delivery.
+
+## System Initialization (chrony and base tools)
+
+```bash
+./deploy.sh system-init -i inventory/multinode                       # base tools + clock sync
+./deploy.sh system-init -i inventory/multinode --tags precheck.system-init   # checks only
+```
+
+`system-init` installs the base OS tools and enables `chronyd`. It was extracted from
+`roles/bootstrap` so it can run alone; `bootstrap-servers` runs it first and keeps its original
+full behaviour (kernel sysctl and optional data disk remain in `roles/bootstrap`).
+
+| Key | Meaning |
+| --- | --- |
+| `system_init.enabled` | Enables the role |
+| `system_init.packages` | Base OS packages, default `[podman, python3, python3-pip, curl, wget, chrony]` |
+| `system_init.chrony.enabled` | Enables and starts `chronyd` (mTLS/certificate checks depend on clock sync) |
+| `system_init.chrony.servers` | Extra NTP sources; empty keeps the distribution's own pool |
+| `system_init.chrony.config_file` / `include_dir` / `include_file` | Where the idempotent `include` line and drop-in are written |
+
+With a non-empty `servers` list the role appends one `include` line to `chrony.conf` and renders
+`server <name> iburst` entries into the drop-in — existing configuration is never overwritten.
+The `[system_init_nodes]` group defaults to all management and managed nodes, so the stage covers
+every host. Re-running is idempotent: packages are queried with `rpm -qa` before install.
 
 ## Offline Artifact Repository (ADR-14 / ADR-15)
 
@@ -363,9 +389,10 @@ deploy/
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
 ├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / monitor-scale-out / monitor-scale-in / ha-setup / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
-│                              # plus single-component stages: repo / postgresql / nginx / monitoring / server / harbor / keepalived / dns
+│                              # plus single-component stages: repo / postgresql / nginx / monitoring / server / harbor / keepalived / dns / system-init
 └── roles/
-    ├── bootstrap/             # base packages + optional kernel/data-disk settings
+    ├── bootstrap/             # optional kernel/data-disk settings (reuses system-init for base tools)
+    ├── system-init/           # base OS tools + chrony clock sync (standalone, reused by bootstrap)
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
     ├── uninstall/             # platform removal with data preserved by default
     ├── prechecks/             # read-only checks
@@ -394,6 +421,9 @@ cp passwords.yml.example passwords.yml && vi passwords.yml
 # 3. Base dependencies (run once on every managed host)
 ./deploy.sh bootstrap-servers -i inventory/multinode
 
+# 3b. Only base tools + chrony, without kernel/data-disk settings
+./deploy.sh system-init -i inventory/multinode
+
 # 4. Read-only prechecks
 ./deploy.sh prechecks -i inventory/multinode
 
@@ -419,9 +449,9 @@ sh deploy/scripts/verify-ansible.sh
 
 It parses every YAML file, checks handler/notify consistency, enforces the English-only rule, validates Jinja expressions and links, and runs `ansible-playbook --syntax-check` automatically when ansible-core is installed on the control machine.
 
-Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `monitoring` / `observability` / `server` / `harbor` / `keepalived` / `lvs` / `realserver` / `dns` / `etcd` / `patroni` / `haproxy` / `db`.
+Available tags: `bootstrap` / `system-init` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `monitoring` / `observability` / `server` / `harbor` / `keepalived` / `lvs` / `realserver` / `dns` / `etcd` / `patroni` / `haproxy` / `db`.
 
-Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups` (global), and `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.dns` (per component).
+Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups` (global), and `precheck.system-init` / `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.dns` (per component).
 
 ## Design Constraints (Read Before Making Changes)
 
