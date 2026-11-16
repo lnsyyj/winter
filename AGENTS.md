@@ -8,7 +8,7 @@
 
 ## 0. 三十秒速读（铁律，不可协商）
 
-1. **每一次逻辑上独立的改动完成后立即 `git commit`**，不允许把未提交的工作区留到下一次会话。
+1. **每一次逻辑上独立的改动完成后立即 `git commit` 并推送到远程仓库**，不允许把未提交或未推送的工作区留到下一次会话。
 2. **一个逻辑变更 = 一个提交**；无关改动必须拆分，禁止把文档、配置、代码混进一个大提交。
 3. **提交前跑自检**（§7.3）并**先过 `.gitignore` 检查**（§2.5），提交后 `git status` 必须干净（仅允许 `.gitignore` 明确忽略的项）。
 4. **禁止** `--amend`、`--no-verify`、`push --force`、`reset --hard`、无检查的 `git add -A`。回滚一律用 `git revert`。
@@ -16,7 +16,7 @@
 6. **Agent 只执行白名单内的参数化命令**，不拼 shell、不接自由文本；凭据明文零落盘。
 7. **未拍板的选型（D1~D11）不得写成既定事实**，一律标注 `待决策` / `TODO`。
 8. **不删除、不改写 `.workbuddy/`**（工作区元数据），它已被 `.gitignore` 排除。
-9. **不自动 `git push`、不自动创建 PR、不自动安装 git hook**，除非用户明确要求。
+9. **每次 commit 后立即 `git push` 到 origin 的当前分支**；不自动创建 PR、不自动安装 git hook。推送前确认目标分支与远端一致，禁止 force push。
 10. **改动文档时同步更新 `docs/README.md` 索引**；改动架构时留 ADR。
 11. **每次 commit 之前都要检查并按需修改 `.gitignore`**（§2.5）：`git status` 里出现任何不该入库的文件类型，先补忽略规则再 `git add`，绝不让日志、缓存、备份、密钥、生成物混进仓库。
 12. **Ansible 内容全英文**（§4.4）：`deploy/` 下所有人类可读文本一律英文；变量名、Jinja 表达式、命令、路径、tag、ADR 引用不变。
@@ -106,7 +106,7 @@ docs(arch): 补充状态对账设计与漂移告警规则
 Refs: 权衡分析 B3, ADR-08
 ```
 
-### 2.4 提交前必做（顺序固定）
+### 2.4 提交与推送必做（顺序固定）
 
 ```bash
 git status --short                      # 1. 确认改动范围，无意外文件
@@ -120,9 +120,11 @@ git diff --cached --stat                # 5. 确认暂存区正是预期内容
 git commit -m "<type>(<scope>): ..."    # 6. 提交，不加 --no-verify
 git status --short                      # 7. 确认工作区干净
 git log -1 --stat                       # 8. 回看本次提交
+git push origin <当前分支>               # 9. 立即推送到远程仓库（禁止 force push）
 ```
 
 > 第 **1b** 步不可跳过：`.gitignore` 是提交前的第一道闸门，先拦住无用文件，再谈 add / commit。
+> 第 **9** 步不可跳过：commit 与 push 是同一个逻辑变更的两半，未推送视为改动未完成（§0 / §11 / §12）。
 
 ### 2.5 每次 commit 前都要检查并按需修改 `.gitignore`
 
@@ -159,6 +161,7 @@ git log -1 --stat                       # 8. 回看本次提交
 | --- | --- |
 | `git commit --amend` | 改写已存在的提交，破坏回滚锚点 |
 | `git push --force` / `--force-with-lease` | 覆盖远端历史 |
+| commit 后未推送到远程仓库 | 本地与远端分叉，协作与回滚失去共同锚点；见 §0 / §2.4 / §12 |
 | `git reset --hard` / `git clean -fd` | 不可逆丢失未提交改动；要丢弃先 `git stash` |
 | `git commit --no-verify` | 跳过钩子等于跳过质量门槛 |
 | `git add -A` / `git add .` 后直接提交 | 容易误提交密钥、大文件、临时文件 |
@@ -386,7 +389,7 @@ PY
 
 ### 7.4 提交后
 
-`git status --short` 干净 → `git log -1 --stat` 回看 → 若达到阶段出口，按 §3.2 打 tag。
+`git status --short` 干净 → `git log -1 --stat` 回看 → `git push origin <当前分支>` → 若达到阶段出口，按 §3.2 打 tag 并同步推送 tag。
 
 ---
 
@@ -424,7 +427,7 @@ PY
 
 | 类别 | 禁止 |
 | --- | --- |
-| 版本控制 | 见 §2.6；另禁止自动 push、自动建 PR、自动改写他人提交 |
+| 版本控制 | 见 §2.6；禁止自动建 PR、自动改写他人提交；**commit 后未 push 到远程仓库**视为改动未完成 |
 | 数据 | 删除 / 清空 `.workbuddy/`；删除已废弃文档（应标注保留）；批量删除个人目录文件 |
 | 安全 | 提交密钥；跳过鉴权校验；`bash -c` 拼接用户输入；打印凭据明文 |
 | 架构 | 让业务 IO 经过控制面；把 cephadm 中心化；把 DB 状态当真相；绕过 Grafana 反代 |
@@ -437,7 +440,7 @@ PY
 ## 12. AI 助手专属约定
 
 1. **每次改动立即提交**，包括本文件自身的修改；任务结束时 `git status` 必须干净。
-2. **不自动 push、不自动建 PR、不自动合并分支**，除非用户明确要求。
+2. **每次 commit 后立即 push 到 origin 当前分支**（§0 / §2.4）；不自动建 PR、不自动合并分支；禁止 force push。
 3. **提交信息用中文 subject + 结构化 body**，写清回滚方式，让未来的自己能靠 `git log` 独立还原上下文。
 4. **不替用户拍板待决策项**；缺信息时按建议默认值实现并标注，或提出明确问题，不臆造。
 5. **上下文丢失时**：先读本文件 → `git log --oneline -20` → `docs/README.md` → 相关岗位文档，再继续工作。
@@ -535,3 +538,4 @@ trim_trailing_whitespace = false
 | 2026-11-15 | `server/`（Go + Gin）落地：M0 可运行骨架（配置/双连接池/embed 迁移/JWT/审计两段式/REST）、`ADR-36` 任务表队列（`SKIP LOCKED` + 租约 + 退避 + 死信 + 队列深度）、幂等键与任务模板白名单、表驱动单测与真实 PG 集成测试；修复骨架中 `audit.VerifyChain` 的 `prev` 类型错误与 `Queue.Stats` 的非法 `FILTER`；§1 目录约定登记 `server/`、阶段状态更新；`.gitignore` 排除 Go 构建产物与 vendor；`server/README.md` 记录配置、接口与实机验证结果 | 本次提交 |
 | 2026-11-15 | 离线交付补齐可观测性栈与 Server 部署：新增 `scripts/fetch-artifacts.sh`（有网制包、版本固定 + `SHA256SUMS.txt`），5 个监控组件静态包与 Go 单二进制入库；新增 `roles/observability`（VM/vmalert/VictoriaLogs/Alertmanager/Grafana 数据驱动，端口全在 group_vars）与 `roles/winter-server`（systemd + `mv` 原子替换避 ETXTBSY）；`deploy.yml` 收敛顺序扩展、Nginx 增 `/grafana/` 反代（ADR-09）、`passwords.yml.example`；Grafana 锁 9.5.20、vmalert 二次打包，以规避 GitHub 单文件 100MB 上限；§1 目录约定与 `deploy/README.md` 同步 | 本次提交 |
 | 2026-11-16 | Ansible 全英文约束入契约：§0 铁律新增第 12 条、§4.4 明确范围与例外（覆盖 §4.7 中文撰写）、§11 No-Go 新增 Ansible 行、§12 AI 约定新增第 12 条；`deploy/` 全量英文化已先行单独提交 | 本次提交 |
+| 2026-11-16 | 提交纪律变更：**每次 commit 后立即 push 到远程仓库**取代原「不自动 push」约定。§0 第 1/9 条、§2.4（新增第 9 步并改标题）、§2.6、§7.4、§11、§12 第 2 条同步；force push 仍禁止 | 本次提交 |
