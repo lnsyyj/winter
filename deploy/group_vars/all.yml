@@ -378,3 +378,35 @@ harbor:
     mount_point: /var/lib/winter/harbor/shared
     options: "vers=4.1,rw"
   health_path: /api/v2.0/health
+
+# DNS (BIND 9): authoritative internal DNS for the platform domain (ADR-16 / ADR-17).
+# Publishes one A record per active-active Director VIP so DNS round-robin spreads clients
+# across Directors; the record set is derived from dns.vips -> ha.vips -> ha.vip.
+# Deploy independently with: ./deploy.sh dns -i inventory/multinode
+dns:
+  enabled: false
+  # package = dnf from host repos; repo = offline RPMs from the internal static repo
+  install_method: package
+  packages: [bind, bind-utils]
+  rpm_subdir: rpm/bind
+  rpm_dir: "{{ playbook_dir }}/../artifacts/repo/rpm/bind"
+  rpm_files: []                        # required and non-empty when install_method=repo
+  service: named
+  config_file: /etc/named.conf
+  zone_dir: /var/named
+  listen_port: 53
+  listen_addr: any                     # BIND listen-on address match list
+  forwarders: []                       # upstream resolvers for external names
+  recursion: false
+  dnssec: false
+  domain: "{{ platform.domain }}"
+  ttl: 60
+  admin_mailbox: hostmaster
+  vips: []                             # empty falls back to ha.vips, then ha.vip
+  master_addresses: []                 # empty derives from [dns_masters] or [dns_nodes] minus [dns_slaves]
+  slave_addresses: []                  # empty derives from [dns_slaves]
+  tsig_key_name: winter-dns            # secret is vault_dns_tsig_secret in passwords.yml
+  allow_query_cidrs: []                # empty = any
+  allow_transfer_cidrs: []             # empty = TSIG key only on the master
+  manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
+  check_interval: 60                   # local resolution check retry window (seconds)

@@ -1,0 +1,5 @@
+---
+- name: restart named
+  ansible.builtin.systemd:
+    name: "{{ dns.service }}"
+    state: restarted

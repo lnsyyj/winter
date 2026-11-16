@@ -1,0 +1,22 @@
+$TTL {{ dns.ttl }}
+@   IN  SOA ns1.{{ dns.domain }}. {{ dns.admin_mailbox }}.{{ dns.domain }}. (
+        {{ dns_zone_serial }}   ; serial
+        3600        ; refresh
+        600         ; retry
+        604800      ; expire
+        {{ dns.ttl }} )         ; negative cache TTL
+
+@   IN  NS  ns1.{{ dns.domain }}.
+{% if (dns_slave_addresses | default([]) | length) > 0 %}
+@   IN  NS  ns2.{{ dns.domain }}.
+{% endif %}
+
+{% for addr in dns_master_addresses %}
+ns1 IN  A   {{ addr }}
+{% endfor %}
+{% for addr in dns_slave_addresses %}
+ns2 IN  A   {{ addr }}
+{% endfor %}
+{% for vip in dns_vips %}
+@   IN  A   {{ vip }}
+{% endfor %}

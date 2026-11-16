@@ -35,6 +35,16 @@ management
 [nginx_nodes:children]
 management
 
+# Component groups for independent deployment (one single-component stage per group).
+[repo_nodes:children]
+management
+
+[db_nodes:children]
+management
+
+[dns_nodes:children]
+management
+
 [ceph_nodes]
 
 [all:vars]

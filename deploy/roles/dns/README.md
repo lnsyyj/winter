@@ -1,0 +1,74 @@
+# role: dns
+
+BIND 9 authoritative DNS for the platform domain (ADR-16 / ADR-17). It publishes one A record
+per active-active Director VIP, so DNS round-robin spreads clients across every VIP. An optional
+slave keeps a TSIG-synced copy of the zone. BIND 9 is chosen because it is the de-facto
+enterprise standard on RHEL, supports standard round-robin A records and master/slave transfer.
+
+## Configuration
+
+`dns.*` in `deploy/group_vars/all.yml` is the single entry point:
+
+| Key | Meaning |
+| --- | --- |
+| `dns.enabled` | Enables the role; `false` keeps DNS out of the deployment |
+| `dns.domain` | Zone name, defaults to `platform.domain` |
+| `dns.vips` | A records for the domain; empty falls back to `ha.vips`, then `ha.vip` |
+| `dns.master_addresses` / `dns.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
+| `dns.forwarders` | Upstream resolvers for external names; empty means authoritative-only |
+| `dns.recursion` / `dns.dnssec` | Resolver behaviour; off by default for an authoritative internal zone |
+| `dns.allow_query_cidrs` | Query ACL; empty means `any` |
+| `dns.allow_transfer_cidrs` | Transfer ACL on the master; empty means TSIG key only |
+| `dns.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
+| `dns.rpm_files` / `dns.rpm_subdir` | BIND RPMs when `install_method=repo` |
+| `dns.manage_firewall` | Open `dns.listen_port`/tcp and /udp with firewalld; set `false` for an external firewall |
+| `dns.check_interval` | Local resolution retry window (seconds) |
+
+`vault_dns_tsig_secret` comes from `deploy/passwords.yml`. Generate one with
+`openssl rand -base64 32` on a trusted machine; the secret never goes into `group_vars`.
+
+## Topology via inventory groups
+
+- `[dns_nodes]` — all DNS servers (the playbook targets this group).
+- `[dns_masters]` — masters; defaults to `[dns_nodes]` minus `[dns_slaves]`.
+- `[dns_slaves]` — slaves; a slave pulls the zone from the masters with TSIG.
+
+Hostnames are never tested in the playbook; roles derive their role from group membership. With
+no `[dns_slaves]` group the single DNS node is the master — the default single-node behaviour.
+
+## Active-active VIP round-robin
+
+`dns_vips` is resolved in this order: `dns.vips` → `ha.vips` → `[ha.vip]`. Every address becomes
+an `@ IN A` record in the zone, so a client resolving the platform domain receives all VIPs and
+BIND rotates the answer order. This completes the multi-VIP Director design: DNS spreads clients
+across Directors, LVS/DR spreads them across Nginx backends. When a VIP fails over, its address
+is unchanged and the A record stays valid.
+
+## Zone transfer
+
+The master renders a full zone file with a serial derived from a hash of the domain and VIP set,
+so editing VIPs changes the serial deterministically and triggers a notify. Slaves keep a
+transferred copy under `{{ dns.zone_dir }}/slaves/` and do not render the zone themselves. A TSIG
+key is required when any slave exists; `named-checkconf` validates the rendered configuration
+before the service is reloaded.
+
+## Prechecks
+
+Read-only and idempotent:
+
+```bash
+./deploy.sh dns -i inventory/multinode --tags precheck.dns
+```
+
+Checks: configuration validity, DNS topology, TSIG secret presence, package source availability,
+offline RPM staging (control machine), port availability and the firewalld tool. Every command task
+uses `changed_when: false`, so a check never modifies the host.
+
+## Common commands
+
+```bash
+systemctl status named
+named-checkconf /etc/named.conf
+dig +short @127.0.0.1 winter.local A     # lists all published VIPs
+journalctl -u named -f
+```
