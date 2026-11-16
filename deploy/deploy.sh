@@ -13,6 +13,14 @@ Usage: ./deploy.sh <stage> [-i inventory] [--tags tag,...] [ansible arguments...
 Stages:
   bootstrap-servers    Install base dependencies and OS settings (podman, chrony, sysctl, data disk)
   prechecks            Pre-deployment checks (read-only, implemented)
+  repo                 Deploy the internal artifact repository only (single component)
+  postgresql           Deploy PostgreSQL only (single component; use pg-ha for HA)
+  nginx                Deploy the Nginx access layer only (single component)
+  monitoring           Deploy the observability stack only (single component)
+  server               Deploy the management Server only (single component)
+  harbor               Deploy Harbor only (single component)
+  keepalived           Deploy the Keepalived Director and LVS real servers (single component)
+  dns                  Deploy BIND 9 DNS only (single component, multi-VIP round-robin)
   pull                 Pull images from Harbor (not implemented)
   deploy               Converge to the target state (internal repo + PostgreSQL + Nginx + observability stack + Server)
   pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
@@ -32,6 +40,8 @@ Examples:
   ./deploy.sh prechecks -i inventory/multinode
   ./deploy.sh prechecks -i inventory/multinode --tags prechecks.time
   ./deploy.sh deploy --tags observability,server   # converge only the monitoring stack and Server (automatically includes the internal repo)
+  ./deploy.sh server -i inventory/multinode        # deploy a single component (prechecks run first)
+  ./deploy.sh dns -i inventory/multinode --tags precheck.dns   # run only the DNS prechecks
 EOF
 }
 
@@ -54,6 +64,30 @@ case "$STAGE" in
         ;;
     prechecks)
         PLAYBOOK="$ROOT/playbooks/prechecks.yml"
+        ;;
+    repo)
+        PLAYBOOK="$ROOT/playbooks/repo.yml"
+        ;;
+    postgresql)
+        PLAYBOOK="$ROOT/playbooks/postgresql.yml"
+        ;;
+    nginx)
+        PLAYBOOK="$ROOT/playbooks/nginx.yml"
+        ;;
+    monitoring)
+        PLAYBOOK="$ROOT/playbooks/monitoring.yml"
+        ;;
+    server)
+        PLAYBOOK="$ROOT/playbooks/server.yml"
+        ;;
+    harbor)
+        PLAYBOOK="$ROOT/playbooks/harbor.yml"
+        ;;
+    keepalived)
+        PLAYBOOK="$ROOT/playbooks/keepalived.yml"
+        ;;
+    dns)
+        PLAYBOOK="$ROOT/playbooks/dns.yml"
         ;;
     deploy)
         PLAYBOOK="$ROOT/playbooks/deploy.yml"

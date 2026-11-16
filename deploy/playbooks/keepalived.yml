@@ -1,0 +1,76 @@
+---
+# keepalived · Standalone HA/LVS stage (ADR-16 / ADR-17).
+# Deploys the Keepalived Director (VRRP + optional LVS/DR) on [lb] and the loopback VIP with ARP
+# suppression on [nginx_nodes]. For the full multi-replica convergence use the ha-setup stage.
+# Read-only prechecks run before convergence; use --tags precheck.keepalived to run only the checks.
+#
+# Usage:
+#   ./deploy.sh keepalived -i inventory/multinode
+#   ./deploy.sh keepalived -i inventory/multinode --tags precheck.keepalived
+
+- name: Configure the Keepalived Director
+  hosts: lb
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Compute LVS backends and VRRP peers
+      ansible.builtin.set_fact:
+        nginx_lvs_backends: "{{ groups['nginx_nodes'] | default([]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        ha_peer_addresses: "{{ groups['lb'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+      tags: [always]
+
+    - name: Inject LVS real servers into the Keepalived configuration
+      ansible.builtin.set_fact:
+        ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
+      tags: [always]
+
+    - name: Run Keepalived prechecks
+      ansible.builtin.include_role:
+        name: keepalived
+        tasks_from: prechecks
+      tags: [precheck, precheck.keepalived]
+
+  roles:
+    - role: keepalived
+      when: ha.enabled | bool
+      tags: [ha, keepalived, lvs]
+
+  post_tasks:
+    - name: Summarize Keepalived deployment
+      ansible.builtin.debug:
+        msg:
+          - "VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
+          - "LVS/DR backends: {{ nginx_lvs_backends | default([]) | join(', ') }}"
+      tags: [always]
+
+- name: Configure the LVS real servers
+  hosts: nginx_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+  roles:
+    - role: realserver
+      when: ha.lvs.enabled | default(false) | bool
+      tags: [ha, lvs, realserver]

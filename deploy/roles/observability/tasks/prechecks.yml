@@ -1,0 +1,68 @@
+---
+# Read-only prechecks for the VictoriaMetrics / vmalert / VictoriaLogs / Alertmanager / Grafana stack.
+- name: Precheck monitoring | Stack is enabled
+  ansible.builtin.assert:
+    that: observability.enabled | bool
+    fail_msg: "observability.enabled is false in group_vars/all.yml; enable it before deploying the monitoring stack"
+    success_msg: "Observability stack is enabled"
+    quiet: true
+
+- name: Precheck monitoring | Grafana administrator password is set
+  ansible.builtin.assert:
+    that: vault_grafana_admin_password | default('') | length > 0
+    fail_msg: "vault_grafana_admin_password is missing in deploy/passwords.yml. Copy passwords.yml.example and set a real password; the role never creates a default one."
+    success_msg: "Grafana administrator password is configured"
+    quiet: true
+
+- name: Precheck monitoring | Locate component tarballs on the control machine
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../artifacts/repo/tarball/{{ item.value.tarball }}"
+  delegate_to: localhost
+  connection: local
+  loop: "{{ observability.components | dict2items }}"
+  register: obs_tarballs
+  changed_when: false
+
+- name: Precheck monitoring | All component tarballs exist
+  ansible.builtin.assert:
+    that: obs_tarballs.results | selectattr('stat.exists', 'equalto', false) | list | length == 0
+    fail_msg: >-
+      Missing monitoring tarballs in deploy/artifacts/repo/tarball:
+      {{ obs_tarballs.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item.key') | join(', ') }}.
+      Run scripts/fetch-artifacts.sh on a machine with internet access; versions are pinned in group_vars.
+    success_msg: "All {{ obs_tarballs.results | length }} component tarballs are present"
+    quiet: true
+
+- name: Precheck monitoring | Inspect component port usage
+  ansible.builtin.shell: "ss -H -lntup '( sport = :{{ item }} )' || true"
+  loop: "{{ monitoring_ports.values() | list }}"
+  register: obs_port_usage
+  changed_when: false
+  failed_when: false
+
+- name: Precheck monitoring | Component ports are free or owned by the stack
+  ansible.builtin.assert:
+    that: >-
+      obs_port_usage.results
+      | rejectattr('stdout', 'equalto', '')
+      | rejectattr('stdout', 'search', 'victoria|vmalert|alertmanager|grafana')
+      | list | length == 0
+    fail_msg: >-
+      A monitoring port is occupied by another process:
+      {{ obs_port_usage.results | map(attribute='stdout') | join(' | ') }}.
+      Stop it or change monitoring_ports in group_vars/all.yml.
+    success_msg: "Monitoring component ports are available"
+    quiet: true
+
+- name: Precheck monitoring | Config directory parent exists
+  ansible.builtin.stat:
+    path: "{{ observability.config_dir | dirname }}"
+  register: obs_config_parent
+  changed_when: false
+
+- name: Precheck monitoring | Config directory can be created
+  ansible.builtin.assert:
+    that: obs_config_parent.stat.exists
+    fail_msg: "Parent of observability.config_dir ({{ observability.config_dir }}) does not exist. Create it before deployment."
+    success_msg: "Configuration directory parent exists"
+    quiet: true

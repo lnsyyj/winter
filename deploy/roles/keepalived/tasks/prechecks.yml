@@ -1,0 +1,80 @@
+---
+# Read-only prechecks for the Keepalived Director (VRRP failover + optional LVS/DR load balancing).
+- name: Precheck HA | High availability is enabled
+  ansible.builtin.assert:
+    that: ha.enabled | bool
+    fail_msg: "ha.enabled is false in group_vars/all.yml; enable it before deploying Keepalived"
+    success_msg: "High availability is enabled"
+    quiet: true
+
+- name: Precheck HA | At least one VIP is configured
+  ansible.builtin.assert:
+    that:
+      - (ha.vips | default([]) | length) > 0 or (ha.vip | default('') | length) > 0
+      - ha.interface | default('') | length > 0
+    fail_msg: "Set ha.vip or ha.vips and ha.interface in group_vars/all.yml. Multiple VIPs enable active-active Directors."
+    success_msg: "VIP configuration is present: {{ ha.vips | default([]) | join(',') }} {{ ha.vip | default('') }}"
+    quiet: true
+
+- name: Precheck HA | VRRP authentication password is valid
+  ansible.builtin.assert:
+    that:
+      - vault_keepalived_auth_pass | default('') | length > 0
+      - vault_keepalived_auth_pass | default('') | length <= 8
+    fail_msg: >-
+      vault_keepalived_auth_pass must be set in deploy/passwords.yml and at most 8 characters for
+      VRRP PASS authentication. All [lb] nodes must share the same value.
+    success_msg: "VRRP authentication password is valid"
+    quiet: true
+
+- name: Precheck HA | VIP network interface exists
+  ansible.builtin.command: "ip link show {{ ha.interface }}"
+  register: ha_interface
+  changed_when: false
+  failed_when: false
+
+- name: Precheck HA | Network interface is present
+  ansible.builtin.assert:
+    that: ha_interface.rc == 0
+    fail_msg: "Interface {{ ha.interface }} does not exist on {{ inventory_hostname }}. Set ha.interface to the NIC that carries the VIP."
+    success_msg: "VIP interface {{ ha.interface }} exists"
+    quiet: true
+
+- name: Precheck HA | Director and real server roles do not overlap
+  ansible.builtin.assert:
+    that: (not (ha.lvs.enabled | default(false) | bool)) or (groups['lb'] | intersect(groups['nginx_nodes'] | default([])) | length == 0)
+    fail_msg: "LVS/DR requires [lb] and [nginx_nodes] to be disjoint; otherwise the Director and a real server share the same VIP"
+    success_msg: "Director and real server groups are disjoint"
+    quiet: true
+
+- name: Precheck HA | LVS prerequisites are satisfied
+  ansible.builtin.assert:
+    that: not (ha.lvs.enabled | default(false) | bool) or (ha.lvs.real_servers | default([]) | length >= 2)
+    fail_msg: >-
+      ha.lvs.enabled requires at least two real servers. ha-setup derives them from [nginx_nodes];
+      when running this role alone, set ha.lvs.real_servers explicitly. VRRP alone is failover,
+      not load balancing — every connection would land on the node holding the VIP.
+    success_msg: "LVS prerequisites are satisfied"
+    quiet: true
+
+- name: Precheck HA | L2 reachability of VIP and real servers
+  ansible.builtin.assert:
+    that: not (ha.lvs.enabled | default(false) | bool) or (ha.lvs.real_servers | default([]) | length > 0)
+    fail_msg: "LVS/DR needs the Director and real servers on the same L2 network with ARP suppression; verify the topology before deployment."
+    success_msg: "LVS/DR topology prerequisites are declared"
+    quiet: true
+
+- name: Precheck HA | ip_vs kernel module is available
+  ansible.builtin.command: modinfo ip_vs
+  register: ha_ipvs
+  changed_when: false
+  failed_when: false
+  when: ha.lvs.enabled | default(false) | bool
+
+- name: Precheck HA | ip_vs module can be loaded
+  ansible.builtin.assert:
+    that: ha_ipvs.rc == 0
+    fail_msg: "The ip_vs kernel module is unavailable (modinfo rc={{ ha_ipvs.rc }}). Install kernel modules for the running kernel or disable ha.lvs.enabled."
+    success_msg: "ip_vs kernel module is available"
+    quiet: true
+  when: ha.lvs.enabled | default(false) | bool

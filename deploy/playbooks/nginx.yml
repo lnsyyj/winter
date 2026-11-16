@@ -1,0 +1,43 @@
+---
+# nginx · Standalone access layer stage (ADR-09 / ADR-17).
+# Adds the platform site and reverse proxies without touching other sites or default_server.
+# Read-only prechecks run before convergence; use --tags precheck.nginx to run only the checks.
+#
+# Usage:
+#   ./deploy.sh nginx -i inventory/multinode
+#   ./deploy.sh nginx -i inventory/multinode --tags precheck.nginx
+
+- name: Deploy the Nginx access layer
+  hosts: nginx_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Run Nginx prechecks
+      ansible.builtin.include_role:
+        name: nginx
+        tasks_from: prechecks
+      tags: [precheck, precheck.nginx]
+
+  roles:
+    - role: nginx
+      tags: [nginx, web]
+
+  post_tasks:
+    - name: Summarize Nginx deployment
+      ansible.builtin.debug:
+        msg:
+          - "Site: https://{{ nginx.server_name }}:{{ nginx.https_port }}"
+          - "API: {{ nginx.api_upstream }}"
+          - "Grafana: /grafana/ via reverse proxy (ADR-09)"
+      tags: [always]

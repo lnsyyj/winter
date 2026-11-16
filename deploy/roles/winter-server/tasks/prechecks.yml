@@ -1,0 +1,74 @@
+---
+# Read-only prechecks for the stateless Server binary (Go + Gin).
+- name: Precheck Server | Server is enabled
+  ansible.builtin.assert:
+    that: winter_server.enabled | bool
+    fail_msg: "winter_server.enabled is false in group_vars/all.yml; enable it before deploying the Server"
+    success_msg: "Server is enabled"
+    quiet: true
+
+- name: Precheck Server | Validate configuration
+  ansible.builtin.assert:
+    that:
+      - winter_server.artifact | default('') | length > 0
+      - winter_server.port | int > 0
+      - winter_server.env_file | default('') | length > 0
+      - winter_server.bin_dir | default('') | length > 0
+    fail_msg: >-
+      Invalid Server configuration: artifact={{ winter_server.artifact | default('') }},
+      port={{ winter_server.port }}, env_file={{ winter_server.env_file | default('') }},
+      bin_dir={{ winter_server.bin_dir | default('') }}. Set winter_server.* in group_vars/all.yml.
+    success_msg: "Server configuration is valid"
+    quiet: true
+
+- name: Precheck Server | Required secrets are present and long enough
+  ansible.builtin.assert:
+    that:
+      - vault_jwt_secret | default('') | length >= 32
+      - vault_pg_password | default('') | length > 0
+      - vault_admin_password | default('') | length > 0
+    fail_msg: >-
+      Missing or weak secrets in deploy/passwords.yml: vault_jwt_secret must be at least 32 characters,
+      vault_pg_password and vault_admin_password must be set. Changing vault_jwt_secret invalidates
+      all issued access tokens.
+    success_msg: "Server secrets are present"
+    quiet: true
+
+- name: Precheck Server | Database address is valid for the replica count
+  ansible.builtin.assert:
+    that: (groups['server_nodes'] | default([]) | length) <= 1 or server_ha.database_host != '127.0.0.1'
+    fail_msg: >-
+      Multiple Server replicas require server_ha.database_host to point at the PG HA access point
+      (HAProxy/VIP), not 127.0.0.1; each replica would otherwise use its own local database.
+    success_msg: "Database address is valid"
+    quiet: true
+
+- name: Precheck Server | Binary exists on the control machine
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../artifacts/repo/bin/{{ winter_server.artifact }}"
+  delegate_to: localhost
+  connection: local
+  register: server_bin_stat
+  changed_when: false
+
+- name: Precheck Server | Binary is available in the offline repo
+  ansible.builtin.assert:
+    that: server_bin_stat.stat.exists
+    fail_msg: >-
+      Server binary {{ winter_server.artifact }} is missing in deploy/artifacts/repo/bin on the control
+      machine. Cross-compile it and publish it through the internal repo (ADR-14); no target compilation.
+    success_msg: "Server binary is present in the offline repo"
+    quiet: true
+
+- name: Precheck Server | Inspect API port usage
+  ansible.builtin.shell: "ss -H -lntup '( sport = :{{ winter_server.port }} )' || true"
+  register: server_port_usage
+  changed_when: false
+  failed_when: false
+
+- name: Precheck Server | API port is free or already owned by winter-server
+  ansible.builtin.assert:
+    that: server_port_usage.stdout == '' or ('winter-server' in server_port_usage.stdout)
+    fail_msg: "Port {{ winter_server.port }} is occupied by another process: {{ server_port_usage.stdout }}. Stop it or change winter_server.port / nginx.api_upstream together."
+    success_msg: "Server API port {{ winter_server.port }} is available"
+    quiet: true

@@ -1,0 +1,41 @@
+---
+# postgresql · Standalone database stage (ADR-15 / ADR-17).
+# Converges an existing instance or installs PostgreSQL 17 from the internal repo.
+# For an HA cluster use the pg-ha stage instead; this stage targets [db_nodes].
+# Read-only prechecks run before convergence; use --tags precheck.postgresql to run only the checks.
+#
+# Usage:
+#   ./deploy.sh postgresql -i inventory/multinode
+#   ./deploy.sh postgresql -i inventory/multinode --tags precheck.postgresql
+
+- name: Deploy PostgreSQL
+  hosts: db_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Run PostgreSQL prechecks
+      ansible.builtin.include_role:
+        name: postgresql
+        tasks_from: prechecks
+      tags: [precheck, precheck.postgresql]
+
+  roles:
+    - role: postgresql
+      tags: [postgresql, db]
+
+  post_tasks:
+    - name: Summarize PostgreSQL deployment
+      ansible.builtin.debug:
+        msg: "PostgreSQL: database {{ postgresql.db_name }} / role {{ postgresql.db_user }} on port {{ postgresql.port }}"
+      tags: [always]

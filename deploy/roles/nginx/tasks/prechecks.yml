@@ -1,0 +1,62 @@
+---
+# Read-only prechecks for the additive Nginx access layer.
+- name: Precheck Nginx | Confirm a supported distribution
+  ansible.builtin.assert:
+    that: ansible_facts.os_family == "RedHat"
+    fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
+    quiet: true
+
+- name: Precheck Nginx | Validate configuration
+  ansible.builtin.assert:
+    that:
+      - nginx.server_name | default('') | length > 0
+      - nginx.http_port | int > 0
+      - nginx.https_port | int > 0
+      - nginx.api_upstream | default('') | length > 0
+      - nginx.doc_root | default('') | length > 0
+      - nginx.tls_days | int > 0
+    fail_msg: >-
+      Invalid Nginx configuration: server_name={{ nginx.server_name | default('') }},
+      http_port={{ nginx.http_port }}, https_port={{ nginx.https_port }},
+      api_upstream={{ nginx.api_upstream | default('') }}. Set nginx_overrides in group_vars/all.yml;
+      api_upstream must point at the Server (or upstream winter_api in HA mode).
+    success_msg: "Nginx configuration is valid: {{ nginx.server_name }}"
+    quiet: true
+
+- name: Precheck Nginx | Check HTTP and HTTPS port usage
+  ansible.builtin.shell: "ss -H -lntup '( sport = :{{ item }} )' || true"
+  loop:
+    - "{{ nginx.http_port }}"
+    - "{{ nginx.https_port }}"
+  register: nginx_port_usage
+  changed_when: false
+  failed_when: false
+
+- name: Precheck Nginx | Web ports are free or already owned by nginx
+  ansible.builtin.assert:
+    that: nginx_port_usage.results | rejectattr('stdout', 'equalto', '') | list | length == 0
+    fail_msg: >-
+      A web port is occupied: {{ nginx_port_usage.results | map(attribute='stdout') | join(' | ') }}.
+      Stop the conflicting process or change nginx.http_port / nginx.https_port. The role never
+      modifies another site's server block.
+    success_msg: "Nginx ports {{ nginx.http_port }} / {{ nginx.https_port }} are available"
+    quiet: true
+
+- name: Precheck Nginx | Parent directories for site data are writable
+  ansible.builtin.stat:
+    path: "{{ item | dirname }}"
+  loop:
+    - "{{ nginx.doc_root }}"
+    - "{{ nginx.tls_dir }}"
+    - "{{ nginx.conf_path }}"
+  register: nginx_parent_stats
+  changed_when: false
+
+- name: Precheck Nginx | Parent directories exist
+  ansible.builtin.assert:
+    that: nginx_parent_stats.results | selectattr('stat.exists', 'equalto', false) | list | length == 0
+    fail_msg: >-
+      Parent directory missing for a Nginx path; create it or change nginx.doc_root / nginx.tls_dir
+      / nginx.conf_path. Missing: {{ nginx_parent_stats.results | selectattr('stat.exists', 'equalto', false) | map(attribute='item') | join(', ') }}
+    success_msg: "Nginx parent directories exist"
+    quiet: true

@@ -1,0 +1,63 @@
+---
+# Read-only prechecks for the PostgreSQL role (converge an existing instance or install from the internal repo).
+- name: Precheck PostgreSQL | Confirm a supported distribution
+  ansible.builtin.assert:
+    that: ansible_facts.os_family == "RedHat"
+    fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
+    quiet: true
+
+- name: Precheck PostgreSQL | Validate configuration and password
+  ansible.builtin.assert:
+    that:
+      - postgresql.db_name | default('') | length > 0
+      - postgresql.db_user | default('') | length > 0
+      - postgresql.port | int > 0
+      - postgresql.listen_addresses | default('') | length > 0
+      - vault_pg_password | default('') | length >= 12
+    fail_msg: >-
+      Invalid PostgreSQL configuration: db_name={{ postgresql.db_name | default('') }},
+      db_user={{ postgresql.db_user | default('') }}, port={{ postgresql.port }},
+      listen_addresses={{ postgresql.listen_addresses | default('') }}; vault_pg_password must be
+      at least 12 characters in deploy/passwords.yml. Passwords are never stored in group_vars.
+    success_msg: "PostgreSQL configuration is valid"
+    quiet: true
+
+- name: Precheck PostgreSQL | Internal repo base URL is configured
+  ansible.builtin.assert:
+    that: platform.repo_base_url | default('') | length > 0
+    fail_msg: "platform.repo_base_url is empty. A fresh machine installs PostgreSQL only from the internal repo (ADR-15)."
+    success_msg: "Internal repo base URL: {{ platform.repo_base_url }}"
+    quiet: true
+
+- name: Precheck PostgreSQL | Offline RPMs exist on the control machine
+  ansible.builtin.find:
+    paths: "{{ playbook_dir }}/../artifacts/repo/rpm"
+    patterns: "*.rpm"
+    file_type: file
+  delegate_to: localhost
+  connection: local
+  register: pg_local_rpms
+  changed_when: false
+
+- name: Precheck PostgreSQL | At least one offline RPM is available
+  ansible.builtin.assert:
+    that: pg_local_rpms.files | default([]) | length > 0
+    fail_msg: >-
+      No PostgreSQL RPMs found under deploy/artifacts/repo/rpm on the control machine.
+      Run scripts/fetch-artifacts.sh on a machine with internet access, or point the role at an
+      already-installed instance and leave the repo unused.
+    success_msg: "Offline RPMs found: {{ pg_local_rpms.files | default([]) | length }}"
+    quiet: true
+
+- name: Precheck PostgreSQL | Inspect database port usage
+  ansible.builtin.shell: "ss -H -lntup '( sport = :{{ postgresql.port }} )' || true"
+  register: pg_port_usage
+  changed_when: false
+  failed_when: false
+
+- name: Precheck PostgreSQL | Database port is free or already owned by postgres
+  ansible.builtin.assert:
+    that: pg_port_usage.stdout == '' or ('postgres' in pg_port_usage.stdout)
+    fail_msg: "Port {{ postgresql.port }} is occupied by another process: {{ pg_port_usage.stdout }}. Stop it or change postgresql.port in group_vars/all.yml."
+    success_msg: "PostgreSQL port {{ postgresql.port }} is available"
+    quiet: true

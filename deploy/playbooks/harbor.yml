@@ -1,0 +1,46 @@
+---
+# harbor · Standalone image registry stage (ADR-16 / ADR-17).
+# Deploys Harbor replicas on shared PostgreSQL / Redis / NFS; the runtime is docker-compose.
+# Read-only prechecks run before convergence; use --tags precheck.harbor to run only the checks.
+#
+# Usage:
+#   ./deploy.sh harbor -i inventory/multinode
+#   ./deploy.sh harbor -i inventory/multinode --tags precheck.harbor
+
+- name: Deploy Harbor
+  hosts: harbor_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Run Harbor prechecks
+      ansible.builtin.include_role:
+        name: harbor
+        tasks_from: prechecks
+      tags: [precheck, precheck.harbor]
+
+    - name: Bind this Harbor replica to its internal address
+      ansible.builtin.set_fact:
+        harbor: "{{ harbor | combine({'bind_addr': ansible_host | default(harbor.bind_addr)}) }}"
+      tags: [always]
+
+  roles:
+    - role: harbor
+      when: harbor.enabled | bool
+      tags: [harbor]
+
+  post_tasks:
+    - name: Summarize Harbor deployment
+      ansible.builtin.debug:
+        msg: "Harbor: https://{{ harbor.hostname }}/ (external DB {{ harbor.database.host }}, NFS {{ harbor.storage.nfs_server }})"
+      tags: [always]

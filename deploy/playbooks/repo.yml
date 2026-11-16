@@ -1,0 +1,40 @@
+---
+# repo · Standalone internal artifact repository stage (ADR-15 / ADR-17).
+# Publishes deploy/artifacts/repo over plain HTTP on the internal subnet.
+# Read-only prechecks run before convergence; use --tags precheck.repo to run only the checks.
+#
+# Usage:
+#   ./deploy.sh repo -i inventory/multinode
+#   ./deploy.sh repo -i inventory/multinode --tags precheck.repo
+
+- name: Deploy the internal artifact repository
+  hosts: repo_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Run internal repository prechecks
+      ansible.builtin.include_role:
+        name: local_repo
+        tasks_from: prechecks
+      tags: [precheck, precheck.repo]
+
+  roles:
+    - role: local_repo
+      tags: [repo, web]
+
+  post_tasks:
+    - name: Summarize repository deployment
+      ansible.builtin.debug:
+        msg: "Internal repo: http://{{ ansible_host | default(inventory_hostname) }}:{{ local_repo.listen_port }}/ ({{ local_repo.allow_cidr }} only)"
+      tags: [always]
