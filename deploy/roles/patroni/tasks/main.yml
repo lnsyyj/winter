@@ -1,9 +1,9 @@
 ---
-# Patroni：把三台 PG 组成一主两从，并交给 etcd 做选主
+# Patroni: form three PG nodes into one primary and two replicas, and let etcd handle leader election
 #
-# 顺序：停用独立实例 → 装 patroni（离线 wheel）→ 写配置 → 起服务 → 等集群成形
+# Order: disable standalone instance → install patroni (offline wheels) → write config → start service → wait for cluster to form
 
-- name: 停用系统自带的 PostgreSQL 服务（避免与 Patroni 抢实例）
+- name: Disable system-provided PostgreSQL service (avoid competing with Patroni for the instance)
   ansible.builtin.systemd:
     name: "postgresql-{{ patroni.pg_major }}"
     state: stopped
@@ -11,7 +11,7 @@
   when: (patroni_disable_standalone | default(patroni.disable_standalone_pg)) | bool
   tags: [patroni]
 
-- name: 确认 pip3 可用（精简系统常常没有）
+- name: Check pip3 is available (minimal systems often lack it)
   ansible.builtin.shell: |
     set -o pipefail
     command -v pip3 >/dev/null 2>&1 && echo present || echo missing
@@ -21,8 +21,8 @@
   changed_when: false
   tags: [patroni]
 
-- name: 安装 python3-pip（仅当缺失；来自 OS 仓库）
-  # 基础系统包不属于我们的制品库范畴（随 OS 镜像提供）；离线现场需自带 OS 源
+- name: Install python3-pip (only if missing; from OS repository)
+  # Base OS packages are outside our artifact repository (provided with the OS image); offline sites must bring their own OS repo
   ansible.builtin.dnf:
     name: python3-pip
     state: present
@@ -30,11 +30,11 @@
   when: pip_probe.stdout | trim == 'missing'
   tags: [patroni]
 
-- name: 从内网源安装 patroni（离线 wheel，不访问 PyPI）
+- name: Install patroni from internal repo (offline wheels, no PyPI access)
   ansible.builtin.shell: |
     set -o pipefail
-    # python-etcd 是 Patroni etcd3 实现的依赖（没有它 patroni 只会认出 consul/kubernetes）
-    # 该包只有 sdist，必须 --no-build-isolation，否则 pip 会尝试联网下 setuptools
+    # python-etcd is a dependency of Patroni's etcd3 implementation (without it patroni only recognizes consul/kubernetes)
+    # This package only has an sdist, so --no-build-isolation is required; otherwise pip tries to fetch setuptools online
     pip3 install --no-index --no-build-isolation \
       --trusted-host $(echo {{ platform.repo_base_url }} | sed -E 's#https?://([^:/]+).*#\1#') \
       --find-links {{ platform.repo_base_url }}/{{ patroni.pip_subdir }}/ \
@@ -45,14 +45,14 @@
   changed_when: "'Successfully installed' in patroni_pip.stdout"
   tags: [patroni]
 
-- name: 配置目录
+- name: Create configuration directory
   ansible.builtin.file:
     path: /etc/patroni
     state: directory
     mode: "0755"
   tags: [patroni]
 
-- name: 数据目录（与系统实例分开）
+- name: Create data directory (separate from the system instance)
   ansible.builtin.file:
     path: "{{ pg_cluster.data_dir }}"
     state: directory
@@ -61,7 +61,7 @@
     mode: "0700"
   tags: [patroni]
 
-- name: 落地 patroni.yml
+- name: Install patroni.yml
   ansible.builtin.template:
     src: patroni.yml.j2
     dest: /etc/patroni/patroni.yml
@@ -71,7 +71,7 @@
   notify: restart patroni
   tags: [patroni]
 
-- name: 落地 post_bootstrap 脚本（首个主库建库）
+- name: Install post_bootstrap script (create app database on first primary)
   ansible.builtin.template:
     src: post_bootstrap.sh.j2
     dest: /etc/patroni/post_bootstrap.sh
@@ -80,7 +80,7 @@
     mode: "0755"
   tags: [patroni]
 
-- name: 落地 systemd unit
+- name: Install systemd unit
   ansible.builtin.template:
     src: patroni.service.j2
     dest: /etc/systemd/system/patroni.service
@@ -88,7 +88,7 @@
   notify: restart patroni
   tags: [patroni]
 
-- name: 启动并开机自启
+- name: Start service and enable start on boot
   ansible.builtin.systemd:
     name: patroni
     state: started
@@ -96,7 +96,7 @@
     daemon_reload: true
   tags: [patroni]
 
-- name: 防火墙放行 PG 与 REST 端口（仅集群网段）
+- name: Allow PG and REST ports through firewall (cluster subnet only)
   ansible.builtin.shell: |
     firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.port }} protocol=tcp accept' >/dev/null 2>&1
     firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.rest_port }} protocol=tcp accept' >/dev/null 2>&1
@@ -106,21 +106,21 @@
   failed_when: false
   tags: [patroni]
 
-- name: 等待本节点 REST API 就绪
+- name: Wait for local node REST API to be ready
   ansible.builtin.shell: |
     set -o pipefail
     for i in $(seq 1 40); do
       curl -s --max-time 2 http://{{ ansible_host }}:{{ pg_cluster.rest_port }}/ | grep -q '"state"' && exit 0
       sleep 3
     done
-    echo "patroni REST 未就绪" >&2
+    echo "patroni REST not ready" >&2
     exit 1
   args:
     executable: /bin/bash
   changed_when: false
   tags: [patroni]
 
-- name: 集群状态
+- name: Check cluster status
   ansible.builtin.shell: |
     set -o pipefail
     patronictl -c /etc/patroni/patroni.yml list 2>&1 | head -8
@@ -131,7 +131,7 @@
   run_once: true
   tags: [patroni]
 
-- name: 输出集群状态
+- name: Show cluster status
   ansible.builtin.debug:
     msg: "{{ patroni_list.stdout_lines }}"
   run_once: true

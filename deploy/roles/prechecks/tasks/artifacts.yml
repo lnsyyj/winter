@@ -1,12 +1,12 @@
 ---
-# 制品可达性只在阶段 C1（起内网源）之后才有意义，因此默认关闭。
-# 打开方式：group_vars 里 prechecks.check_artifacts: true，并填 platform.repo_base_url / registry_host。
-- name: 预检 | 内网源 repodata
+# Artifact reachability is only meaningful after phase C1 (bring up the internal repo), so it is disabled by default.
+# To enable: set prechecks.check_artifacts: true in group_vars and fill in platform.repo_base_url / registry_host.
+- name: Precheck | Internal repo repodata
   ansible.builtin.uri:
     url: "{{ platform.repo_base_url }}repodata/repomd.xml"
     method: GET
     status_code: 200
-    # 只探测可达性，不做证书校验；repodata 的完整性由 repomd.xml.asc（ADR-15）保证
+    # Only probe reachability, skip certificate validation; repodata integrity is guaranteed by repomd.xml.asc (ADR-15)
     validate_certs: false
     timeout: 10
   register: prechecks_repo
@@ -16,25 +16,25 @@
     - prechecks.check_artifacts | bool
     - (platform.repo_base_url | default('')) | length > 0
 
-- name: 预检 | 内网源可达性校验
+- name: Precheck | Verify internal repo reachability
   ansible.builtin.assert:
     that:
       - prechecks_repo.status | default(0) == 200
     fail_msg: >-
-      内网源不可达：{{ platform.repo_base_url }}repodata/repomd.xml
-      （status={{ prechecks_repo.status | default('n/a') }}，msg={{ prechecks_repo.msg | default('') }}）。
-      先完成阶段 C1 起 Nginx 源，再确认节点到源网段放行、且节点没有配置全局代理（ADR-15）。
-    success_msg: "内网源可达"
+      Internal repo unreachable: {{ platform.repo_base_url }}repodata/repomd.xml
+      (status={{ prechecks_repo.status | default('n/a') }}, msg={{ prechecks_repo.msg | default('') }}).
+      First complete phase C1 to bring up the Nginx repo, then confirm the repo subnet is allowed through the firewall on the node and that no global proxy is configured (ADR-15).
+    success_msg: "Internal repo reachable"
     quiet: true
   when:
     - prechecks.check_artifacts | bool
     - (platform.repo_base_url | default('')) | length > 0
 
-- name: 预检 | Harbor 探测
+- name: Precheck | Harbor probe
   ansible.builtin.uri:
     url: "https://{{ platform.registry_host }}/v2/"
     method: GET
-    # 401 = 需要认证，说明 registry 活着；200 = 匿名可读
+    # 401 = authentication required (registry is alive); 200 = anonymously readable
     status_code: [200, 401]
     validate_certs: false
     timeout: 10
@@ -45,15 +45,15 @@
     - prechecks.check_artifacts | bool
     - (platform.registry_host | default('')) | length > 0
 
-- name: 预检 | Harbor 可达性校验
+- name: Precheck | Verify Harbor reachability
   ansible.builtin.assert:
     that:
       - prechecks_registry.status | default(0) in [200, 401]
     fail_msg: >-
-      Harbor 不可达：https://{{ platform.registry_host }}/v2/
-      （status={{ prechecks_registry.status | default('n/a') }}，msg={{ prechecks_registry.msg | default('') }}）。
-      确认 Harbor 已启动、443 放行；此处只探测可达性，证书信任在 C4 由 ansible 下发 CA 后验证。
-    success_msg: "Harbor 可达"
+      Harbor unreachable: https://{{ platform.registry_host }}/v2/
+      (status={{ prechecks_registry.status | default('n/a') }}, msg={{ prechecks_registry.msg | default('') }}).
+      Confirm Harbor is started and 443 is allowed through the firewall; this only probes reachability — certificate trust is verified in C4 after ansible distributes the CA.
+    success_msg: "Harbor reachable"
     quiet: true
   when:
     - prechecks.check_artifacts | bool

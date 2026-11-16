@@ -1,21 +1,21 @@
 ---
-# Patroni：PG 高可用的编排者（负责选主、复制、切换、rewind）
+# Patroni: orchestrator for PG high availability (handles leader election, replication, switchover, and rewind)
 patroni:
-  # 目标 PG 主版本（与已安装的一致）
+  # Target PG major version (must match the installed one)
   pg_major: "17"
   pg_bin: "/usr/pgsql-17/bin"
 
-  # 账号（密码来自 passwords.yml，见模板里的 vault_* 变量）
+  # Accounts (passwords come from passwords.yml; see the vault_* variables in the templates)
   superuser: postgres
   repl_user: replicator
-  # 应用库/账号（与 postgresql role 保持一致）
+  # Application database/account (keep consistent with the postgresql role)
   app_db: "{{ postgresql.db_name }}"
   app_user: "{{ postgresql.db_user }}"
 
-  # 是否停用系统自带的 postgresql-<ver> 服务
-  # - 独立 PG 节点：true（避免和 Patroni 抢同一个实例）
-  # - 上面已经有别的业务在用系统实例（如 .194 上的 argus）：false
+  # Whether to disable the system-provided postgresql-<ver> service
+  # - Standalone PG node: true (avoid competing with Patroni for the same instance)
+  # - Another service already uses the system instance (e.g. argus on .194): false
   disable_standalone_pg: true
 
-  # pip 轮子来源（内网源）
+  # Source of pip wheels (internal repo)
   pip_subdir: pip

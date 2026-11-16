@@ -1,20 +1,20 @@
 ---
-# 部署 Server 单二进制 + systemd（ADR-14：现场不编译，只从内网源取制品）
+# Deploy the Server single binary + systemd (ADR-14: no compilation on site, only fetch artifacts from the internal repo)
 #
-# 覆盖正在运行的二进制会触发 ETXTBSY，所以用 mv 原子替换 inode，
-# 而不是直接 cp/install 写原文件；只有内容变化才重启。
+# Overwriting a running binary triggers ETXTBSY, so use mv to atomically replace the inode,
+# rather than cp/install writing the original file directly; only content changes trigger a restart.
 
-- name: 校验部署密码齐备（缺一项就明确报错，不生成弱口令）
+- name: Validate deployment passwords are complete (fail explicitly if any is missing, do not generate weak passwords)
   ansible.builtin.assert:
     that:
       - vault_pg_password is defined and vault_pg_password | length > 0
       - vault_jwt_secret is defined and vault_jwt_secret | length >= 32
       - vault_admin_password is defined and vault_admin_password | length > 0
-    fail_msg: "deploy/passwords.yml 缺少 vault_pg_password / vault_jwt_secret(>=32) / vault_admin_password"
+    fail_msg: "deploy/passwords.yml is missing vault_pg_password / vault_jwt_secret(>=32) / vault_admin_password"
     quiet: true
   tags: [server]
 
-- name: 创建服务账号
+- name: Create service account
   ansible.builtin.user:
     name: "{{ server_run_user }}"
     system: true
@@ -22,7 +22,7 @@
     create_home: false
   tags: [server]
 
-- name: 创建配置与暂存目录
+- name: Create config and staging directories
   ansible.builtin.file:
     path: "{{ item.path }}"
     state: directory
@@ -34,7 +34,7 @@
     - { path: /var/tmp/winter-server, mode: "0755" }
   tags: [server]
 
-- name: 从内网源取 Server 二进制
+- name: Fetch Server binary from internal repo
   ansible.builtin.get_url:
     url: "{{ platform.repo_base_url }}/{{ winter_server.bin_subdir }}/{{ winter_server.artifact }}"
     dest: "/var/tmp/winter-server/winter-server.new"
@@ -42,7 +42,7 @@
     timeout: 120
   tags: [server]
 
-- name: 安装二进制（内容不变则跳过；同目录 mv 避开 ETXTBSY）
+- name: Install binary (skip if unchanged; same-directory mv avoids ETXTBSY)
   ansible.builtin.shell: |
     set -euo pipefail
     src=/var/tmp/winter-server/winter-server.new
@@ -50,8 +50,8 @@
     if [ -x "$dst" ] && cmp -s "$src" "$dst"; then
       echo unchanged
     else
-      # 先复制到目标目录再原子替换：保留源文件让 get_url 幂等，
-      # 同时不直接写正在执行的二进制（那样会触发 ETXTBSY）。
+      # Copy to the target directory first, then replace atomically: keep the source file so get_url stays idempotent,
+      # and do not write directly to the running binary (which would trigger ETXTBSY).
       cp "$src" "$dst.new"
       chmod 0755 "$dst.new"
       mv "$dst.new" "$dst"
@@ -64,7 +64,7 @@
   notify: restart winter-server
   tags: [server]
 
-- name: 渲染环境文件（含口令，0640）
+- name: Render environment file (contains passwords, 0640)
   ansible.builtin.template:
     src: server.env.j2
     dest: "{{ winter_server.env_file }}"
@@ -75,7 +75,7 @@
   notify: restart winter-server
   tags: [server]
 
-- name: 渲染 systemd unit
+- name: Render systemd unit
   ansible.builtin.template:
     src: winter-server.service.j2
     dest: /etc/systemd/system/winter-server.service
@@ -84,11 +84,11 @@
   notify: restart winter-server
   tags: [server]
 
-- name: 应用变更（先重启）
+- name: Apply changes (restart first)
   ansible.builtin.meta: flush_handlers
   tags: [server]
 
-- name: 启动并开机自启
+- name: Start and enable on boot
   ansible.builtin.systemd:
     name: winter-server
     state: started
@@ -96,7 +96,7 @@
     daemon_reload: true
   tags: [server]
 
-- name: 等待 /healthz
+- name: Wait for /healthz
   ansible.builtin.uri:
     url: "http://{{ winter_server.listen_addr }}:{{ winter_server.port }}/healthz"
     status_code: 200
@@ -107,10 +107,10 @@
   delay: "{{ server_health_delay | int }}"
   tags: [server]
 
-- name: 输出结论
+- name: Print summary
   ansible.builtin.debug:
     msg:
-      - "Server：{{ winter_server.listen_addr }}:{{ winter_server.port }}（systemd: winter-server）"
-      - "Nginx 反代 /api/ → {{ nginx.api_upstream }}；确认两者端口一致"
-      - "迁移与 break-glass 管理员由进程启动时自动完成"
+      - "Server: {{ winter_server.listen_addr }}:{{ winter_server.port }} (systemd: winter-server)"
+      - "Nginx reverse proxy /api/ → {{ nginx.api_upstream }}; confirm both ports match"
+      - "Migrations and the break-glass administrator are handled automatically at process startup"
   tags: [server]

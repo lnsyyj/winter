@@ -1,7 +1,7 @@
 # {{ ansible_managed | default('managed by ansible') }}
-# vmalert 的规则目录必须至少有一个合法规则文件，否则进程启动即报错。
-# M0 用一条永不为真的占位规则；接入采集后按 ADR-18 补
-# 「VictoriaLogs 磁盘水位」与 ADR-36 的「队列深度 / 最老任务年龄」告警。
+# vmalert's rules directory must contain at least one valid rule file, or the process fails at startup.
+# M0 uses a placeholder rule that is never true; after collection is connected, add per ADR-18
+# the "VictoriaLogs disk watermark" and per ADR-36 the "queue depth / oldest task age" alerts.
 groups:
   - name: winter.m0
     interval: 30s
@@ -12,4 +12,4 @@ groups:
         labels:
           severity: info
         annotations:
-          summary: 占位规则，不会触发
+          summary: Placeholder rule, never triggers

@@ -1,31 +1,31 @@
 # role: winter-server
 
-把 `server/` 交叉编译出的 Go 单二进制部署成 systemd 服务，替代手工 `nohup`。
+Deploys the Go single binary cross-compiled from `server/` as a systemd service, replacing manual `nohup`.
 
-- 制品：`deploy/artifacts/repo/bin/winter-server`（由 `server/bin/winter-server` 复制而来，
-  现场**不编译**，ADR-14）。
-- 安装：`/usr/local/bin/winter-server`，专用账号 `winter-server`（非 root）。
-- 配置：`/etc/winter/server.env`，权限 0640，模板 `templates/server.env.j2`。
-  `DATABASE_URL` 由 `passwords.yml` 的 `vault_pg_password` 与 `pg_cluster.haproxy.listen_port`
-  拼出；`JWT_SECRET` / `ADMIN_PASSWORD` 同样只来自 `passwords.yml`。
-- 服务：`winter-server.service`，`Type=exec`、`Restart=always`、开机自启。
-- 端口：`winter_server.port`（默认 8081），必须与 `nginx.api_upstream` 一致。
+- Artifact: `deploy/artifacts/repo/bin/winter-server` (copied from `server/bin/winter-server`,
+  **no compilation on site**, ADR-14).
+- Install: `/usr/local/bin/winter-server`, dedicated account `winter-server` (non-root).
+- Configuration: `/etc/winter/server.env`, mode 0640, template `templates/server.env.j2`.
+  `DATABASE_URL` is assembled from `vault_pg_password` in `passwords.yml` and `pg_cluster.haproxy.listen_port`;
+  `JWT_SECRET` / `ADMIN_PASSWORD` also come only from `passwords.yml`.
+- Service: `winter-server.service`, `Type=exec`, `Restart=always`, start on boot.
+- Port: `winter_server.port` (default 8081), must match `nginx.api_upstream`.
 
-## 幂等与不停机覆盖
+## Idempotency and zero-downtime overwrite
 
-`install` 直接覆盖正在执行的二进制会触发 `ETXTBSY`，所以先把新包下载到
-`/var/tmp/winter-server/winter-server.new`，`cmp` 比对内容后复制到目标目录、
-再用**同目录 `mv` 原子替换 inode**（保留下载源文件，让 `get_url` 保持幂等）：
-内容不变则完全不改动、不重启；内容变化才 notify 重启。
+`install` directly overwriting a running binary triggers `ETXTBSY`, so first download the new package to
+`/var/tmp/winter-server/winter-server.new`, compare content with `cmp`, copy it to the target directory,
+then **atomically replace the inode with `mv` in the same directory** (keep the downloaded source file so `get_url` stays idempotent):
+if content is unchanged, nothing changes and there is no restart; only a content change triggers a restart via notify.
 
-## 前置
+## Prerequisites
 
-1. 先跑过 `local_repo`（制品源可用）与 `postgresql`（库与账号存在）；
-2. `deploy/passwords.yml` 必须有 `vault_pg_password`、`vault_jwt_secret`（≥32 字符）、
-   `vault_admin_password`，role 会 assert 拦截缺失，绝不生成默认弱口令；
-3. 迁移与 break-glass 管理员由进程启动时自动完成，role 不重复执行 SQL。
+1. Run `local_repo` (artifact repository available) and `postgresql` (database and account exist) first;
+2. `deploy/passwords.yml` must have `vault_pg_password`, `vault_jwt_secret` (≥32 characters),
+   `vault_admin_password`; the role asserts to block missing values, never generating a default weak password;
+3. Migrations and the break-glass administrator are handled automatically at process startup; the role does not run SQL again.
 
-## 常用命令
+## Common commands
 
 ```bash
 ./deploy.sh deploy --tags server

@@ -1,56 +1,56 @@
-# 唯一配置入口（对应 kolla-ansible 的 globals.yml，ADR-17 §2.1）
+# Single configuration entry point (corresponds to kolla-ansible's globals.yml, ADR-17 §2.1)
 #
-# 规则：
-# - 所有可变配置写在这里，playbook / role 内不得硬编码
-# - 密码、密钥不进本文件；后续阶段引入 passwords.yml（已被 .gitignore 排除）
-# - 改这里之后重跑对应阶段即可（reconfigure / deploy 收敛到新状态）
+# Rules:
+# - All variable configuration goes here; no hardcoding in playbooks/roles
+# - Passwords and secrets do not go in this file; later stages introduce passwords.yml (excluded by .gitignore)
+# - After changing this file, rerun the relevant stage (reconfigure / deploy converge to the new state)
 
 platform:
-  # 平台对外域名（证书与访问入口）
+  # Platform external domain name (certificates and access entry point)
   domain: winter.local
-  # 管理面 API 监听端口（唯一对外开放端口，见部署方案 §2）
+  # Management plane API listen port (the only externally open port, see deployment plan §2)
   https_port: 443
 
-  # 内网软件源（ADR-15）：由管理节点的 Nginx 提供（roles/local_repo 发布）
-  # 现场没有外网时，所有 RPM / wheel / 二进制都从这里取
+  # Internal software repo (ADR-15): provided by Nginx on the management node (published by roles/local_repo)
+  # When the site has no internet access, all RPMs / wheels / binaries are fetched from here
   repo_base_url: "http://192.168.101.194:8082"
 
-  # 镜像仓库（ADR-16）：自建 Harbor，全部镜像经此拉取
+  # Image registry (ADR-16): self-hosted Harbor, all images are pulled through it
   registry_host: ""
   registry_ca_path: ""
 
-  # 数据目录：数据卷与离线包分离存放，避免升级时被清理
+  # Data directory: data volumes and offline packages are stored separately to avoid being cleaned up during upgrades
   data_dir: /var/lib/winter
 
-  # 认证（ADR-22）：默认只开本地账号；客户有目录服务时填 ldap 并置 enabled: true
-  # 约束：必须 TLS；组未命中 role_map 一律无权限（default_role: none）；
-  #      本地管理员始终保留（break-glass），目录服务故障不影响其登录
+  # Authentication (ADR-22): local accounts enabled by default; if the customer has a directory service, fill in ldap and set enabled: true
+  # Constraints: TLS required; any group not matched by role_map has no permissions (default_role: none);
+  #             the local administrator is always kept (break-glass); a directory service outage does not affect their login
   auth:
     providers: [local, ldap]
-    # 会话（ADR-34）：access 短、refresh 长；cache_ttl 决定踢人延迟（0 = 即时但每请求查库）
+    # Sessions (ADR-34): short access, long refresh; cache_ttl determines the eviction delay (0 = immediate but queries the DB on every request)
     session:
       access_ttl_minutes: 15
       refresh_ttl_days: 7
       cache_ttl_seconds: 30
     ldap:
       enabled: false
-      url: ""                          # 例：ldaps://dc01.corp.local:636
-      starttls: false                  # url 为 ldap:// 时必须置 true
+      url: ""                          # e.g.: ldaps://dc01.corp.local:636
+      starttls: false                  # must be true when url is ldap://
       tls_verify: true
-      bind_dn: ""                      # 搜索用服务账号；密码放 passwords.yml（vault_ldap_bind_password）
-      base_dn: ""                      # 例：ou=people,dc=corp,dc=local
-      # 占位符 {login} / {user_dn} 由平台在登录时替换，**不是 Ansible 变量**（不要写成 {{ }}）
+      bind_dn: ""                      # service account used for searches; password goes in passwords.yml (vault_ldap_bind_password)
+      base_dn: ""                      # e.g.: ou=people,dc=corp,dc=local
+      # Placeholders {login} / {user_dn} are substituted by the platform at login time; they are **not Ansible variables** (do not write them as {{ }})
       user_filter: "(sAMAccountName={login})"
       group_base_dn: ""
       group_filter: "(member={user_dn})"
-      role_map: {}                     # LDAP 组 DN -> 平台角色，例 {"CN=ceph-admins,OU=groups,DC=corp,DC=local": admin}
-      default_role: none               # 未命中映射 = 无权限
+      role_map: {}                     # LDAP group DN -> platform role, e.g. {"CN=ceph-admins,OU=groups,DC=corp,DC=local": admin}
+      default_role: none               # no matching mapping = no permissions
       timeout_seconds: 5
       group_cache_ttl_seconds: 300
 
-  # 数据保留期（ADR-32）：可配置，但审计 180 天为硬下限（低于则拒绝启动）
-  # 三档参考：精简 7/15/30/180 · 标准 30/30/90/180 · 长留 90/90/365/730
-  # 调大前务必看 reconfigure 打印的容量估算，否则几个月后写满盘
+  # Data retention (ADR-32): configurable, but 180 days for audits is a hard floor (the platform refuses to start below it)
+  # Three reference profiles: minimal 7/15/30/180 · standard 30/30/90/180 · long-retention 90/90/365/730
+  # Before increasing, check the capacity estimate printed by reconfigure, or the disk will fill up in a few months
   retention:
     logs_days: 30
     metrics_days: 30
@@ -58,73 +58,73 @@ platform:
     audit_online_days: 180
     sessions_days: 7
 
-# 部署前检查阈值（与部署方案 §1 的资源估算对齐；Harbor 与可观测性栈占大头）
+# Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the observability stack dominate)
 prechecks:
   management_min_vcpus: 15
   management_min_memory_mb: 24576        # 24G
-  management_min_root_free_gb: 350       # 含 Harbor 镜像存储与独立审计库；Harbor 最先被吃满
+  management_min_root_free_gb: 350       # includes Harbor image storage and a separate audit DB; Harbor fills up first
   ceph_node_min_data_disks: 3
-  # M0 阶段用 false：虚拟机常见单盘，先提示不拦截；正式交付改 true
+  # Use false during M0: VMs commonly have a single disk, so warn without blocking; change to true for production delivery
   strict_data_disks: false
-  # 内核参数由 bootstrap-servers 设置，M0 手工阶段先只报告
+  # Kernel parameters are set by bootstrap-servers; during the M0 manual phase, only report
   enforce_kernel: false
   max_clock_offset_seconds: 1.0
-  # 需要能解析的域名（证书 / registry / 源），留空则跳过
+  # Hostnames that must resolve (certificates / registry / repo); leave empty to skip
   required_hosts: []
-  # 管理节点部署前必须空闲的端口
+  # Ports that must be free on the management node before deployment
   required_free_ports:
     - 80
     - 443
-  # 阶段 C1 起完内网源后置 true，才检查源与 Harbor 可达
+  # Set to true only after stage C1 brings up the internal repo, to check repo and Harbor reachability
   check_artifacts: false
 
-# 数据库（role 默认值在 roles/postgresql/defaults；这里只写差异）
-# 注意：必须用 postgresql_overrides —— 直接写 postgresql: 会整块替换 role 默认字典，
-#      导致未覆盖的键（如 data_dir）变成 undefined。
-# 密码不在此文件：见 deploy/passwords.yml 的 vault_pg_password（已 gitignore）
+# Database (role defaults are in roles/postgresql/defaults; only differences are written here)
+# Note: you must use postgresql_overrides — writing postgresql: directly replaces the role's default dict wholesale,
+#       causing uncovered keys (such as data_dir) to become undefined.
+# Passwords are not in this file: see vault_pg_password in deploy/passwords.yml (gitignored)
 postgresql_overrides:
-  # 已在运行的实例优先（留空 = 自动探测）。全新机器会自动装 PGDG 的 17
+  # Prefer an already-running instance (leave empty = autodetect). A fresh machine will install PGDG 17 automatically
   major: ""
   db_name: winter
   db_user: winter
-  # 默认不动现有实例的参数：调参需要重启，同机有别的业务时会被打断
+  # By default, do not change parameters of an existing instance: tuning requires a restart and would disrupt other services on the same host
   tune: false
-  # tune=true 时才生效（3GB 单机 + 同机 ceph 的经验值）
+  # Effective only when tune=true (empirical values for a 3GB single machine with ceph on the same host)
   shared_buffers: 256MB
   effective_cache_size: 1GB
   work_mem: 4MB
   maintenance_work_mem: 64MB
   max_connections: 100
 
-# 接入层（叠加式：不改 nginx.conf、不抢 default_server）
-# 同上：用 nginx_overrides，只写差异
+# Access layer (additive: does not modify nginx.conf or take over default_server)
+# Same as above: use nginx_overrides and write only differences
 nginx_overrides:
   server_name: "{{ platform.domain }}"
-  # 8080 可能被同机其他服务占用（本机是 argus），平台 API 默认走 8081
+  # Port 8080 may be occupied by another service on the same host (argus here); the platform API uses 8081 by default
   api_upstream: "http://127.0.0.1:8081"
   tls_days: 825
 
-# PostgreSQL 高可用集群（etcd + Patroni + HAProxy）
-# 端口全部可配；默认 5433 是为了避开 .194 上 argus 已占用的 5432
+# PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
+# All ports are configurable; the 5433 default avoids port 5432, already occupied by argus on .194
 pg_cluster:
   scope: winter-pg
-  port: 5433                # PG 实例端口（每个节点相同）
+  port: 5433                # PG instance port (same on every node)
   rest_port: 8008           # Patroni REST API
-  data_dir: /var/lib/pgsql/17/ha   # 与系统自带的 /data 分开，互不影响
-  vip_iface_cidr: "192.168.101.0/24"   # 集群互通网段（pg_hba 与防火墙都用它）
+  data_dir: /var/lib/pgsql/17/ha   # separate from the system's /data so they do not affect each other
+  vip_iface_cidr: "192.168.101.0/24"   # cluster subnet (used by both pg_hba and the firewall)
   etcd:
     client_port: 2379
     peer_port: 2380
     data_dir: /var/lib/etcd
   haproxy:
-    listen_port: 5434       # 应用连这个端口，永远指向当前主库
+    listen_port: 5434       # applications connect to this port; always points to the current primary
     check_interval: 2s
     check_fall: 3
     check_rise: 2
 
-# 可观测性栈（ADR-18 / ADR-33）：默认全装、单节点、全部只监听本机
-# 端口、版本、保留期只允许在这里改；role 内不硬编码端口。
-# Grafana 经 Nginx /grafana/ 反代（ADR-09），不直接暴露 3000。
+# Observability stack (ADR-18 / ADR-33): all components installed by default, single node, all listening only on localhost
+# Ports, versions and retention may only be changed here; roles do not hardcode ports.
+# Grafana is reverse-proxied via Nginx /grafana/ (ADR-09); port 3000 is not exposed directly.
 monitoring_ports:
   victoriametrics: 8428
   vmalert: 8880
@@ -134,7 +134,7 @@ monitoring_ports:
 monitoring_listen_addr: 127.0.0.1
 monitoring_data_dir: /var/lib/winter/monitoring
 monitoring_config_dir: /etc/winter/monitoring
-monitoring_retention_days: 30       # 指标与日志各 30 天；审计在 PG，不进日志系统
+monitoring_retention_days: 30       # 30 days each for metrics and logs; audits live in PG, not in the logging system
 
 observability:
   enabled: true
@@ -142,7 +142,7 @@ observability:
   data_dir: "{{ monitoring_data_dir }}"
   config_dir: "{{ monitoring_config_dir }}"
   listen_addr: "{{ monitoring_listen_addr }}"
-  run_user: winter-monitor          # 非 root 运行（ADR-19 的同类约束）
+  run_user: winter-monitor          # run as non-root (similar constraint to ADR-19)
   retention_days: "{{ monitoring_retention_days }}"
   tarball_subdir: tarball
   components:
@@ -161,7 +161,7 @@ observability:
       port: "{{ monitoring_ports.vmalert }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      # 唯一告警规则链路（ADR-18）：M0 用占位规则，接入采集后替换为磁盘水位/任务积压规则
+      # Single alert-rule chain (ADR-18): M0 uses placeholder rules; replace with disk-usage/task-backlog rules once collection is wired up
       args: "-datasource.url=http://{{ monitoring_listen_addr }}:{{ monitoring_ports.victoriametrics }} -notifier.url=http://{{ monitoring_listen_addr }}:{{ monitoring_ports.alertmanager }} -rule={{ monitoring_config_dir }}/rules/*.yml -evaluationInterval=15s"
     victorialogs:
       enabled: true
@@ -181,20 +181,20 @@ observability:
       args: "--config.file={{ monitoring_config_dir }}/alertmanager.yml --storage.path={{ monitoring_data_dir }}/alertmanager"
     grafana:
       enabled: true
-      mode: directory                # 目录式安装（含前端静态资源），不是单文件二进制
+      mode: directory                # directory-style install (includes frontend static assets), not a single-file binary
       tarball: grafana-9.5.20.linux-amd64.tar.gz
       install_dir: /opt/winter/grafana
       port: "{{ monitoring_ports.grafana }}"
       health_path: /api/health
 
-# Server（Go 单二进制 + systemd）；口令与密钥只在 passwords.yml，不写在这里
+# Server (Go single binary + systemd); passwords and secrets live only in passwords.yml, never here
 winter_server:
   enabled: true
   bin_dir: /usr/local/bin
   config_dir: /etc/winter
   env_file: /etc/winter/server.env
   listen_addr: 127.0.0.1
-  port: 8081                        # 与 nginx.api_upstream 保持一致
+  port: 8081                        # keep in sync with nginx.api_upstream
   app_env: prod
   admin_user: admin
   artifact: winter-server

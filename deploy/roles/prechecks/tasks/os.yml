@@ -1,41 +1,41 @@
 ---
-- name: 预检 | 读取 /etc/os-release
+- name: Precheck | Read /etc/os-release
   ansible.builtin.slurp:
     src: /etc/os-release
   register: prechecks_os_release
   changed_when: false
 
-- name: 预检 | 解析 os-release
+- name: Precheck | Parse os-release
   ansible.builtin.set_fact:
     prechecks_os_release_text: "{{ prechecks_os_release.content | b64decode }}"
 
-- name: 预检 | 操作系统基线校验
+- name: Precheck | Verify OS baseline
   ansible.builtin.assert:
     that:
       - ansible_facts.distribution == 'CentOS'
       - ansible_facts.distribution_major_version == '9'
       - "'CentOS Stream 9' in prechecks_os_release_text"
     fail_msg: >-
-      需要 CentOS Stream 9，实际为 {{ ansible_facts.distribution }}
-      {{ ansible_facts.distribution_version }}。OS 基线已锁定（ADR-11），不支持混用 Rocky/Alma/Ubuntu；
-      若客户基线不同，先走 ADR 修订，不要就地改 role。
-    success_msg: "OS 基线符合：CentOS Stream 9"
+      Requires CentOS Stream 9, found {{ ansible_facts.distribution }}
+      {{ ansible_facts.distribution_version }}. The OS baseline is locked (ADR-11); mixing Rocky/Alma/Ubuntu is not supported.
+      If the customer's baseline differs, go through an ADR revision first — do not edit the role in place.
+    success_msg: "OS baseline OK: CentOS Stream 9"
     quiet: true
 
-- name: 预检 | podman 版本
+- name: Precheck | podman version
   ansible.builtin.command: podman --version
   register: prechecks_podman
   changed_when: false
   failed_when: false
   when: "'management' in group_names or 'ceph_nodes' in group_names"
 
-- name: 预检 | podman 存在性
+- name: Precheck | podman presence
   ansible.builtin.assert:
     that:
       - prechecks_podman.rc | default(1) == 0
     fail_msg: >-
-      未找到 podman（{{ prechecks_podman.stderr | default('') | trim }}）。
-      运行时已定为 podman（ADR-11），不使用 docker；请通过内网源安装 podman 后重试。
-    success_msg: "podman 可用：{{ prechecks_podman.stdout | default('') }}"
+      podman not found ({{ prechecks_podman.stderr | default('') | trim }}).
+      The runtime is fixed to podman (ADR-11); docker is not used. Install podman from the internal repo and retry.
+    success_msg: "podman available: {{ prechecks_podman.stdout | default('') }}"
     quiet: true
   when: "'management' in group_names or 'ceph_nodes' in group_names"

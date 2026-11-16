@@ -1,11 +1,11 @@
 ---
-# 部署前检查（ADR-17）：只读、不修改系统。
-# 对应安装部署手册阶段 C3 与测试用例 TC-26。
-- name: 部署前检查（只读）
+# Pre-deployment checks (ADR-17): read-only, do not modify the system.
+# Corresponds to stage C3 of the installation and deployment manual and test case TC-26.
+- name: Pre-deployment checks (read-only)
   hosts: all
   gather_facts: true
   become: true
-  # 同 deploy.yml：group_vars 在 deploy/ 下，不在 playbook 目录旁，需显式声明
+  # Same as deploy.yml: group_vars is under deploy/, not beside the playbook directory, so declare it explicitly
   vars_files:
     - ../group_vars/all.yml
   roles:

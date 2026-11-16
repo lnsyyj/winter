@@ -1,9 +1,10 @@
 #!/usr/bin/env bash
-# 首个主库 bootstrap 完成后执行（只在 leader 上跑一次）
+# Runs after the first primary finishes bootstrapping (only once, on the leader)
 #
-# 为什么角色也在这里建：Patroni 的 bootstrap.users 与 post_bootstrap 脚本的
-# 执行顺序不保证（实机验证：脚本跑时 users 尚未落库），所以这里用幂等 SQL 兜底，
-# 同时保证 replicator 存在（流复制必需）。
+# Why roles are also created here: the execution order of Patroni's bootstrap.users
+# and the post_bootstrap script is not guaranteed (verified on real machines: at script
+# time users had not been written to the database yet), so use idempotent SQL as a
+# fallback here, and also ensure replicator exists (required for streaming replication).
 set -euo pipefail
 
 PGPORT={{ pg_cluster.port }}

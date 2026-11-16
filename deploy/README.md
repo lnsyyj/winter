@@ -1,44 +1,44 @@
-# deploy · 平台部署框架
+# deploy · Platform Deployment Framework
 
-按 [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.md) 建立：结构对齐 kolla-ansible，代码独立，不 fork、不依赖其 Python 包。
+Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.md): the structure is aligned with kolla-ansible, but the code is independent — no fork and no dependency on its Python packages.
 
-## 当前状态
+## Current Status
 
-| 阶段 | 命令 | 状态 |
+| Stage | Command | Status |
 | --- | --- | --- |
-| 部署前检查 | `./deploy.sh prechecks -i inventory/multinode` | ✅ **已实现**（只读，交付期用） |
-| 收敛部署 | `./deploy.sh deploy -i inventory/multinode` | ✅ **已实现**（制品源 + PostgreSQL + Nginx + 可观测性栈 + Server） |
-| 只收敛监控栈/Server | `./deploy.sh deploy --tags observability,server` | ✅ **已实现**（自动带上制品源） |
-| PG 高可用 | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **已实现**（etcd + Patroni + HAProxy，三节点） |
-| bootstrap-servers | — | ⬜ 未实现 |
-| pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ 未实现 |
+| Prechecks | `./deploy.sh prechecks -i inventory/multinode` | ✅ **Implemented** (read-only, for the provisioning phase) |
+| Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
+| Converge monitoring stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
+| PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
+| bootstrap-servers | — | ⬜ Not implemented |
+| pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ Not implemented |
 
-未实现的阶段会明确报错退出（退出码 2），**不会假装成功**。
+Unimplemented stages exit with an explicit error (exit code 2); they **do not pretend to succeed**.
 
-## 离线制品源（ADR-14 / ADR-15）
+## Offline Artifact Repository (ADR-14 / ADR-15)
 
-现场三种源都不可靠（实测：PGDG 官方站超时、EPEL 无 PG17/etcd、pip 的文件站超时），因此所有包**随代码入库**，由管理节点的 Nginx 发布，节点从内网拉取。
+All three on-site sources are unreliable (verified: the official PGDG site times out, EPEL has no PG17/etcd, and pip's file site times out), so all packages are **committed with the code**, published by Nginx on the management node, and pulled by nodes over the internal network.
 
 ```
 deploy/artifacts/repo/
-├── rpm/pgdg17/     PG 17 的 4 个 RPM（不含 contrib，见下）
-├── rpm/base/       haproxy、perl-libs 等基础依赖
-├── tarball/        etcd + 可观测性栈 5 个静态包
-├── bin/            winter-server（Go 单二进制，交叉编译产物）
-├── pip/            patroni 及其依赖 wheel
-└── SHA256SUMS.txt  全量搬运校验清单（rpm/pip/tarball/bin）：cd deploy/artifacts/repo && sha256sum -c SHA256SUMS.txt
+├── rpm/pgdg17/     4 RPMs for PG 17 (no contrib, see below)
+├── rpm/base/       haproxy, perl-libs and other base dependencies
+├── tarball/        etcd + 5 static packages for the observability stack
+├── bin/            winter-server (Go single binary, cross-compiled artifact)
+├── pip/            patroni and its dependency wheels
+└── SHA256SUMS.txt  full transfer checksum manifest (rpm/pip/tarball/bin): cd deploy/artifacts/repo && sha256sum -c SHA256SUMS.txt
 ```
 
-| 环节 | 做法 |
+| Step | Approach |
 | --- | --- |
-| 有网制包 | `sh deploy/scripts/fetch-artifacts.sh`（可复现；`GHPROXY=` 直连、`GHPROXY=https://ghproxy.net` 走镜像） |
-| 搬运校验 | 制品随 git 搬运，现场用 `sha256sum -c` 逐项核对（ADR-14 第二段） |
-| 发布 | `./deploy.sh deploy --tags repo`：复制到 `/var/lib/winter/www/repo`，Nginx 明文 **8082**，防火墙只放行内网网段 |
-| 拉取 | 角色内 `get_url {{ platform.repo_base_url }}/...`；RPM 用 `dnf --disablerepo='*'` 本地安装，**不刷新任何远端仓库元数据** |
+| Build packages with internet access | `sh deploy/scripts/fetch-artifacts.sh` (reproducible; `GHPROXY=` for a direct connection, `GHPROXY=https://ghproxy.net` via mirror) |
+| Transfer verification | Artifacts are transferred with git; on site, verify each item with `sha256sum -c` (ADR-14, second section) |
+| Publish | `./deploy.sh deploy --tags repo`: copy to `/var/lib/winter/www/repo`; Nginx serves plain HTTP on **8082**, and the firewall allows only the internal subnet |
+| Pull | Roles use `get_url {{ platform.repo_base_url }}/...`; RPMs are installed locally with `dnf --disablerepo='*'`, **without refreshing any remote repository metadata** |
 
-### 可观测性栈制品（版本固定，禁止 latest）
+### Observability Stack Artifacts (versions pinned, no latest)
 
-| 组件 | 版本 | 制品 |
+| Component | Version | Artifact |
 | --- | --- | --- |
 | VictoriaMetrics | v1.156.0 | `victoria-metrics-linux-amd64-v1.156.0.tar.gz` |
 | vmalert | v1.156.0 | `vmalert-linux-amd64-v1.156.0.tar.gz` |
@@ -47,29 +47,27 @@ deploy/artifacts/repo/
 | Grafana | 9.5.20 | `grafana-9.5.20.linux-amd64.tar.gz` |
 | Server | `17ba4fb` | `bin/winter-server` |
 
-两个刻意的取舍：
+Two deliberate trade-offs:
 
-- **vmalert 官方不单独发布**，只随 `vmutils`（约 140MB）提供。制包脚本提取 `vmalert-prod`
-  后二次打包成约 14MB 的包，避免把全量工具包带进仓库。
-- **Grafana 选 9.5.20（83.6MB）**，因为它是最后一个 tar.gz 小于 GitHub 单文件 100MB 上限的
-  稳定版；11.x 起均 >170MB，升级时必须改走分片或搬运介质。
+- **vmalert is not released separately upstream**; it ships only with `vmutils` (~140MB). The packaging script extracts `vmalert-prod` and repackages it into a ~14MB tarball, avoiding bringing the full tool suite into the repo.
+- **Grafana 9.5.20 (83.6MB) was chosen** because it is the last stable release whose tar.gz is under GitHub's 100MB single-file limit; 11.x and later are all >170MB, so upgrades must switch to splitting or physical media transfer.
 
-> 实测：本地经 ghproxy 约 18KB/s（不可用），实机直连 GitHub 约 1.7MB/s（15MB/9s）。
-> 制包脚本默认走代理，在能直连的机器上用 `GHPROXY= sh deploy/scripts/fetch-artifacts.sh`。
+> Verified: locally via ghproxy ~18KB/s (unusable); on real machines with direct GitHub access ~1.7MB/s (15MB/9s).
+> The packaging script uses the proxy by default; on machines with direct access use `GHPROXY= sh deploy/scripts/fetch-artifacts.sh`.
 
-**已实测**（2026-11-15）：在 `.197`、`.198` 两台**无 PGDG 源的精简系统**上，PG 17 完全从内网源装成（`ok=23 failed=0`），应用账号 `winter` 连接正常。
+**Verified on real machines** (2026-11-15): on `.197` and `.198`, two **minimal systems without a PGDG repo**, PG 17 was installed entirely from the internal repo (`ok=23 failed=0`), and the application account `winter` connects normally.
 
-**两个坑，记下来**：
+**Two pitfalls worth recording**:
 
-1. `postgresql17-contrib` 依赖 `libperl` → `perl-libs` → `perl(Carp)/perl(Encode)…` 一整条 perl 链，精简系统上要多拉十几个包。**HA 用不到 contrib，故不纳入**；需要时再补。
-2. `dnf download --resolve` 在**已经装过依赖的机器**上会跳过这些依赖（本次就漏了 `perl-libs`）。做法是最后一次 `rpm -qa` 比对，或用干净容器生成闭包。
+1. `postgresql17-contrib` depends on `libperl` → `perl-libs` → `perl(Carp)/perl(Encode)…`, a whole perl chain, requiring a dozen-plus extra packages on minimal systems. **HA does not use contrib, so it is excluded**; add it later if needed.
+2. `dnf download --resolve` skips dependencies on **machines where they are already installed** (this run missed `perl-libs`). The fix is a final `rpm -qa` comparison, or generating the closure in a clean container.
 
-## 可观测性栈与 Server（ADR-18 / ADR-09 / ADR-33）
+## Observability Stack and Server (ADR-18 / ADR-09 / ADR-33)
 
-`./deploy.sh deploy` 一次收敛；也可只跑 `--tags observability,server`。
-组件清单、端口、版本、命令行参数全在 `group_vars/all.yml`，role 不硬编码端口。
+`./deploy.sh deploy` converges everything at once; you can also run only `--tags observability,server`.
+The component list, ports, versions and command-line arguments all live in `group_vars/all.yml`; roles do not hardcode ports.
 
-| 组件 | 端口（默认） | systemd | 健康端点 |
+| Component | Port (default) | systemd | Health endpoint |
 | --- | --- | --- | --- |
 | VictoriaMetrics | 8428 | `winter-victoriametrics` | `/health` |
 | vmalert | 8880 | `winter-vmalert` | `/health` |
@@ -78,164 +76,154 @@ deploy/artifacts/repo/
 | Grafana | 3000 | `winter-grafana` | `/api/health` |
 | Server | 8081 | `winter-server` | `/healthz` |
 
-- 全部只监听 `127.0.0.1`，以非 root 账号运行；Grafana 对外只经 `https://<domain>/grafana/`
-  反代（ADR-09），开箱即带一个指向本机 VictoriaMetrics 的默认数据源。
-- 告警链路唯一：`vmalert → Alertmanager → webhook`（ADR-18）；M0 用占位规则，
-  Server 的 HMAC webhook 端点待实现，告警可丢不影响任务。
-- 指标/日志保留 30 天；**审计在 PG，不进日志系统**（ADR-06 / ADR-32）。
-- `observability.enabled: false` 或单个组件 `enabled: false` 可裁剪（ADR-18 打包分层）。
-- Server 的 `DATABASE_URL` / `JWT_SECRET` / 管理员口令全部来自 `deploy/passwords.yml`
-  （模板见 `passwords.yml.example`），role 显式 assert，不生成默认弱口令。
-- 覆盖正在运行的二进制会触发 `ETXTBSY`，Server role 在目标目录 `cp` + 同目录 `mv`
-  原子替换 inode，保留下载源文件以保证幂等；内容不变则不重启。
+- All listen only on `127.0.0.1` and run as non-root users; Grafana is exposed externally only through the `https://<domain>/grafana/` reverse proxy (ADR-09), and ships with a default datasource pointing at local VictoriaMetrics.
+- Single alerting path: `vmalert → Alertmanager → webhook` (ADR-18); M0 uses placeholder rules, the Server's HMAC webhook endpoint is not implemented yet, and dropped alerts do not affect tasks.
+- Metrics/logs are retained for 30 days; **audits live in PG, not in the logging system** (ADR-06 / ADR-32).
+- `observability.enabled: false` or a single component's `enabled: false` trims the stack (ADR-18 packaging layers).
+- The Server's `DATABASE_URL` / `JWT_SECRET` / admin password all come from `deploy/passwords.yml` (see `passwords.yml.example` for the template); roles assert explicitly and do not generate default weak passwords.
+- Overwriting a running binary triggers `ETXTBSY`, so the Server role does `cp` in the target directory + `mv` within the same directory to atomically replace the inode, keeping the downloaded source file for idempotency; no restart if content is unchanged.
 
-## PostgreSQL 高可用（etcd + Patroni + HAProxy）
+## PostgreSQL High Availability (etcd + Patroni + HAProxy)
 
 ```bash
-./deploy.sh pg-ha -i inventory/pgha                  # 全量
-./deploy.sh pg-ha -i inventory/pgha --tags etcd      # 只做 DCS
-./deploy.sh pg-ha -i inventory/pgha --tags patroni   # 只做 PG 集群
-./deploy.sh pg-ha -i inventory/pgha --tags haproxy   # 只做入口
+./deploy.sh pg-ha -i inventory/pgha                  # full deployment
+./deploy.sh pg-ha -i inventory/pgha --tags etcd      # DCS only
+./deploy.sh pg-ha -i inventory/pgha --tags patroni   # PG cluster only
+./deploy.sh pg-ha -i inventory/pgha --tags haproxy   # entry point only
 ```
 
-| 组件 | 作用 | 端口（`group_vars.pg_cluster`） |
+| Component | Role | Port (`group_vars.pg_cluster`) |
 | --- | --- | --- |
-| etcd ×3 | 存集群状态、Raft 选主（必须奇数） | 2379 / 2380 |
-| Patroni ×3 | 管理 PG 进程、复制、切换、rewind | REST 8008 |
-| PostgreSQL ×3 | 一主两从 | **5433** |
-| HAProxy ×3 | 应用唯一入口，按 Patroni `/primary` 选主 | **5434** |
+| etcd ×3 | Stores cluster state, Raft leader election (must be odd) | 2379 / 2380 |
+| Patroni ×3 | Manages the PG process, replication, switchover/failover, rewind | REST 8008 |
+| PostgreSQL ×3 | One primary, two replicas | **5433** |
+| HAProxy ×3 | Single application entry point, follows Patroni `/primary` for leader election | **5434** |
 
-> 5433/5434 而非 5432：`.194` 上 5432 已被既有业务（argus）占用，端口一律在
-> `group_vars` 的 `pg_cluster` 里改，role 内不硬编码。
+> 5433/5434 instead of 5432: on `.194`, port 5432 is already used by an existing service (argus); change ports only in
+> `pg_cluster` under `group_vars`; roles do not hardcode them.
 
-### 实测结果（2026-11-15，三节点）
+### Verified Results (2026-11-15, three nodes)
 
-| 场景 | 结果 |
+| Scenario | Result |
 | --- | --- |
-| bootstrap | pg-b 成为 Leader，另两台 `streaming`，Lag 0 |
-| 计划切换 | `patronictl switchover` → pg-a 接任，TL+1，入口自动跟随 |
-| **节点失联**（停 patroni + `kill -9 postgres`） | **10 秒内自动切换**到 pg-c，HAProxy 无缝指向新主 |
-| 故障节点恢复 | 重启后自动 `rewind` 并以 streaming 副本回归，Lag 0 |
-| 写入校验 | 经 5434 建表插入成功，副本同步 |
+| bootstrap | pg-b becomes Leader, the other two `streaming`, Lag 0 |
+| Planned switchover | `patronictl switchover` → pg-a takes over, TL+1, entry point follows automatically |
+| **Node loss** (stop patroni + `kill -9 postgres`) | **Automatic switchover within 10 seconds** to pg-c, HAProxy seamlessly points to the new primary |
+| Failed node recovery | After restart, automatically `rewind`s and rejoins as a streaming replica, Lag 0 |
+| Write verification | Created a table and inserted via 5434 successfully; replicas synced |
 
-### 三条必须知道的坑（都是实机踩出来的）
+### Three Pitfalls You Must Know (all found on real machines)
 
-1. **`listen_addresses` / `port` 不能写在 `bootstrap.dcs.postgresql.parameters`**：Patroni 会校验失败并忽略，
-   表现是主库只监听 localhost、副本 `pg_basebackup` 挂住。监听地址与端口由 `postgresql.listen/port` 决定。
-2. **`bootstrap.users` 与 `post_bootstrap` 脚本执行顺序不保证**：脚本里必须幂等建角色（含 `replicator`）与应用库。
-3. **SELinux Enforcing 的机器上要两步**：`semanage port -a -t http_port_t -p tcp 5434`（能绑端口）+
-   `setsebool -P haproxy_connect_any on`（能连后端 5433/8008）。缺任一个的表现分别是
-   `cannot bind socket` 与 `server closed the connection unexpectedly`。
+1. **`listen_addresses` / `port` must not be set in `bootstrap.dcs.postgresql.parameters`**: Patroni fails validation and ignores them, which shows up as the primary listening only on localhost and replicas hanging on `pg_basebackup`. The listen address and port are determined by `postgresql.listen/port`.
+2. **Execution order of `bootstrap.users` and the `post_bootstrap` script is not guaranteed**: the script must idempotently create roles (including `replicator`) and the application database.
+3. **On machines with SELinux Enforcing, two steps are needed**: `semanage port -a -t http_port_t -p tcp 5434` (to bind the port) + `setsebool -P haproxy_connect_any on` (to connect to backends 5433/8008). Missing either shows up as `cannot bind socket` and `server closed the connection unexpectedly`, respectively.
 
-### 常用运维命令
+### Common Operations Commands
 
 ```bash
 export PATH=/usr/pgsql-17/bin:$PATH
-patronictl -c /etc/patroni/patroni.yml list            # 看拓扑
-patronictl -c /etc/patroni/patroni.yml switchover      # 计划内切换
-patronictl -c /etc/patroni/patroni.yml failover        # 强制切主
+patronictl -c /etc/patroni/patroni.yml list            # view topology
+patronictl -c /etc/patroni/patroni.yml switchover      # planned switchover
+patronictl -c /etc/patroni/patroni.yml failover        # forced failover
 etcdctl --endpoints=http://127.0.0.1:2379 endpoint health --cluster
 ```
 
-## 实机验证记录（2026-11-15 · CentOS Stream 9）
+## Real-Machine Verification Record (2026-11-15 · CentOS Stream 9)
 
-基础层：`./deploy.sh deploy` 跑通 `ok=25 changed=2 failed=0`；二次运行 `changed=0`（幂等）。
+Base layer: `./deploy.sh deploy` ran through with `ok=25 changed=2 failed=0`; the second run gave `changed=0` (idempotent).
 
-| 验证项 | 结果 |
+| Verification Item | Result |
 | --- | --- |
-| PostgreSQL | 复用已有 17.11 实例，新增 `winter` 库与角色；应用账号可连、错误口令被拒 |
-| 既有库 | `appdb`/`postgres`/`template*` 未被改动 |
-| Nginx 叠加 | `winter.local` 站点 200、`/healthz` 返回 ok；**同机既有站点（argus）80/443 仍为 200** |
-| 密码来源 | `deploy/passwords.yml`（gitignore），未进入版本库 |
+| PostgreSQL | Reused the existing 17.11 instance, added the `winter` database and role; the application account connects, a wrong password is rejected |
+| Existing databases | `appdb`/`postgres`/`template*` left untouched |
+| Nginx overlay | `winter.local` site returns 200, `/healthz` returns ok; **the existing site on the same host (argus) still returns 200 on 80/443** |
+| Password source | `deploy/passwords.yml` (gitignored), not committed to the repo |
 
-### 监控栈与 Server（同日新增）
+### Monitoring Stack and Server (added the same day)
 
-| 验证项 | 结果 |
+| Verification Item | Result |
 | --- | --- |
-| 全量收敛 | `./deploy.sh deploy` → `ok=65 changed=22 failed=0` |
-| 幂等（TC-26） | 修复后连续两次重跑均 `changed=0` |
-| 6 个服务 | `winter-{victoriametrics,vmalert,victorialogs,alertmanager,grafana,server}` 全部 active running + 开机自启 |
-| 监听面 | 8428/8880/9093/9428/3000/8081 全部只绑 `127.0.0.1`，只有制品源 8082 对外 |
-| 本机健康端点 | 6 个端点全部 200 |
-| 内网源 | 8082 上 Grafana 包与 Server 二进制 HEAD 200 |
-| 反代 | `/grafana/api/health`、`/api/healthz` 均 200；**既有站点按 IP 访问仍 200** |
-| 登录 | systemd 实例登录成功，`/v1/me` 返回 admin |
+| Full converge | `./deploy.sh deploy` → `ok=65 changed=22 failed=0` |
+| Idempotency (TC-26) | After fixes, two consecutive reruns both gave `changed=0` |
+| 6 services | `winter-{victoriametrics,vmalert,victorialogs,alertmanager,grafana,server}` all active running + enabled at boot |
+| Listening interfaces | 8428/8880/9093/9428/3000/8081 all bound only to `127.0.0.1`; only the internal repo on 8082 is exposed externally |
+| Local health endpoints | All 6 endpoints return 200 |
+| Internal repo | Grafana package and Server binary on 8082 return HEAD 200 |
+| Reverse proxy | `/grafana/api/health` and `/api/healthz` both return 200; **the existing site still returns 200 when accessed by IP** |
+| Login | Logged in successfully via the systemd instance, `/v1/me` returns admin |
 
-实机暴露并修复的三个问题：
+Three issues exposed and fixed on real machines:
 
-1. `unarchive` 要求 `dest` 目录**已存在**：Grafana 只建了父目录 `/opt/winter` → 补建安装目录；
-2. `local_repo` 把每次 `firewall-cmd --reload` 输出的 `success` 当成变更 →
-   改用 `--query-rich-rule` 判定，只在新增加规则时报 changed；
-3. `winter-server` 的 `mv` 消耗了下载源文件，导致每次重跑都重新 `get_url` →
-   改为复制到目标目录 + 同目录 `mv` 原子替换，源文件保留。
+1. `unarchive` requires the `dest` directory to **already exist**: Grafana had only created the parent `/opt/winter` → added creation of the install directory;
+2. `local_repo` treated the `success` output of every `firewall-cmd --reload` as a change → switched to `--query-rich-rule`, reporting changed only when a rule is actually added;
+3. `winter-server`'s `mv` consumed the downloaded source file, causing a fresh `get_url` on every rerun → changed to copying into the target directory + `mv` within the same directory for atomic replacement, preserving the source file.
 
-### 基础层实机暴露并修复的五个问题（都是「纸面看不出、跑起来才炸」的）：
+### Five base-layer issues exposed and fixed on real machines (all invisible on paper, only blowing up at runtime):
 
-1. `deploy/passwords.yml` 不在 Ansible 自动加载路径 → 改为 pre_tasks 显式 `include_vars`；
-2. `deploy.sh` 在 clone 后无执行位 → `git update-index --chmod=+x`；
-3. PGDG 的 `pg_isready` 不在 postgres 用户 PATH → 改用 `psql -tAc "select 1"` 探活；
-4. nginx 已安装仍触发 `dnf`，被不可达的 `pgdg-common` 源拖死 → 先 stat 再决定装；
-5. **`group_vars/all.yml` 从未被加载**（不在 playbook/inventory 目录旁）→ 两个 playbook 加 `vars_files`；
-   且 role 默认字典被 group_vars 整块替换 → 改为 `*_overrides` + `combine` 合并。
+1. `deploy/passwords.yml` is not on Ansible's automatic load path → switched to an explicit `include_vars` in pre_tasks;
+2. `deploy.sh` had no execute bit after clone → `git update-index --chmod=+x`;
+3. PGDG's `pg_isready` is not in the postgres user's PATH → switched to `psql -tAc "select 1"` for liveness checks;
+4. nginx being already installed still triggered `dnf`, which hung on an unreachable `pgdg-common` repo → stat first, then decide whether to install;
+5. **`group_vars/all.yml` was never loaded** (it is not next to the playbook/inventory directory) → added `vars_files` to both playbooks; and role default dicts were replaced wholesale by group_vars → switched to `*_overrides` + `combine` merging.
 
-> **交付期 vs 运行期**（ADR-35）：本目录是**交付期**工具，用 ansible 装 Agent、注册证书、下发配置。
-> 平台**运行期不持 SSH 凭据**，所有节点操作经 Agent；因此 `prechecks` 只用于装机前确认，
-> 纳管与运维时的预检由 Agent 本地执行（Go 实现，检查项与本 role 保持一致）。
+> **Provisioning phase vs runtime** (ADR-35): this directory is a **provisioning-phase** tool, using ansible to install Agents, register certificates and distribute configuration.
+> The platform holds **no SSH credentials at runtime**; all node operations go through the Agent. Therefore `prechecks` is only for confirmation before installation,
+> and prechecks during onboarding and operations run locally via the Agent (implemented in Go, with checks kept consistent with this role).
 
-## 目录
+## Directory Layout
 
 ```
 deploy/
-├── deploy.sh                  # 阶段分发（对齐 kolla-ansible 的 CLI 形态）
+├── deploy.sh                  # stage dispatcher (aligned with kolla-ansible's CLI shape)
 ├── ansible.cfg
 ├── inventory/                 # all-in-one / multinode / pgha
-├── group_vars/all.yml          # 唯一配置入口（对应 kolla 的 globals.yml）
-├── passwords.yml.example      # 敏感值模板；实际 passwords.yml 不入库
-├── scripts/fetch-artifacts.sh # 有网制包（可复现，版本固定）
-├── artifacts/repo/            # 离线制品库（随代码入库）
+├── group_vars/all.yml          # single configuration entry point (corresponds to kolla's globals.yml)
+├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
+├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
+├── artifacts/repo/            # offline artifact repository (committed with the code)
 ├── playbooks/                 # prechecks / deploy / pg-ha
 └── roles/
-    ├── prechecks/             # 只读检查
-    ├── local_repo/            # 发布内网制品源（8082）
-    ├── postgresql/ nginx/     # 库与接入层
-    ├── etcd/ patroni/ haproxy/# PG 高可用
+    ├── prechecks/             # read-only checks
+    ├── local_repo/            # publishes the internal artifact repo (8082)
+    ├── postgresql/ nginx/     # database and access layer
+    ├── etcd/ patroni/ haproxy/# PG high availability
     ├── observability/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
-    └── winter-server/         # Go 单二进制 + systemd
+    └── winter-server/         # Go single binary + systemd
 ```
 
-## 快速开始
+## Quick Start
 
 ```bash
-# 1. 控制机需有 ansible-core（版本见 docs BOM 约定）
+# 1. The control machine needs ansible-core (version per the docs BOM convention)
 ansible-playbook --version
 
-# 2. 按现场改 inventory 与 group_vars/all.yml，并准备 passwords.yml
+# 2. Adapt inventory and group_vars/all.yml to the site, and prepare passwords.yml
 cp passwords.yml.example passwords.yml && vi passwords.yml
 
-# 3. 只读预检
+# 3. Read-only prechecks
 ./deploy.sh prechecks -i inventory/multinode
 
-# 4. 全量收敛（数据库 + 接入层 + 监控栈 + Server）
+# 4. Full converge (database + access layer + monitoring stack + Server)
 ./deploy.sh deploy -i inventory/multinode
 
-# 5. 二次运行确认幂等（应 changed=0）
+# 5. Run again to confirm idempotency (should be changed=0)
 ./deploy.sh deploy -i inventory/multinode
 ```
 
-可用的 tag：`repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`，
-以及 `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`。
+Available tags: `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
+as well as `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`.
 
-## 设计约束（改动前必读）
+## Design Constraints (Read Before Making Changes)
 
-1. **prechecks 必须只读**：所有 `command` 都要 `changed_when: false`；不得安装包、不得写 sysctl、不得改防火墙。
-2. **配置只在 `group_vars/all.yml`**：不要在 playbook 或 role 里硬编码 IP、端口、路径。
-3. **不写 hostname 判断**：用 inventory 分组（`management` / `ceph_nodes`），不要 `when: inventory_hostname == ...`。
-4. **失败信息必须可操作**：`fail_msg` 要包含「期望值 / 实际值 / 怎么修」。
-5. **敏感信息不进仓库**：密码、密钥只放 `passwords.yml`（`.gitignore` 已排除）。
-6. **目标机不编译**：Go 组件一律交叉编译成单二进制进 `artifacts/repo/bin/`（ADR-14）。
+1. **prechecks must be read-only**: every `command` needs `changed_when: false`; no package installs, no sysctl writes, no firewall changes.
+2. **Configuration only in `group_vars/all.yml`**: do not hardcode IPs, ports or paths in playbooks or roles.
+3. **No hostname conditionals**: express topology with inventory groups (`management` / `ceph_nodes`); do not use `when: inventory_hostname == ...`.
+4. **Failure messages must be actionable**: `fail_msg` must include expected value / actual value / how to fix.
+5. **No secrets in the repo**: passwords and secrets go only in `passwords.yml` (excluded by `.gitignore`).
+6. **No compilation on target machines**: all Go components are cross-compiled into single binaries under `artifacts/repo/bin/` (ADR-14).
 
-## 与文档的关系
+## Relationship to Documentation
 
-- 手册阶段 C 的命令与此处一致：`docs/07-新兴与稀缺线/20-技术文档工程师/安装部署手册.md`
-- 检查项与验收口径：`docs/03-测试线/06-测试工程师/测试策略与验收用例.md`（TC-26 要求 `prechecks` 不改动系统、`deploy` 二次 `changed=0`）
-- 前置条件来源：`docs/04-运维线/09-SRE-DevOps/部署与监控告警方案.md` §1 / §2
+- The commands in manual stage C match this document: `docs/07-新兴与稀缺线/20-技术文档工程师/安装部署手册.md`
+- Checks and acceptance criteria: `docs/03-测试线/06-测试工程师/测试策略与验收用例.md` (TC-26 requires `prechecks` to leave the system unchanged and `deploy`'s second run to be `changed=0`)
+- Source of prerequisites: `docs/04-运维线/09-SRE-DevOps/部署与监控告警方案.md` §1 / §2

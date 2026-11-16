@@ -1,22 +1,22 @@
 ---
-# PostgreSQL：收敛到「可用 + 有本平台的库与账号」
+# PostgreSQL: converge to "usable + has the platform's database and account"
 #
-# 顺序：探测已有实例 → 没有才安装 → 确认服务 → 建库建号 → 可选调参 → 验证
-# 约束：
-# - 不删任何已有库/角色
-# - 默认不改内存参数（改参数要重启，会影响同机其他业务）
-# - 密码只从 vault_pg_password 读，绝不写进 group_vars
+# Order: detect existing instance → install only if absent → confirm service → create database/role → optional tuning → verify
+# Constraints:
+# - Never delete any existing database/role
+# - Do not change memory parameters by default (tuning requires a restart, which affects other services on the same machine)
+# - Password is read only from vault_pg_password, never written into group_vars
 
-- name: 校验密码已提供
+- name: Verify password is provided
   ansible.builtin.assert:
     that:
       - vault_pg_password is defined
       - vault_pg_password | length >= 12
-    fail_msg: "缺少 vault_pg_password（≥12 位）。请在 deploy/passwords.yml 中定义，该文件不入库。"
+    fail_msg: "vault_pg_password is missing (≥12 characters). Define it in deploy/passwords.yml, which is not checked in."
     quiet: true
   tags: [postgresql]
 
-- name: 探测已在运行的 PostgreSQL
+- name: Detect running PostgreSQL
   ansible.builtin.shell: |
     set -o pipefail
     systemctl list-units --type=service --state=running --no-legend 'postgresql-*.service' \
@@ -28,7 +28,7 @@
   failed_when: false
   tags: [postgresql]
 
-- name: 记录探测结果
+- name: Record detection result
   ansible.builtin.set_fact:
     pg_major: >-
       {{ postgresql.major
@@ -36,12 +36,12 @@
          else (pg_running.stdout | trim) }}
   tags: [postgresql]
 
-- name: 未发现运行实例 → 安装（仅此分支会装包）
+- name: No running instance found → install (only this branch installs packages)
   ansible.builtin.include_tasks: install.yml
   when: pg_major | length == 0
   tags: [postgresql]
 
-- name: 探测数据目录
+- name: Detect data directory
   ansible.builtin.shell: |
     set -o pipefail
     sudo -u postgres psql -tAc "show data_directory"
@@ -53,35 +53,35 @@
   when: pg_major | length > 0
   tags: [postgresql]
 
-- name: 确定数据目录与服务名
+- name: Determine data directory and service name
   ansible.builtin.set_fact:
     pg_datadir: "{{ postgresql.data_dir if postgresql.data_dir | length > 0 else (pg_datadir_query.stdout | trim | default('/var/lib/pgsql/' ~ pg_major ~ '/data', true)) }}"
     pg_service: "{{ postgresql.service_name if postgresql.service_name | length > 0 else 'postgresql-' ~ pg_major }}"
   tags: [postgresql]
 
-- name: 确保服务已启用并运行
+- name: Ensure service is enabled and running
   ansible.builtin.systemd:
     name: "{{ pg_service }}"
     state: started
     enabled: true
   tags: [postgresql]
 
-- name: 等待实例可接受连接
-  # 不用 pg_isready：PGDG 装的二进制在 /usr/pgsql-<ver>/bin，postgres 用户的 PATH 里没有，
-  # 只有 psql 做了 /usr/bin 软链。用 psql 探活最稳。
+- name: Wait for instance to accept connections
+  # Do not use pg_isready: PGDG binaries live in /usr/pgsql-<ver>/bin, which is not on the postgres user's PATH;
+  # only psql has a /usr/bin symlink. Probing with psql is most reliable.
   ansible.builtin.shell: |
     set -o pipefail
     for i in $(seq 1 20); do
       sudo -u postgres psql -tAc "select 1" >/dev/null 2>&1 && exit 0
       sleep 1
     done
-    echo "postgres 未就绪" >&2; exit 1
+    echo "postgres not ready" >&2; exit 1
   args:
     executable: /bin/bash
   changed_when: false
   tags: [postgresql]
 
-- name: 创建应用角色（不存在时）
+- name: Create application role (if absent)
   ansible.builtin.shell: |
     set -o pipefail
     exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ postgresql.db_user }}'")
@@ -103,7 +103,7 @@
   no_log: true
   tags: [postgresql]
 
-- name: 创建应用数据库（不存在时，属主为应用角色）
+- name: Create application database (if absent, owned by the application role)
   ansible.builtin.shell: |
     set -o pipefail
     exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ postgresql.db_name }}'")
@@ -119,7 +119,7 @@
   changed_when: "'created' in pg_db_result.stdout"
   tags: [postgresql]
 
-- name: 数据库与角色清单（验证用）
+- name: Database and role listing (for verification)
   ansible.builtin.shell: |
     set -o pipefail
     sudo -u postgres psql -tAc "SELECT 'db='||count(*) FROM pg_database WHERE datname='{{ postgresql.db_name }}'"
@@ -131,15 +131,15 @@
   failed_when: not (pg_verify.stdout is search('db=1') and pg_verify.stdout is search('role=1'))
   tags: [postgresql]
 
-- name: 参数调整（默认关闭：需要重启实例）
+- name: Tune parameters (disabled by default; requires an instance restart)
   ansible.builtin.include_tasks: tune.yml
   when: postgresql.tune | bool
   tags: [postgresql, postgresql-tune]
 
-- name: 输出结论
+- name: Report result
   ansible.builtin.debug:
     msg:
-      - "PostgreSQL {{ pg_major }} 运行中，数据目录 {{ pg_datadir }}"
-      - "库 {{ postgresql.db_name }} / 角色 {{ postgresql.db_user }} 就绪"
-      - "监听 {{ postgresql.listen_addresses }}:{{ postgresql.port }}（默认值，本次未改动）"
+      - "PostgreSQL {{ pg_major }} running, data directory {{ pg_datadir }}"
+      - "Database {{ postgresql.db_name }} / role {{ postgresql.db_user }} ready"
+      - "Listening on {{ postgresql.listen_addresses }}:{{ postgresql.port }} (defaults, not changed this run)"
   tags: [postgresql]

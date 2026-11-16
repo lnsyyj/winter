@@ -1,5 +1,5 @@
 ---
-# 配置或 unit 变更才重启；notify 名由 unit 渲染任务按组件 key 生成
+# Restart only on config or unit changes; notify names are generated from the component key in the unit rendering task
 - name: restart victoriametrics
   ansible.builtin.systemd:
     name: winter-victoriametrics

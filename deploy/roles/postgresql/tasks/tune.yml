@@ -1,8 +1,8 @@
 ---
-# 可选：内存与连接参数调整（需要重启实例）
-# 只有 postgresql.tune=true 时才执行；同机跑着别的业务时不要开
+# Optional: memory and connection parameter tuning (requires an instance restart)
+# Only runs when postgresql.tune=true; do not enable when other services run on the same machine
 
-- name: 记录调整前的参数
+- name: Record parameters before tuning
   ansible.builtin.shell: |
     set -o pipefail
     sudo -u postgres psql -tAc "select name||'='||setting from pg_settings where name in ('shared_buffers','work_mem','max_connections') order by 1"
@@ -12,7 +12,7 @@
   changed_when: false
   tags: [postgresql-tune]
 
-- name: 逐项 ALTER SYSTEM
+- name: Apply ALTER SYSTEM for each parameter
   ansible.builtin.shell: |
     set -o pipefail
     sudo -u postgres psql -v ON_ERROR_STOP=1 -c "ALTER SYSTEM SET {{ item.key }} = '{{ item.value }}'"
@@ -29,11 +29,11 @@
   notify: restart postgresql
   tags: [postgresql-tune]
 
-- name: 调整后重启并回读
+- name: Restart after tuning and read back
   ansible.builtin.meta: flush_handlers
   tags: [postgresql-tune]
 
-- name: 回读关键参数
+- name: Read back key parameters
   ansible.builtin.shell: |
     set -o pipefail
     sudo -u postgres psql -tAc "select name||'='||setting from pg_settings where name in ('shared_buffers','work_mem','max_connections') order by 1"
@@ -43,9 +43,9 @@
   changed_when: false
   tags: [postgresql-tune]
 
-- name: 参数对比
+- name: Compare parameters
   ansible.builtin.debug:
     msg:
-      - "调整前：{{ pg_before.stdout_lines | join(' ') }}"
-      - "调整后：{{ pg_after.stdout_lines | join(' ') }}"
+      - "Before: {{ pg_before.stdout_lines | join(' ') }}"
+      - "After: {{ pg_after.stdout_lines | join(' ') }}"
   tags: [postgresql-tune]

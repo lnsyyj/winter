@@ -1,27 +1,27 @@
 ---
-# Nginx role 默认值
-# 原则：叠加式接入。不改别人的 server block、不抢 default_server。
+# Nginx role default values
+# Principle: additive access. Do not modify anyone else's server block, do not claim default_server.
 #
-# 合并规则：group_vars 写 nginx_overrides（只写差异），不要直接写 nginx:，
-# 否则会整块替换本字典。
+# Merge rule: in group_vars write nginx_overrides (only the differences), do not write nginx: directly,
+# otherwise this whole dictionary gets replaced.
 
 nginx_defaults:
-  # 对外域名（与证书 CN 一致）；默认取平台域名
+  # External domain (same as certificate CN); defaults to the platform domain
   server_name: "{{ platform.domain }}"
 
   http_port: 80
   https_port: "{{ platform.https_port }}"
 
-  # 独立目录，避免与已有站点（如 argus）的 /var/www 混用
+  # Separate directory to avoid mixing with existing sites' (e.g. argus) /var/www
   doc_root: "{{ platform.data_dir }}/www"
   tls_dir: "{{ platform.data_dir }}/tls"
   conf_path: /etc/nginx/conf.d/winter.conf
 
-  # 后端 API（本平台 Server）。
-  # 注意：8080 可能已被同机其他服务占用，默认用 8081，部署 Server 时保持一致。
+  # Backend API (this platform's Server).
+  # Note: 8080 may already be occupied by other services on the same host; default to 8081, keep it consistent when deploying the Server.
   api_upstream: "http://127.0.0.1:8081"
 
-  # 自签证书有效期（天）
+  # Self-signed certificate validity (days)
   tls_days: 825
 
 nginx: "{{ nginx_defaults | combine(nginx_overrides | default({}, true), recursive=True) }}"

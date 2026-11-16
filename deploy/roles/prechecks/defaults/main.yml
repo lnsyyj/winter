@@ -1,6 +1,6 @@
 ---
-# role 默认值。优先级低于 group_vars/all.yml（后者会整体覆盖同名 dict），
-# 这里只是为了「脱离 group_vars 单独引用 role」时也能跑。
+# Role defaults. Lower priority than group_vars/all.yml (the latter replaces the entire dict of the same name),
+# here only so the role can run standalone without group_vars.
 prechecks:
   management_min_vcpus: 15
   management_min_memory_mb: 24576

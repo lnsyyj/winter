@@ -1,15 +1,15 @@
 ---
-# PostgreSQL 高可用集群：etcd（选主）+ Patroni（编排）+ HAProxy（唯一入口）
+# PostgreSQL high availability cluster: etcd (leader election) + Patroni (orchestration) + HAProxy (single entry point)
 #
-# 用法：
-#   ./deploy.sh pg-ha -i inventory/pgha                 # 全量
-#   ./deploy.sh pg-ha -i inventory/pgha --tags etcd     # 只做 DCS
-#   ./deploy.sh pg-ha -i inventory/pgha --tags patroni  # 只做 PG 集群
-#   ./deploy.sh pg-ha -i inventory/pgha --tags haproxy  # 只做入口
+# Usage:
+#   ./deploy.sh pg-ha -i inventory/pgha                 # full deployment
+#   ./deploy.sh pg-ha -i inventory/pgha --tags etcd     # DCS only
+#   ./deploy.sh pg-ha -i inventory/pgha --tags patroni  # PG cluster only
+#   ./deploy.sh pg-ha -i inventory/pgha --tags haproxy  # entry point only
 #
-# 端口全部来自 group_vars 的 pg_cluster（PG 5433 / REST 8008 / etcd 2379,2380 / 入口 5434）
+# All ports come from pg_cluster in group_vars (PG 5433 / REST 8008 / etcd 2379,2380 / entry point 5434)
 
-- name: PostgreSQL 高可用集群
+- name: PostgreSQL high availability cluster
   hosts: management
   become: true
   gather_facts: true
@@ -18,25 +18,25 @@
     - ../group_vars/all.yml
 
   pre_tasks:
-    - name: 载入部署密码
+    - name: Load deployment passwords
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
       tags: [always]
 
-    - name: 集群成员必须是奇数（etcd 需要多数派）
+    - name: Cluster membership must be odd (etcd requires a quorum)
       ansible.builtin.assert:
         that:
           - groups['management'] | length % 2 == 1
           - groups['management'] | length >= 3
-        fail_msg: "etcd 需要至少 3 个且为奇数个节点，当前 {{ groups['management'] | length }} 个"
+        fail_msg: "etcd requires at least 3 nodes and an odd count; currently {{ groups['management'] | length }}"
         quiet: true
       run_once: true
       tags: [always]
 
   roles:
-    # 顺序：先有二进制 → 再有选主 → 再由 Patroni 拉起 PG → 最后给统一入口
+    # Order: binaries first → then leader election → then Patroni brings up PG → finally the unified entry point
     - role: postgresql
       tags: [postgresql, db]
     - role: etcd

@@ -1,5 +1,5 @@
 ---
-# 兜底值；winter_server 的配置以 group_vars/all.yml 为准（ADR-17 单一配置入口）
+# Fallback values; winter_server configuration is governed by group_vars/all.yml (ADR-17 single configuration entry point)
 server_run_user: winter-server
 server_health_retries: 20
 server_health_delay: 2

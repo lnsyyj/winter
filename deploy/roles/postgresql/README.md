@@ -1,42 +1,42 @@
-# postgresql · 数据库（收敛式）
+# postgresql · Database (convergent)
 
-对应部署阶段 `deploy`。目标不是「装一个 PostgreSQL」，而是**让本机有一个可供平台使用的库与账号**。
+Corresponds to deployment phase `deploy`. The goal is not "install a PostgreSQL", but **have a database and account usable by the platform on this machine**.
 
-## 两条路径
+## Two paths
 
-| 机器现状 | 走哪条 | 行为 |
+| Machine state | Which path | Behavior |
 | --- | --- | --- |
-| 已有实例在跑 | 收敛 | 只确认服务、建库建号、验证；**不装包、不重启、不改参数** |
-| 完全没有 | 安装 | 装 `postgresql17-server`（有 PGDG 源时）或 `postgresql-server`，initdb，起服务 |
+| An instance is already running | Converge | Only confirm the service, create the database/role, verify; **no package installation, no restart, no parameter changes** |
+| Nothing installed | Install | Install `postgresql17-server` (when a PGDG repo is available) or `postgresql-server`, run initdb, start the service |
 
-## 关键约束
+## Key constraints
 
-- **不删任何已有库或角色**；只增 `winter` 库与 `winter` 角色。
-- **默认不改内存参数**：`ALTER SYSTEM` 需要重启，同机若有其他业务（例如 argus）会被打断。要调参显式开 `postgresql.tune: true`。
-- 密码只从 `deploy/passwords.yml` 的 `vault_pg_password` 读（该文件已被 `.gitignore` 排除），**绝不写进 group_vars**。
-- 已存在角色时默认不改其密码（`force_password: false`），避免覆盖别人手工改过的口令。
+- **Never delete any existing database or role**; only add the `winter` database and `winter` role.
+- **Do not change memory parameters by default**: `ALTER SYSTEM` requires a restart, which would interrupt other services on the same machine (e.g. argus). To tune, explicitly set `postgresql.tune: true`.
+- The password is read only from `vault_pg_password` in `deploy/passwords.yml` (excluded by `.gitignore`), **never written into group_vars**.
+- If the role already exists, its password is not changed by default (`force_password: false`), to avoid overwriting a password someone changed manually.
 
-## 变量（`group_vars/all.yml`）
+## Variables (`group_vars/all.yml`)
 
-| 变量 | 默认 | 说明 |
+| Variable | Default | Notes |
 | --- | --- | --- |
-| `postgresql.major` | 空（自动探测） | 已在跑的实例优先 |
-| `postgresql.db_name` / `db_user` | `winter` / `winter` | 平台库与账号 |
-| `postgresql.tune` | `false` | 是否调整内存与连接参数 |
-| `postgresql.shared_buffers` 等 | 见 defaults | 仅在 `tune: true` 时生效 |
+| `postgresql.major` | empty (auto-detect) | An already-running instance takes priority |
+| `postgresql.db_name` / `db_user` | `winter` / `winter` | Platform database and account |
+| `postgresql.tune` | `false` | Whether to tune memory and connection parameters |
+| `postgresql.shared_buffers` etc. | see defaults | Only effective when `tune: true` |
 
-## 验证
+## Verification
 
 ```bash
-# 库与角色存在
+# Database and role exist
 sudo -u postgres psql -tAc "select datname from pg_database where datname='winter'"
 sudo -u postgres psql -tAc "select rolname from pg_roles where rolname='winter'"
 
-# 用应用账号连一次（密码来自 passwords.yml）
+# Connect once with the application account (password from passwords.yml)
 PGPASSWORD=... psql -h 127.0.0.1 -U winter -d winter -c 'select 1'
 ```
 
-## 已知取舍
+## Known trade-offs
 
-- 建角色/库的 SQL 会出现在进程参数里（`ps` 可见数秒）。M0 接受；正式交付改用 ansible-vault + `psql -f` 从 stdin 读，避免命令行长驻。
-- `listen_addresses` 默认 `127.0.0.1`：管理面组件同机时够用；将来 Server 跨机再放开到内网地址。
+- The SQL that creates the role/database appears in process arguments (visible in `ps` for a few seconds). Accepted for M0; for production delivery, switch to ansible-vault + `psql -f` reading from stdin to avoid long-lived command lines.
+- `listen_addresses` defaults to `127.0.0.1`: sufficient when management plane components are on the same machine; when the Server moves to a different machine, open it up to the internal address.

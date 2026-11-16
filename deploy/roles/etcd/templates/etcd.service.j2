@@ -5,11 +5,11 @@ After=network-online.target
 Wants=network-online.target
 
 [Service]
-# 不用 Type=notify：官方 etcd 二进制不发 sd_notify，systemd 会一直等到超时判失败
-# （进程其实已经正常起来）。Type=exec 只等 exec 成功即可。
+# Do not use Type=notify: the official etcd binary does not send sd_notify, so systemd waits until timeout and marks it failed
+# (even though the process is actually up). Type=exec only waits for exec to succeed.
 Type=exec
 User=root
-# 数据目录独立；与 PG 无关
+# Separate data directory; unrelated to PG
 ExecStart={{ etcd_role.bin_dir }}/etcd \
   --name {{ inventory_hostname }} \
   --data-dir {{ pg_cluster.etcd.data_dir }} \

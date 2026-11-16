@@ -1,6 +1,6 @@
 # {{ ansible_managed | default('managed by ansible') }}
-# Grafana 只监听本机，对外统一走 Nginx /grafana/ 反代（ADR-09），
-# 禁止绕过平台 RBAC 直连面板（B9）。
+# Grafana listens only on localhost; all external access goes through the Nginx /grafana/ reverse proxy (ADR-09),
+# direct access to the dashboard bypassing platform RBAC is forbidden (B9).
 [server]
 http_addr = {{ observability.listen_addr }}
 http_port = {{ observability.components.grafana.port }}

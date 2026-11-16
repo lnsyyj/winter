@@ -1,45 +1,45 @@
 ---
-# deploy · 收敛管理面组件到目标状态（ADR-17 阶段语义）
+# deploy · Converge management plane components to the target state (ADR-17 stage semantics)
 #
-# 当前覆盖：制品源 → PostgreSQL → Nginx 接入层 → 可观测性栈 → Server
-# 未覆盖：Harbor（镜像仓库）、Agent（交付期 ansible 预装，运行期零 SSH）
-#         —— 后续按依赖顺序追加 role，本 play 的 order 就是启动顺序
+# Currently covered: internal repo → PostgreSQL → Nginx access layer → observability stack → Server
+# Not covered: Harbor (image registry), Agent (pre-installed by ansible during the provisioning phase, zero SSH at runtime)
+#              — roles will be appended in dependency order later; this play's order is the startup order
 #
-# 用法：
-#   ./deploy.sh deploy                              # 全量收敛
+# Usage:
+#   ./deploy.sh deploy                              # full converge
 #   ./deploy.sh deploy -i inventory/multinode
-#   ./deploy.sh deploy --tags observability,server  # 只跑监控栈与 Server（会带上制品源）
-#   ./deploy.sh deploy --list-tasks                 # 看会做什么
+#   ./deploy.sh deploy --tags observability,server  # run only the monitoring stack and Server (includes the internal repo)
+#   ./deploy.sh deploy --list-tasks                 # see what would be done
 
-- name: 管理面组件收敛（数据库 + 接入层 + 可观测性 + Server）
+- name: Converge management plane components (database + access layer + observability + Server)
   hosts: management
   become: true
   gather_facts: true
 
-  # Ansible 只从「playbook 目录」与「inventory 目录」旁加载 group_vars，
-  # 而本项目把唯一配置入口放在 deploy/group_vars/。显式声明，避免静默不加载。
+  # Ansible loads group_vars only from beside the "playbook directory" and the "inventory directory",
+  # while this project puts the single configuration entry point in deploy/group_vars/. Declare it explicitly to avoid silently not loading it.
   vars_files:
     - ../group_vars/all.yml
 
   pre_tasks:
-    - name: 载入部署密码（deploy/passwords.yml，不存在则跳过）
+    - name: Load deployment passwords (deploy/passwords.yml, skip if absent)
       ansible.builtin.include_vars:
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
       tags: [always]
 
-    - name: 确认这是受支持的发行版
+    - name: Confirm this is a supported distribution
       ansible.builtin.assert:
         that:
           - ansible_facts.os_family == "RedHat"
-        fail_msg: "当前只支持 RHEL 系（CentOS Stream 9 / RHEL 9）；实际：{{ ansible_facts.distribution }}"
+        fail_msg: "Only RHEL family distributions are supported (CentOS Stream 9 / RHEL 9); actual: {{ ansible_facts.distribution }}"
         quiet: true
       tags: [always]
 
   roles:
-    # 顺序即依赖：先有制品源（其他角色从它拉包），再有库，再接入层，
-    # 最后起监控栈与 Server。local_repo 带多个 tag，任意子集执行都会先同步制品。
+    # Order equals dependency: first the internal repo (other roles pull packages from it), then the database, then the access layer,
+    # and finally the monitoring stack and Server. local_repo carries multiple tags, so any subset still syncs the artifacts first.
     - role: local_repo
       tags: [repo, observability, server]
     - role: postgresql
@@ -54,12 +54,12 @@
       when: winter_server.enabled | bool
 
   post_tasks:
-    - name: 汇总结果
+    - name: Summarize results
       ansible.builtin.debug:
         msg:
-          - "PostgreSQL：库 {{ postgresql.db_name }} / 角色 {{ postgresql.db_user }}"
-          - "Nginx：https://{{ nginx.server_name }}:{{ nginx.https_port }} → {{ nginx.doc_root }}"
-          - "API：https://{{ nginx.server_name }}/api/v1/ → {{ nginx.api_upstream }}"
-          - "Grafana：https://{{ nginx.server_name }}/grafana/（经反代，禁止直连 3000）"
-          - "可观测性：VM / vmalert / VictoriaLogs / Alertmanager 只监听 {{ monitoring_listen_addr }}"
+          - "PostgreSQL: database {{ postgresql.db_name }} / role {{ postgresql.db_user }}"
+          - "Nginx: https://{{ nginx.server_name }}:{{ nginx.https_port }} → {{ nginx.doc_root }}"
+          - "API: https://{{ nginx.server_name }}/api/v1/ → {{ nginx.api_upstream }}"
+          - "Grafana: https://{{ nginx.server_name }}/grafana/ (via reverse proxy, direct port 3000 access forbidden)"
+          - "Observability: VM / vmalert / VictoriaLogs / Alertmanager listen only on {{ monitoring_listen_addr }}"
       tags: [always]

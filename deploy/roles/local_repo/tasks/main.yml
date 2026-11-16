@@ -1,15 +1,15 @@
 ---
-# 发布本地制品源
-# 约束：只读目录 + 明文 HTTP + 限制来源网段；不放任何私钥/证书
+# Publish the local artifact repository
+# Constraints: read-only directory + plaintext HTTP + restricted source subnet; no private keys/certificates
 
-- name: 发布目录
+- name: Create publish directory
   ansible.builtin.file:
     path: "{{ local_repo.root }}"
     state: directory
     mode: "0755"
   tags: [repo]
 
-- name: 同步制品（rpm / tarball / pip）
+- name: Sync artifacts (rpm / tarball / pip)
   ansible.builtin.copy:
     src: "{{ local_repo.src }}/"
     dest: "{{ local_repo.root }}/"
@@ -17,7 +17,7 @@
     directory_mode: "0755"
   tags: [repo]
 
-- name: 统计发布结果
+- name: Gather publish statistics
   ansible.builtin.shell: |
     set -o pipefail
     find {{ local_repo.root }} -type f | wc -l
@@ -28,7 +28,7 @@
   changed_when: false
   tags: [repo]
 
-- name: 落地 Nginx 源站点
+- name: Install Nginx repo site
   ansible.builtin.template:
     src: repo.conf.j2
     dest: /etc/nginx/conf.d/winter-repo.conf
@@ -37,7 +37,7 @@
   notify: reload nginx
   tags: [repo]
 
-- name: 校验 Nginx 配置
+- name: Validate Nginx configuration
   ansible.builtin.command:
     cmd: nginx -t
   register: repo_nginx_test
@@ -45,16 +45,16 @@
   failed_when: repo_nginx_test.rc != 0
   tags: [repo]
 
-- name: 应用变更
+- name: Apply changes
   ansible.builtin.meta: flush_handlers
   tags: [repo]
 
-- name: 放行防火墙端口（仅内网网段）
+- name: Allow firewall port (internal subnet only)
   ansible.builtin.shell: |
     set -euo pipefail
     rule='rule family=ipv4 source address={{ local_repo.allow_cidr }} port port={{ local_repo.listen_port }} protocol=tcp accept'
-    # 用 --query-rich-rule 判定，而不是把 --reload 的 "success" 当成变更：
-    # 后者会让每次 deploy 都报 changed（TC-26 要求二次运行 changed=0）。
+    # Use --query-rich-rule to decide, rather than treating --reload's "success" as a change:
+    # the latter would report changed on every deploy (TC-26 requires changed=0 on the second run).
     if firewall-cmd --permanent --query-rich-rule="$rule" >/dev/null 2>&1; then
       echo unchanged
     else
@@ -69,7 +69,7 @@
   failed_when: false
   tags: [repo]
 
-- name: 自检（本机）
+- name: Self-check (local machine)
   ansible.builtin.shell: |
     set -o pipefail
     curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:{{ local_repo.listen_port }}/"
@@ -80,10 +80,10 @@
   failed_when: repo_selfcheck.stdout | trim != "200"
   tags: [repo]
 
-- name: 输出结论
+- name: Report result
   ansible.builtin.debug:
     msg:
-      - "制品源：http://{{ ansible_facts.default_ipv4.address }}:{{ local_repo.listen_port }}/  （根目录 {{ local_repo.root }}）"
-      - "文件数 {{ repo_stat.stdout_lines[0] }}，体积 {{ repo_stat.stdout_lines[1] }}"
-      - "仅允许 {{ local_repo.allow_cidr }} 访问"
+      - "Artifact repo: http://{{ ansible_facts.default_ipv4.address }}:{{ local_repo.listen_port }}/  (root {{ local_repo.root }})"
+      - "File count {{ repo_stat.stdout_lines[0] }}, size {{ repo_stat.stdout_lines[1] }}"
+      - "Only {{ local_repo.allow_cidr }} is allowed to access"
   tags: [repo]

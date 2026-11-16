@@ -1,52 +1,52 @@
 ---
-# PostgreSQL role 默认值
-# 原则：优先「收敛已有实例」，没有才安装；不覆盖别人的库与配置。
+# PostgreSQL role defaults
+# Principle: prefer converging an existing instance; install only if none exists; do not overwrite other people's databases or configuration.
 #
-# 合并规则：group_vars 里写 postgresql_overrides（只写差异），
-# 由下面的 combine 与默认值合并 —— 不要直接在 group_vars 里写 postgresql:，
-# 那会整块替换本字典，导致未覆盖的键变成 undefined。
+# Merge rule: define postgresql_overrides in group_vars (only the differences),
+# merged with the defaults by the combine below — do not write postgresql: directly in group_vars,
+# as that replaces this dict wholesale and leaves unoverridden keys undefined.
 
 postgresql_defaults:
-  # 目标主版本。留空 = 自动探测（已在跑的实例优先）
+  # Target major version. Empty = auto-detect (an already-running instance takes priority)
   major: ""
 
-  # 空 = 自动探测（show data_directory）
+  # Empty = auto-detect (show data_directory)
   data_dir: ""
 
-  # 连接与库
+  # Connections and database
   port: 5432
   listen_addresses: "127.0.0.1"
   db_name: winter
   db_user: winter
 
-  # 已存在角色时是否强制同步密码（默认 false：不动别人可能已改过的口令）
+  # Whether to force-sync the password when the role already exists (default false: do not touch passwords others may have changed)
   force_password: false
 
-  # 是否调整内存参数。默认 false —— 调整需要重启实例，会中断同机其他应用（如 argus）
+  # Whether to tune memory parameters. Default false — tuning requires an instance restart, which interrupts other applications on the same machine (e.g. argus)
   tune: false
 
-  # tune=true 时生效（3GB 单机 + 同机 ceph 的经验值，独立管理节点可上调）
+  # Effective when tune=true (rule of thumb for a 3GB single machine with co-located ceph; can be raised on a dedicated management node)
   shared_buffers: 256MB
   effective_cache_size: 1GB
   work_mem: 4MB
   maintenance_work_mem: 64MB
   max_connections: 100
 
-  # 空 = postgresql-{{ major }}
+  # Empty = postgresql-{{ major }}
   service_name: ""
 
-  # 离线安装：从内网源（roles/local_repo）取以下 RPM，版本固定，避免现场漂移
+  # Offline install: fetch the following RPMs from the internal repo (roles/local_repo), versions pinned to avoid on-site drift
   rpm_subdir: rpm/pgdg17
-  # 不含 contrib：contrib 依赖 libperl → perl-libs → 一整条 perl 包链，
-  # 而高可用部署用不到 contrib 的扩展（pg_stat_statements 等）。需要时单独加。
+  # No contrib: contrib depends on libperl → perl-libs → a whole chain of perl packages,
+  # and HA deployments do not use contrib extensions (pg_stat_statements etc.). Add separately if needed.
   rpm_packages:
     - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
-  # 额外依赖（目标机可能缺）。当前为空：去掉 contrib 后无 perl 依赖
+  # Extra dependencies (target machine may lack them). Currently empty: removing contrib leaves no perl dependency
   rpm_deps_subdir: rpm/base
   rpm_deps: []
-  # 本地暂存目录
+  # Local staging directory
   rpm_stage_dir: /var/tmp/winter-pg17
 
 postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"

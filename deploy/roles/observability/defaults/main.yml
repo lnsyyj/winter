@@ -1,6 +1,6 @@
 ---
-# 只放与业务配置无关的兜底值。
-# 组件清单、端口、版本一律以 group_vars/all.yml 的 observability 为准（ADR-17 单一配置入口），
-# 这里刻意不定义同名字典，避免「role 默认值被整块替换」的老问题。
+# Only fallback values unrelated to business configuration go here.
+# Component lists, ports and versions are all governed by observability in group_vars/all.yml (ADR-17 single configuration entry point);
+# this file deliberately does not define a dictionary with the same name, to avoid the old problem of "role defaults being replaced wholesale".
 obs_health_retries: 30
 obs_health_delay: 2

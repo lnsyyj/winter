@@ -1,43 +1,43 @@
-# prechecks · 部署前检查（只读）
+# prechecks · Pre-deployment checks (read-only)
 
-对应安装部署手册阶段 C3、测试用例 TC-26。**本 role 不得修改系统**：不装包、不写 sysctl、不改防火墙。
+Corresponds to installation/deployment manual phase C3 and test case TC-26. **This role must not modify the system**: no package installation, no sysctl writes, no firewall changes.
 
-> **作用域（ADR-35）**：本 role 只服务**交付期**——由实施人员用 ansible 跑，用于装机前的环境确认。
-> **运行期**（纳管集群、日常运维）的预检由 Agent 本地执行（Go 实现），不走 ansible、不走 SSH。
-> 两边的**检查项清单必须一致**，靠契约测试防漂移：同一份用例分别喂给本 role 与 Agent 的 precheck 实现。
+> **Scope (ADR-35)**: This role serves only the **provisioning phase** — run by implementation personnel with ansible to confirm the environment before installation.
+> **Runtime** prechecks (managed clusters, routine operations) are executed locally by the Agent (implemented in Go), not via ansible or SSH.
+> The **checklist must be identical** on both sides, with contract tests preventing drift: the same test cases are fed to both this role and the Agent's precheck implementation.
 
-## 检查项
+## Checks
 
-| 文件 | 检查内容 | 失败会怎样 |
+| File | What it checks | On failure |
 | --- | --- | --- |
-| `tasks/main.yml` | 分组合法性（不能同时在 management 与 ceph_nodes） | 直接失败，指出该主机应属哪组 |
-| `tasks/os.yml` | CentOS Stream 9、podman 存在 | 失败并提示基线已锁定（ADR-11） |
-| `tasks/resources.yml` | 管理面 15C/24G/350G；被管节点数据盘 ≥3 | 失败并给出实际值与本项目估算来源 |
-| `tasks/time.yml` | chronyd 运行、偏移 ≤1s | 失败；时间漂移会让 cephadm 直接失败 |
-| `tasks/kernel.yml` | overcommit_memory / max_map_count | 默认只报告；`enforce_kernel: true` 时失败 |
-| `tasks/network.yml` | 默认路由、域名解析、SELinux 状态 | 无路由即失败（出站链路不成立） |
-| `tasks/ports.yml` | 管理节点 80/443 空闲 | 失败并给出查占用命令 |
-| `tasks/artifacts.yml` | 内网源 / Harbor 可达（默认关闭） | 失败并提示先做阶段 C1 |
+| `tasks/main.yml` | Group validity (cannot be in both management and ceph_nodes) | Fail immediately, indicating which group the host should belong to |
+| `tasks/os.yml` | CentOS Stream 9, podman present | Fail and indicate the baseline is locked (ADR-11) |
+| `tasks/resources.yml` | Management plane 15C/24G/350G; managed node ≥3 data disks | Fail and provide actual values and the source of this project's estimates |
+| `tasks/time.yml` | chronyd running, offset ≤1s | Fail; clock drift causes cephadm to fail immediately |
+| `tasks/kernel.yml` | overcommit_memory / max_map_count | Report only by default; fail when `enforce_kernel: true` |
+| `tasks/network.yml` | Default route, DNS resolution, SELinux status | Fail if no route (outbound connectivity impossible) |
+| `tasks/ports.yml` | Ports 80/443 free on management node | Fail and provide a command to find the listener |
+| `tasks/artifacts.yml` | Internal repo / Harbor reachable (disabled by default) | Fail and advise completing phase C1 first |
 
-## 失败时看哪里
+## What to check on failure
 
-1. 先看 `fail_msg`——它应包含「期望值 / 实际值 / 怎么修」。如果只写了「检查失败」，说明这个任务需要被改写。
-2. 单独重跑某一类，避免被其他失败淹没：
+1. Read `fail_msg` first — it should contain "expected value / actual value / how to fix". If it only says "check failed", that task needs rewriting.
+2. Rerun a single category to avoid being buried by other failures:
    ```bash
    ./deploy.sh prechecks -i inventory/multinode --tags prechecks.time
    ```
-3. 多节点时用 `--limit` 缩小范围：
+3. With multiple nodes, use `--limit` to narrow the scope:
    ```bash
    ./deploy.sh prechecks -i inventory/multinode --limit node02
    ```
-4. 仍然看不懂时，确认 inventory 分组是否写对——大量「变量未定义」其实是主机落错了组。
+4. If still unclear, verify the inventory groups are correct — many "variable undefined" errors actually mean a host landed in the wrong group.
 
-## 变量
+## Variables
 
-全部在 `deploy/group_vars/all.yml` 的 `prechecks:` 下，不在本 role 里硬编码。role 的 `defaults/main.yml` 只是兜底值。
+All are under `prechecks:` in `deploy/group_vars/all.yml`, not hardcoded in this role. The role's `defaults/main.yml` only provides fallback values.
 
-## 已知取舍
+## Known trade-offs
 
-- **数据盘检查默认提示模式**：M0 的虚拟机常只有一块盘，强制校验会挡住首次跑通；正式交付请设 `strict_data_disks: true`。
-- **内核参数默认只报告**：它们应由 `bootstrap-servers` 写入，而该阶段尚未实现。
-- **制品可达性默认关闭**：C1 起源之前，检查源必然失败，属于误报。
+- **Data disk check defaults to report-only mode**: M0 VMs often have only one disk; strict validation would block the first successful run. For production delivery, set `strict_data_disks: true`.
+- **Kernel parameters are report-only by default**: They should be written by the `bootstrap-servers` phase, which is not implemented yet.
+- **Artifact reachability is disabled by default**: Before phase C1 brings up the repo, checking it would inevitably fail as a false positive.

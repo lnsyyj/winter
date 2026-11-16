@@ -1,42 +1,42 @@
 ---
-# 预检入口：按类别拆分，便于用 --tags 单独排障。
-# 所有子任务必须保持只读（changed_when: false），否则检查本身就变成变更。
-- name: 预检 | 分组合法性
+# Precheck entry point, split by category for easy troubleshooting with --tags.
+# All subtasks must remain read-only (changed_when: false), otherwise the check itself becomes a change.
+- name: Precheck | Group validity
   ansible.builtin.assert:
     that:
       - group_names | length > 0
       - not ('management' in group_names and 'ceph_nodes' in group_names)
     fail_msg: >-
-      主机 {{ inventory_hostname }} 的分组不合法：必须属于 management 或 ceph_nodes 之一，
-      且不能同时属于两者（管理面与被管节点角色互斥，同机部署请只用 management）。
-    success_msg: "分组校验通过：{{ group_names | join(', ') }}"
+      Host {{ inventory_hostname }} has an invalid group assignment: it must belong to either management or ceph_nodes,
+      and not both (the management plane and managed node roles are mutually exclusive; for single-machine deployment, use only management).
+    success_msg: "Group validation passed: {{ group_names | join(', ') }}"
     quiet: true
   tags: [prechecks, prechecks.groups]
 
-- name: 预检 | 操作系统基线
+- name: Precheck | OS baseline
   ansible.builtin.import_tasks: os.yml
   tags: [prechecks, prechecks.os]
 
-- name: 预检 | 资源与磁盘
+- name: Precheck | Resources and disks
   ansible.builtin.import_tasks: resources.yml
   tags: [prechecks, prechecks.resources]
 
-- name: 预检 | 时间同步
+- name: Precheck | Time synchronization
   ansible.builtin.import_tasks: time.yml
   tags: [prechecks, prechecks.time]
 
-- name: 预检 | 内核参数
+- name: Precheck | Kernel parameters
   ansible.builtin.import_tasks: kernel.yml
   tags: [prechecks, prechecks.kernel]
 
-- name: 预检 | 网络与解析
+- name: Precheck | Network and resolution
   ansible.builtin.import_tasks: network.yml
   tags: [prechecks, prechecks.network]
 
-- name: 预检 | 端口占用
+- name: Precheck | Port usage
   ansible.builtin.import_tasks: ports.yml
   tags: [prechecks, prechecks.ports]
 
-- name: 预检 | 制品可达性（可选）
+- name: Precheck | Artifact reachability (optional)
   ansible.builtin.import_tasks: artifacts.yml
   tags: [prechecks, prechecks.artifacts]

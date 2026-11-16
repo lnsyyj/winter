@@ -1,16 +1,16 @@
-# 三节点高可用形态（Patroni + etcd），对应 ADR-38 撤回后的 PG 分布式高可用
+# Three-node high availability topology (Patroni + etcd), corresponding to the PG distributed HA after ADR-38 was withdrawn
 #
-# 用法：
-#   ./deploy.sh deploy -i inventory/pgha --tags repo             只在 pg-c 发布制品源
-#   ./deploy.sh deploy -i inventory/pgha --tags postgresql       三台装 PG（PGDG 不可达，走内网源）
+# Usage:
+#   ./deploy.sh deploy -i inventory/pgha --tags repo             publish the internal repo only on pg-c
+#   ./deploy.sh deploy -i inventory/pgha --tags postgresql       install PG on all three (PGDG unreachable, use the internal repo)
 #
-# 端口约定（避开 pg-c 上 argus 已占用的 5432）：
+# Port convention (avoid port 5432, already used by argus on pg-c):
 #   PG 5433 / Patroni REST 8008 / etcd 2379,2380
 
 [management]
 pg-a ansible_host=192.168.101.197
 pg-b ansible_host=192.168.101.198
-pg-c ansible_host=192.168.101.194 patroni_disable_standalone=false   # 该机 5432 被 argus 占用，系统实例必须保留
+pg-c ansible_host=192.168.101.194 patroni_disable_standalone=false   # port 5432 on this host is used by argus, so the system instance must be preserved
 
 [pg_primary_candidate]
 pg-a
