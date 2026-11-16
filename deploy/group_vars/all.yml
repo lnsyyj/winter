@@ -90,6 +90,24 @@ bootstrap_overrides:
     format_if_empty: false
     mount: false
 
+# Managed-node Agent (ADR-35 / ADR-19 / ADR-28), driven by scale-out and scale-in.
+# Prerequisites before scale-out: the winter-agent binary in the internal repo, a CA certificate
+# on the control machine, and Nginx grpc_pass on the documented outbound port 443.
+# TODO: set cert.ca_source to the real signing CA once the Go Agent enrollment work lands.
+agent_overrides:
+  enabled: true
+  server_address: "winter.local:443"
+  cert:
+    ca_source: ""
+  sudo:
+    rules:
+      - "winter-agent ALL=(root) NOPASSWD: /usr/bin/ceph -s, /usr/bin/ceph status, /usr/bin/ceph health"
+  scale_in:
+    purge_data: false
+    data_dirs: []
+    remove_user: false
+    revoke_cert: false
+
 # Database (role defaults are in roles/postgresql/defaults; only differences are written here)
 # Note: you must use postgresql_overrides — writing postgresql: directly replaces the role's default dict wholesale,
 #       causing uncovered keys (such as data_dir) to become undefined.

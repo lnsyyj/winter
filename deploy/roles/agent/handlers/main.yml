@@ -1,0 +1,7 @@
+---
+- name: restart winter-agent
+  ansible.builtin.systemd:
+    name: winter-agent
+    state: restarted
+    daemon_reload: true
+  when: agent_cert_local is defined and agent_cert_local.stat.exists

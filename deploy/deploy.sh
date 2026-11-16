@@ -16,6 +16,8 @@ Stages:
   pull                 Pull images from Harbor (not implemented)
   deploy               Converge to the target state (internal repo + PostgreSQL + Nginx + observability stack + Server)
   pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
+  scale-out            Pre-install the Agent on new managed nodes (use --limit)
+  scale-in             Remove the Agent from managed nodes (use --limit)
   post-deploy          Initialization (not implemented)
   reconfigure          Rerun after configuration changes (not implemented)
   upgrade              Version upgrade (not implemented)
@@ -53,6 +55,12 @@ case "$STAGE" in
         ;;
     pg-ha)
         PLAYBOOK="$ROOT/playbooks/pg-ha.yml"
+        ;;
+    scale-out)
+        PLAYBOOK="$ROOT/playbooks/scale-out.yml"
+        ;;
+    scale-in)
+        PLAYBOOK="$ROOT/playbooks/scale-in.yml"
         ;;
     pull|post-deploy|reconfigure|upgrade|destroy)
         echo "Stage '$STAGE' is not implemented yet (see the plan in docs/02-研发线/04-架构师/ADR-17-部署框架.md)." >&2

@@ -11,6 +11,8 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
 | Converge monitoring stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
+| Scale out (install Agent) | `./deploy.sh scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
+| Scale in (remove Agent) | `./deploy.sh scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
 | pull / post-deploy / reconfigure / upgrade / destroy | — | ⬜ Not implemented |
 
 Unimplemented stages exit with an explicit error (exit code 2); they **do not pretend to succeed**.
@@ -82,6 +84,30 @@ The component list, ports, versions and command-line arguments all live in `grou
 - `observability.enabled: false` or a single component's `enabled: false` trims the stack (ADR-18 packaging layers).
 - The Server's `DATABASE_URL` / `JWT_SECRET` / admin password all come from `deploy/passwords.yml` (see `passwords.yml.example` for the template); roles assert explicitly and do not generate default weak passwords.
 - Overwriting a running binary triggers `ETXTBSY`, so the Server role does `cp` in the target directory + `mv` within the same directory to atomically replace the inode, keeping the downloaded source file for idempotency; no restart if content is unchanged.
+
+## Agent Pre-install, Scale-out and Scale-in (ADR-35 / ADR-19 / ADR-28)
+
+Managed nodes get the Agent during the provisioning phase; at runtime there is no SSH. Scaling the platform means installing or removing the Agent on nodes, not opening inbound ports.
+
+```bash
+# Add new hosts to [ceph_nodes] first, then target only them
+./deploy.sh scale-out -i inventory/multinode --limit node04
+
+# Remove the Agent; platform data is preserved unless explicitly purged
+./deploy.sh scale-in -i inventory/multinode --limit node03
+```
+
+Prerequisites for `scale-out` (the role fails with an actionable message when missing, never pretends success):
+
+| Prerequisite | Configuration |
+| --- | --- |
+| `winter-agent` binary in the internal repo | `platform.repo_base_url` + `agent_overrides.artifact` |
+| CA certificate on the control machine | `agent_overrides.cert.ca_source` |
+| Nginx `grpc_pass` for the Agent service on outbound 443 | infrastructure outside this role |
+
+Identity: `node_id` defaults to the inventory hostname and must match the certificate `CN` and `SPIFFE URI:spiffe://winter/node/<node_id>`. In `local_csr` mode the private key is generated on the node and never leaves it; a CSR is staged, and the service starts only once a certificate is issued. In `preissued` mode a key/cert pair is copied from the control machine.
+
+Safety: the service account is non-root with an explicit sudoers whitelist (absolute paths, no `ALL`, no interpreters). `scale-in` preserves data by default; `purge_data: true` requires an explicit non-empty `data_dirs` list, and `remove_user` is opt-in.
 
 ## PostgreSQL High Availability (etcd + Patroni + HAProxy)
 
@@ -181,9 +207,10 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / scale-out / scale-in
 └── roles/
     ├── bootstrap/             # base packages + optional kernel/data-disk settings
+    ├── agent/                 # Agent pre-install and removal (scale-out / scale-in)
     ├── prechecks/             # read-only checks
     ├── local_repo/            # publishes the internal artifact repo (8082)
     ├── postgresql/ nginx/     # database and access layer
@@ -214,7 +241,7 @@ cp passwords.yml.example passwords.yml && vi passwords.yml
 ./deploy.sh deploy -i inventory/multinode
 ```
 
-Available tags: `bootstrap` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
+Available tags: `bootstrap` / `agent` / `scale-out` / `scale-in` / `repo` / `postgresql` / `nginx` / `observability` / `server` / `etcd` / `patroni` / `haproxy`,
 as well as `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups`.
 
 ## Design Constraints (Read Before Making Changes)

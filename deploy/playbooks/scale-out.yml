@@ -1,0 +1,43 @@
+---
+# scale-out · pre-install the Agent on new managed nodes (ADR-35)
+#
+# Usage:
+#   ./deploy.sh scale-out -i inventory/multinode --limit node04
+#   ./deploy.sh scale-out -i inventory/multinode --tags agent
+#
+# Add the new hosts to [ceph_nodes] first; use --limit to target only the new ones.
+
+- name: Scale out managed nodes (install Agent)
+  hosts: ceph_nodes
+  become: true
+  gather_facts: true
+
+  vars_files:
+    - ../group_vars/all.yml
+
+  pre_tasks:
+    - name: Load deployment passwords (deploy/passwords.yml, skip if absent)
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+
+    - name: Confirm Agent scaling is enabled
+      ansible.builtin.assert:
+        that: agent.enabled | bool
+        fail_msg: "agent.enabled is false; set agent_overrides.enabled: true in group_vars/all.yml"
+        quiet: true
+      tags: [always]
+
+  roles:
+    - role: agent
+      tags: [agent, scale-out]
+
+  post_tasks:
+    - name: Summarize scale-out
+      ansible.builtin.debug:
+        msg:
+          - "Agent installed on {{ inventory_hostname }}; certificate enrollment is still required before the service starts"
+          - "Next: issue the certificate for the CSR, then rerun this stage to start the Agent"
+      tags: [always]
