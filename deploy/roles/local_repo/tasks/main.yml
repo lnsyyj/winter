@@ -60,7 +60,7 @@
   ansible.builtin.systemd:
     name: nginx
     state: reloaded
-  when: repo_seport is changed
+  when: repo_seport.changed | default(false)
   tags: [repo]
 
 - name: Ensure nginx is enabled and running
