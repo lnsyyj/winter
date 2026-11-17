@@ -1,0 +1,7 @@
+---
+# local_repo writes /etc/nginx/conf.d/winter-repo.conf and must reload Nginx.
+# This role also runs standalone (repo stage), so it cannot rely on the nginx role's handler.
+- name: reload nginx
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
