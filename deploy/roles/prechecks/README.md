@@ -49,6 +49,14 @@ Resource thresholds are fully tunable:
 
 For a small lab or test machine, either lower the `management_min_*` values or set `strict_resources: false` to downgrade the resource check to a warning.
 
+The strictness switch can also be overridden on the command line without editing group_vars:
+
+```bash
+./deploy.sh prechecks -i inventory/all-in-one -e prechecks_strict_resources=false
+```
+
+This works because the check reads `prechecks_strict_resources` (a top-level override) and falls back to `prechecks.strict_resources`.
+
 ## Known trade-offs
 
 - **Resource check defaults to strict mode**: A production host must meet the configured management-plane minimums. For a small lab VM, lower the `management_min_*` thresholds or set `strict_resources: false` to warn only.

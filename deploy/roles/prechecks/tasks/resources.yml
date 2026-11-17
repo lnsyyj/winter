@@ -22,7 +22,7 @@
     quiet: true
   when:
     - "'management' in group_names"
-    - prechecks.strict_resources | bool
+    - (prechecks_strict_resources | default(prechecks.strict_resources)) | bool
 
 - name: Precheck | Management plane minimum requirements (report-only mode)
   ansible.builtin.debug:
@@ -34,7 +34,7 @@
       Running in report-only mode (prechecks.strict_resources=false); tune the thresholds in group_vars/all.yml for production.
   when:
     - "'management' in group_names"
-    - not (prechecks.strict_resources | bool)
+    - not ((prechecks_strict_resources | default(prechecks.strict_resources)) | bool)
 
 - name: Precheck | List whole disks
   ansible.builtin.command: lsblk -dn -o NAME,TYPE,SIZE
