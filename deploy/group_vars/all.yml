@@ -12,8 +12,11 @@ platform:
   https_port: 443
 
   # Internal software repo (ADR-15): provided by Nginx on the management node (published by roles/local_repo)
-  # When the site has no internet access, all RPMs / wheels / binaries are fetched from here
-  repo_base_url: "http://192.168.101.194:8082"
+  # When the site has no internet access, all RPMs / wheels / binaries are fetched from here.
+  # Derived from the first [repo_nodes] host so it follows the environment instead of a hardcoded site IP;
+  # override platform.repo_base_url in a site-specific vars file if the repo is published elsewhere.
+  # Port must match local_repo.listen_port (role default: 8082).
+  repo_base_url: "http://{{ hostvars[groups['repo_nodes'][0]]['ansible_host'] | default(hostvars[groups['repo_nodes'][0]]['inventory_hostname']) }}:8082"
 
   # Image registry (ADR-16): self-hosted Harbor, all images are pulled through it
   registry_host: ""
