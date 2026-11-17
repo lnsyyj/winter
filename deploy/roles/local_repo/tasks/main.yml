@@ -53,6 +53,16 @@
     - "'http_port_t' not in repo_seport_before.stdout"
   tags: [repo]
 
+- name: Reload nginx when the SELinux port label changed
+  # The label change lets a previously loaded nginx configuration finally bind the port.
+  # Do not rely on the template's notify: a second run finds the file unchanged, so no reload
+  # would be notified and the port would stay unbound.
+  ansible.builtin.systemd:
+    name: nginx
+    state: reloaded
+  when: repo_seport is changed
+  tags: [repo]
+
 - name: Ensure nginx is enabled and running
   ansible.builtin.systemd:
     name: nginx
