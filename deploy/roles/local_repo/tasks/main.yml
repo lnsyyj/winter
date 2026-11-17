@@ -19,6 +19,40 @@
   when: not repo_nginx_bin.stat.exists
   tags: [repo]
 
+- name: Ensure semanage is available for SELinux port labeling
+  ansible.builtin.dnf:
+    name: policycoreutils-python-utils
+    state: present
+    disablerepo: "pgdg*"
+  when: ansible_facts.selinux is defined and ansible_facts.selinux.status == 'enabled'
+  tags: [repo]
+
+- name: Check the current SELinux label of the repo port
+  ansible.builtin.shell: "semanage port -l | grep -E '[[:space:]]{{ local_repo.listen_port }}[[:space:]]' || true"
+  args:
+    executable: /bin/bash
+  register: repo_seport_before
+  changed_when: false
+  when: ansible_facts.selinux is defined and ansible_facts.selinux.status == 'enabled'
+  tags: [repo]
+
+- name: Label the repo port as http_port_t under SELinux
+  # Nginx only binds ports labeled http_port_t when SELinux is enforcing; 8082 is not in the
+  # default allowlist and may already be claimed by another type (e.g. us_cli_port_t).
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if semanage port -l | grep -qE '[[:space:]]{{ local_repo.listen_port }}[[:space:]]'; then
+      semanage port -m -t http_port_t -p tcp {{ local_repo.listen_port }}
+    else
+      semanage port -a -t http_port_t -p tcp {{ local_repo.listen_port }}
+    fi
+  args:
+    executable: /bin/bash
+  when:
+    - ansible_facts.selinux is defined and ansible_facts.selinux.status == 'enabled'
+    - "'http_port_t' not in repo_seport_before.stdout"
+  tags: [repo]
+
 - name: Ensure nginx is enabled and running
   ansible.builtin.systemd:
     name: nginx
