@@ -97,10 +97,13 @@
         - dns_resolved_stub_state.stdout == 'in_use'
         - dns_resolved_dropin is changed
 
+# PostgreSQL (pgdg) repos are unrelated to DNS and can be unreachable on offline sites;
+# leaving them enabled makes dnf fail before it can resolve BIND from the system repos.
 - name: Install BIND 9 packages from configured repositories
   ansible.builtin.dnf:
     name: "{{ dns.packages }}"
     state: present
+    disablerepo: "*pgdg*"
   when: dns.install_method == 'package'
   tags: [dns, dns.install]
 
@@ -126,6 +129,7 @@
     name: /var/tmp/winter-dns/*.rpm
     state: present
     disable_gpg_check: true
+    disablerepo: "*pgdg*"
   when: dns.install_method == 'repo'
   tags: [dns, dns.install]
 
