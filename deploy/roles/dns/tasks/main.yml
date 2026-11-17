@@ -54,6 +54,40 @@
   when: dns_server_role == 'master'
   tags: [dns]
 
+# Stock RHEL/Rocky hosts run systemd-resolved with a stub listener on 127.0.0.53:53.
+# BIND listening on listen_addr:any cannot bind port 53 while that stub is active. Disable only
+# the stub listener with a vendor-documented drop-in (the resolver service and /etc/resolv.conf
+# stay intact), then restart it immediately so the port is free before named starts.
+- name: Free the DNS port from the systemd-resolved stub listener
+  when: dns.manage_systemd_resolved | default(true) | bool
+  tags: [dns, dns.install]
+  block:
+    - name: Check whether systemd-resolved holds the DNS port
+      ansible.builtin.shell: "ss -H -lntup '( sport = :{{ dns.listen_port }} )' | grep -q 'systemd-resolve' && echo in_use || echo free"
+      register: dns_resolved_stub_state
+      changed_when: false
+
+    - name: Install the systemd-resolved drop-in that disables its stub listener
+      ansible.builtin.copy:
+        dest: /etc/systemd/resolved.conf.d/winter-dns.conf
+        content: |
+          # Managed by Ansible (role: dns). Frees port {{ dns.listen_port }} for BIND 9.
+          [Resolve]
+          DNSStubListener=no
+        owner: root
+        group: root
+        mode: '0644'
+      register: dns_resolved_dropin
+      when: dns_resolved_stub_state.stdout == 'in_use'
+
+    - name: Restart systemd-resolved so it releases the DNS port
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+      when:
+        - dns_resolved_stub_state.stdout == 'in_use'
+        - dns_resolved_dropin is changed
+
 - name: Install BIND 9 packages from configured repositories
   ansible.builtin.dnf:
     name: "{{ dns.packages }}"

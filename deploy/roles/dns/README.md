@@ -22,10 +22,20 @@ enterprise standard on RHEL, supports standard round-robin A records and master/
 | `dns.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
 | `dns.rpm_files` / `dns.rpm_subdir` | BIND RPMs when `install_method=repo` |
 | `dns.manage_firewall` | Open `dns.listen_port`/tcp and /udp with firewalld; set `false` for an external firewall |
+| `dns.manage_systemd_resolved` | Disable the systemd-resolved stub listener to free `dns.listen_port`; `false` to manage the conflict yourself |
 | `dns.check_interval` | Local resolution retry window (seconds) |
 
 `vault_dns_tsig_secret` comes from `deploy/passwords.yml`. Generate one with
 `openssl rand -base64 32` on a trusted machine; the secret never goes into `group_vars`.
+
+### Port 53 and systemd-resolved
+
+On stock RHEL/Rocky hosts `systemd-resolved` owns `127.0.0.53:53` with its stub listener, so BIND
+cannot bind `listen_addr: any`. With `dns.manage_systemd_resolved: true` (the default) the role
+writes `/etc/systemd/resolved.conf.d/winter-dns.conf` containing `DNSStubListener=no` and restarts
+the resolver before BIND starts. The resolver service and `/etc/resolv.conf` stay intact, so host
+name resolution is unaffected. Set the flag to `false` only when port 53 is already free or the
+stub listener is managed outside this role.
 
 ## Topology via inventory groups
 

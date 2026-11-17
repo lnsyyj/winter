@@ -89,14 +89,18 @@
   changed_when: false
   failed_when: false
 
-- name: Precheck DNS | DNS port is free or already owned by named
+- name: Precheck DNS | DNS port is free or owned by a releasable service
   ansible.builtin.assert:
     that:
-      - dns_port_usage.stdout == '' or ('named' in dns_port_usage.stdout)
+      - >-
+        dns_port_usage.stdout == ''
+        or ('named' in dns_port_usage.stdout)
+        or (dns.manage_systemd_resolved | default(true) | bool and 'systemd-resolve' in dns_port_usage.stdout)
     fail_msg: >-
       Port {{ dns.listen_port }} is occupied by another process: {{ dns_port_usage.stdout }}.
-      Stop that process or change dns.listen_port in group_vars/all.yml before deploying DNS.
-    success_msg: "DNS port {{ dns.listen_port }} is available"
+      Enable dns.manage_systemd_resolved to let the role release a systemd-resolved stub listener,
+      stop the conflicting process, or change dns.listen_port in group_vars/all.yml before deploying DNS.
+    success_msg: "DNS port {{ dns.listen_port }} is available or will be released before BIND starts"
     quiet: true
 
 - name: Precheck DNS | Firewall management tool is available

@@ -33,4 +33,5 @@ dns:
   allow_query_cidrs: []                # empty = any
   allow_transfer_cidrs: []             # empty = TSIG key only on the master
   manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
+  manage_systemd_resolved: true         # disable the systemd-resolved stub listener to free the DNS port
   check_interval: 60                   # local resolution check retry window (seconds)
