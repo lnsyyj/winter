@@ -1,6 +1,37 @@
 ---
 # Publish the local artifact repository
 # Constraints: read-only directory + plaintext HTTP + restricted source subnet; no private keys/certificates
+#
+# The repo site is served by Nginx, which may not be present on a fresh node. Keep this role
+# standalone-capable: install and start Nginx here if missing, without triggering a dnf metadata
+# refresh on hosts that already have it (third-party repos such as pgdg may be unreachable).
+- name: Check whether nginx is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/nginx
+  register: repo_nginx_bin
+  tags: [repo]
+
+- name: Install nginx for the local repository site (only if missing)
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+    disablerepo: "pgdg*"
+  when: not repo_nginx_bin.stat.exists
+  tags: [repo]
+
+- name: Ensure nginx is enabled and running
+  ansible.builtin.systemd:
+    name: nginx
+    state: started
+    enabled: true
+  tags: [repo]
+
+- name: Ensure the nginx configuration directory exists
+  ansible.builtin.file:
+    path: /etc/nginx/conf.d
+    state: directory
+    mode: "0755"
+  tags: [repo]
 
 - name: Create publish directory
   ansible.builtin.file:
