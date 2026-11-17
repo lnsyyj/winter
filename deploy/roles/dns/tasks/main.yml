@@ -67,6 +67,15 @@
       register: dns_resolved_stub_state
       changed_when: false
 
+    - name: Ensure the systemd-resolved drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: dns_resolved_stub_state.stdout == 'in_use'
+
     - name: Install the systemd-resolved drop-in that disables its stub listener
       ansible.builtin.copy:
         dest: /etc/systemd/resolved.conf.d/winter-dns.conf
