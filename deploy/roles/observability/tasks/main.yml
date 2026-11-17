@@ -29,6 +29,16 @@
     create_home: false
   tags: [observability]
 
+- name: Make the shared /etc/winter parent traversable by all winter service accounts
+  # Multiple service accounts share /etc/winter (winter-server, winter-monitor, ...).
+  # If a sibling role created it 0750 for another account, this account cannot reach its own config dir.
+  # Keep ownership as-is; only relax the traversal bit. Config files stay 0640 and owner-restricted.
+  ansible.builtin.file:
+    path: "{{ observability.config_dir | dirname }}"
+    state: directory
+    mode: "0755"
+  tags: [observability]
+
 - name: Create data / config / rules / staging directories
   ansible.builtin.file:
     path: "{{ item }}"

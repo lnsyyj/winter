@@ -30,7 +30,10 @@
     group: "{{ item.owner | default('root') }}"
     mode: "{{ item.mode }}"
   loop:
-    - { path: "{{ winter_server.config_dir }}", mode: "0750", owner: "{{ server_run_user }}" }
+    # /etc/winter is a shared parent for all winter service accounts (server, monitor, ...).
+    # Keep it world-traversable so siblings can reach their own 0750 config subdirectories;
+    # secrets remain protected by the 0640 files inside those subdirectories.
+    - { path: "{{ winter_server.config_dir }}", mode: "0755", owner: "{{ server_run_user }}" }
     - { path: /var/tmp/winter-server, mode: "0755" }
   tags: [server]
 
