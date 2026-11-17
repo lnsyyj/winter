@@ -114,6 +114,6 @@
   ansible.builtin.debug:
     msg:
       - "Server: {{ winter_server.listen_addr }}:{{ winter_server.port }} (systemd: winter-server)"
-      - "Nginx reverse proxy /api/ → {{ nginx.api_upstream }}; confirm both ports match"
+      - "Nginx reverse proxy /api/ -> {{ nginx.api_upstream | default('not configured (server stage runs standalone)', true) }}; confirm both ports match"
       - "Migrations and the break-glass administrator are handled automatically at process startup"
   tags: [server]
