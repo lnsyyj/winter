@@ -62,13 +62,16 @@ platform:
     sessions_days: 7
 
 # Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the observability stack dominate)
+# All thresholds below are configurable: tune them to the target host and set strict_* switches to false
+# to downgrade a hard failure into a warning (useful for lab / small test machines).
 prechecks:
-  management_min_vcpus: 15
-  management_min_memory_mb: 24576        # 24G
-  management_min_root_free_gb: 350       # includes Harbor image storage and a separate audit DB; Harbor fills up first
+  # Management-plane minimum resources. Adjust to fit the deployment target.
+  management_min_vcpus: 15               # minimum CPU cores
+  management_min_memory_mb: 24576        # minimum RAM in MB (24G)
+  management_min_root_free_gb: 350       # minimum free root space in GB (Harbor image storage and audit DB dominate)
+  strict_resources: true                 # true: fail below thresholds; false: warn only and continue
   ceph_node_min_data_disks: 3
-  # Use false during M0: VMs commonly have a single disk, so warn without blocking; change to true for production delivery
-  strict_data_disks: false
+  strict_data_disks: false               # true: fail on too few OSD disks; false: warn only
   # Kernel parameters are set by bootstrap-servers; during the M0 manual phase, only report
   enforce_kernel: false
   max_clock_offset_seconds: 1.0

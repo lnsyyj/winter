@@ -12,7 +12,7 @@ Corresponds to installation/deployment manual phase C3 and test case TC-26. **Th
 | --- | --- | --- |
 | `tasks/main.yml` | Group validity (cannot be in both management and ceph_nodes) | Fail immediately, indicating which group the host should belong to |
 | `tasks/os.yml` | CentOS Stream 9, podman present | Fail and indicate the baseline is locked (ADR-11) |
-| `tasks/resources.yml` | Management plane 15C/24G/350G; managed node ≥3 data disks | Fail and provide actual values and the source of this project's estimates |
+| `tasks/resources.yml` | Management plane min vCPU / RAM / free root GB (all configurable); managed node ≥N data disks | Fail in strict mode, warn only in report-only mode; both thresholds and strictness are configurable |
 | `tasks/time.yml` | chronyd running, offset ≤1s | Fail; clock drift causes cephadm to fail immediately |
 | `tasks/kernel.yml` | overcommit_memory / max_map_count | Report only by default; fail when `enforce_kernel: true` |
 | `tasks/network.yml` | Default route, DNS resolution, SELinux status | Fail if no route (outbound connectivity impossible) |
@@ -36,8 +36,22 @@ Corresponds to installation/deployment manual phase C3 and test case TC-26. **Th
 
 All are under `prechecks:` in `deploy/group_vars/all.yml`, not hardcoded in this role. The role's `defaults/main.yml` only provides fallback values.
 
+Resource thresholds are fully tunable:
+
+| Variable | Default | Meaning |
+| --- | --- | --- |
+| `management_min_vcpus` | 15 | Minimum CPU cores on a management node |
+| `management_min_memory_mb` | 24576 | Minimum RAM in MB (24G) |
+| `management_min_root_free_gb` | 350 | Minimum free root space in GB |
+| `strict_resources` | true | `true` fails below thresholds; `false` warns and continues |
+| `ceph_node_min_data_disks` | 3 | Minimum OSD data disks per Ceph node |
+| `strict_data_disks` | false | `true` fails on too few disks; `false` warns and continues |
+
+For a small lab or test machine, either lower the `management_min_*` values or set `strict_resources: false` to downgrade the resource check to a warning.
+
 ## Known trade-offs
 
+- **Resource check defaults to strict mode**: A production host must meet the configured management-plane minimums. For a small lab VM, lower the `management_min_*` thresholds or set `strict_resources: false` to warn only.
 - **Data disk check defaults to report-only mode**: M0 VMs often have only one disk; strict validation would block the first successful run. For production delivery, set `strict_data_disks: true`.
 - **Kernel parameters are report-only by default**: They should be written by the `bootstrap-servers` phase, which is not implemented yet.
 - **Artifact reachability is disabled by default**: Before phase C1 brings up the repo, checking it would inevitably fail as a false positive.

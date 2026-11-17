@@ -5,6 +5,7 @@ prechecks:
   management_min_vcpus: 15
   management_min_memory_mb: 24576
   management_min_root_free_gb: 350
+  strict_resources: true
   ceph_node_min_data_disks: 3
   strict_data_disks: false
   enforce_kernel: false
