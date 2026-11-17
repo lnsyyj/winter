@@ -155,4 +155,7 @@ case " $* " in
     *) set -- "$@" -i "$ROOT/inventory/all-in-one" ;;
 esac
 
+# Run from the deploy directory so ansible.cfg (roles_path, default inventory) is honoured
+# even when the dispatcher is invoked from the repository root.
+cd "$ROOT"
 exec ansible-playbook "$PLAYBOOK" "$@"
