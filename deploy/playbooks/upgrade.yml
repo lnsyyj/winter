@@ -17,7 +17,7 @@
     - name: Confirm a target version was provided
       ansible.builtin.assert:
         that: upgrade.target_version is defined and upgrade.target_version | length > 0
-        fail_msg: "Set upgrade.target_version (e.g. -e '{\"upgrade\":{\"target_version\":\"v0.3.0\"}}') before upgrading"
+        fail_msg: "Set upgrade.target_version in group_vars/all.yml, or pass the full dict on the command line: -e '{\"upgrade\":{\"target_version\":\"v0.3.0\",\"require_checksums\":true}}' (a partial dict would drop require_checksums)"
         quiet: true
       tags: [upgrade]
 
