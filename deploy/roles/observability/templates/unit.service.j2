@@ -36,7 +36,7 @@ Environment=GF_PATHS_LOGS={{ observability.data_dir }}/grafana/log
 Environment=GF_PATHS_PROVISIONING={{ observability.config_dir }}/grafana/provisioning
 ExecStart={{ comp.install_dir }}/bin/grafana server --homepath={{ comp.install_dir }} --config={{ observability.config_dir }}/grafana.ini
 {% else %}
-ExecStart={{ observability.bin_dir }}/{{ comp.binary }} {{ effective_args }}{% if comp_key == 'vmalert' %}{% for notifier in monitoring_vmalert_notifiers | default([]) %} -notifier.url=http://{{ notifier }}:{{ monitoring_ports.alertmanager }}{% endfor %}{% endif %} {{ comp.listen_flag }}={{ bind_addr }}:{{ comp.port }}{% if ns.cluster_args %} {{ ns.cluster_args }}{% endif %}{% endif %}
+ExecStart={{ observability.bin_dir }}/{{ comp.binary }} {{ effective_args }}{% if comp_key == 'vmalert' %}{% for notifier in monitoring_vmalert_notifiers | default([]) %} -notifier.url=http://{{ notifier }}:{{ monitoring_ports.alertmanager }}{% endfor %}{% endif %} {{ comp.listen_flag }}={{ bind_addr }}:{{ comp.port }}{% if ns.cluster_args %} {{ ns.cluster_args }}{% endif %}{% endif %}{{ '\n' }}
 Restart=always
 RestartSec=5s
 LimitNOFILE=65535
