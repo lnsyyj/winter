@@ -7,7 +7,7 @@
   failed_when: false
   when: "'management' in group_names"
 
-- name: Precheck | Management plane ports free
+- name: Precheck | Management plane ports free (strict mode)
   ansible.builtin.assert:
     that:
       - "prechecks_ss.stdout is not search(':' ~ (item | string) ~ '\\s')"
@@ -15,7 +15,21 @@
       Port {{ item }} is already in use. Find the listener: ss -ltnp 'sport = :{{ item }}'.
       Common causes: an existing nginx/httpd, leftover instances from a previous platform version, or reuse by another service.
       The port must be free before deployment, otherwise startup fails and the error points to downstream components.
+      Set prechecks.strict_ports to false to warn only on an idempotent re-run.
     success_msg: "Port {{ item }} available"
     quiet: true
   loop: "{{ prechecks.required_free_ports }}"
-  when: "'management' in group_names"
+  when:
+    - "'management' in group_names"
+    - (prechecks_strict_ports | default(prechecks.strict_ports)) | bool
+
+- name: Precheck | Management plane ports free (report-only mode)
+  ansible.builtin.debug:
+    msg: >-
+      WARN port {{ item }} is in use (see: ss -ltnp 'sport = :{{ item }}').
+      Running in report-only mode (prechecks.strict_ports=false); a fresh deployment needs this port free.
+  loop: "{{ prechecks.required_free_ports }}"
+  when:
+    - "'management' in group_names"
+    - prechecks_ss.stdout is search(':' ~ (item | string) ~ '\\s')
+    - not ((prechecks_strict_ports | default(prechecks.strict_ports)) | bool)

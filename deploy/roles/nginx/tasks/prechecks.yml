@@ -33,13 +33,20 @@
   failed_when: false
 
 - name: Precheck Nginx | Web ports are free or already owned by nginx
+  # An idempotent re-run finds the ports held by the nginx (and winter.conf) deployed earlier.
+  # Treat nginx-held ports as acceptable; only a non-nginx listener is a real conflict.
   ansible.builtin.assert:
-    that: nginx_port_usage.results | rejectattr('stdout', 'equalto', '') | list | length == 0
+    that: >-
+      nginx_port_usage.results
+      | map(attribute='stdout')
+      | select('ne', '')
+      | reject('search', 'nginx')
+      | list | length == 0
     fail_msg: >-
-      A web port is occupied: {{ nginx_port_usage.results | map(attribute='stdout') | join(' | ') }}.
+      A web port is occupied by a non-nginx process: {{ nginx_port_usage.results | map(attribute='stdout') | join(' | ') }}.
       Stop the conflicting process or change nginx.http_port / nginx.https_port. The role never
       modifies another site's server block.
-    success_msg: "Nginx ports {{ nginx.http_port }} / {{ nginx.https_port }} are available"
+    success_msg: "Nginx ports {{ nginx.http_port }} / {{ nginx.https_port }} are free or already owned by nginx"
     quiet: true
 
 - name: Precheck Nginx | Parent directories for site data are writable

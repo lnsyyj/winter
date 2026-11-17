@@ -70,6 +70,7 @@ prechecks:
   management_min_memory_mb: 24576        # minimum RAM in MB (24G)
   management_min_root_free_gb: 350       # minimum free root space in GB (Harbor image storage and audit DB dominate)
   strict_resources: true                 # true: fail below thresholds; false: warn only and continue
+  strict_ports: true                     # true: fail if a required port is busy; false: warn only (idempotent re-runs)
   ceph_node_min_data_disks: 3
   strict_data_disks: false               # true: fail on too few OSD disks; false: warn only
   # Kernel parameters are set by bootstrap-servers; during the M0 manual phase, only report

@@ -16,7 +16,7 @@ Corresponds to installation/deployment manual phase C3 and test case TC-26. **Th
 | `tasks/time.yml` | chronyd running, offset ≤1s | Fail; clock drift causes cephadm to fail immediately |
 | `tasks/kernel.yml` | overcommit_memory / max_map_count | Report only by default; fail when `enforce_kernel: true` |
 | `tasks/network.yml` | Default route, DNS resolution, SELinux status | Fail if no route (outbound connectivity impossible) |
-| `tasks/ports.yml` | Ports 80/443 free on management node | Fail and provide a command to find the listener |
+| `tasks/ports.yml` | Required ports free on management node | Fail in strict mode; warn only when `strict_ports: false` (idempotent re-runs) |
 | `tasks/artifacts.yml` | Internal repo / Harbor reachable (disabled by default) | Fail and advise completing phase C1 first |
 
 ## What to check on failure
@@ -44,6 +44,7 @@ Resource thresholds are fully tunable:
 | `management_min_memory_mb` | 24576 | Minimum RAM in MB (24G) |
 | `management_min_root_free_gb` | 350 | Minimum free root space in GB |
 | `strict_resources` | true | `true` fails below thresholds; `false` warns and continues |
+| `strict_ports` | true | `true` fails if a required port is busy; `false` warns (idempotent re-runs) |
 | `ceph_node_min_data_disks` | 3 | Minimum OSD data disks per Ceph node |
 | `strict_data_disks` | false | `true` fails on too few disks; `false` warns and continues |
 
