@@ -9,6 +9,6 @@ local_repo:
   src: "{{ playbook_dir }}/../artifacts/repo"
   # Publish directory (Nginx root)
   root: "{{ platform.data_dir }}/www/repo"
-  listen_port: 8082
+  listen_port: "{{ repo_listen_port }}"
   # Subnet allowed to access (change to the actual internal subnet on site)
   allow_cidr: "192.168.101.0/24"

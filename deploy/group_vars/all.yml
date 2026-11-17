@@ -15,8 +15,7 @@ platform:
   # When the site has no internet access, all RPMs / wheels / binaries are fetched from here.
   # Derived from the first [repo_nodes] host so it follows the environment instead of a hardcoded site IP;
   # override platform.repo_base_url in a site-specific vars file if the repo is published elsewhere.
-  # Port must match local_repo.listen_port (role default: 8082).
-  repo_base_url: "http://{{ hostvars[groups['repo_nodes'][0]]['ansible_host'] | default(hostvars[groups['repo_nodes'][0]]['inventory_hostname']) }}:8082"
+  repo_base_url: "http://{{ hostvars[groups['repo_nodes'][0]]['ansible_host'] | default(hostvars[groups['repo_nodes'][0]]['inventory_hostname']) }}:{{ repo_listen_port }}"
 
   # Image registry (ADR-16): self-hosted Harbor, all images are pulled through it
   registry_host: ""
@@ -60,6 +59,10 @@ platform:
     tasks_days: 90
     audit_online_days: 180
     sessions_days: 7
+
+# Port used by the internal artifact repository Nginx site (roles/local_repo) and referenced by
+# reconfigure's port-uniqueness check. Single source of truth; adjust here if 8082 is unavailable.
+repo_listen_port: 8082
 
 # Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the observability stack dominate)
 # All thresholds below are configurable: tune them to the target host and set strict_* switches to false

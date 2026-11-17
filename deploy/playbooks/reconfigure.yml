@@ -34,8 +34,8 @@
         fail_msg: "Duplicate listening ports configured: {{ candidate_ports }}"
         quiet: true
       vars:
-        # The internal repo port is fixed by the local_repo role; uninstall.firewall.port records it.
-        repo_port: "{{ uninstall.firewall.port }}"
+        # The internal repo port is the single source of truth in group_vars/all.yml.
+        repo_port: "{{ repo_listen_port }}"
         candidate_ports: "{{ [platform.https_port, winter_server.port, pg_cluster.port, pg_cluster.rest_port, pg_cluster.haproxy.listen_port, repo_port] + monitoring_ports.values() | list }}"
       tags: [reconfigure]
 
