@@ -112,6 +112,34 @@
   failed_when: false
   tags: [server]
 
+# The Server port must be labeled http_port_t so that Nginx (and other confined clients)
+# can open outbound connections to it. Without this, SELinux denies connect() with EACCES
+# and every HA upstream request returns 502, even when the port is reachable at L3/L4.
+- name: Ensure semanage is available for SELinux port labeling
+  ansible.builtin.dnf:
+    name: policycoreutils-python-utils
+    state: present
+    disablerepo: "pgdg*"
+  tags: [server]
+
+- name: Label the Server port as http_port_t under SELinux
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if semanage port -l -t http_port_t | grep -qE '[[:space:]]{{ winter_server.port }}([[:space:]]|$)'; then
+      echo already-labeled
+    elif semanage port -l | grep -qE '[[:space:]]{{ winter_server.port }}([[:space:]]|$)'; then
+      semanage port -m -t http_port_t -p tcp {{ winter_server.port }}
+      echo relabeled
+    else
+      semanage port -a -t http_port_t -p tcp {{ winter_server.port }}
+      echo labeled
+    fi
+  args:
+    executable: /bin/bash
+  register: server_seport
+  changed_when: server_seport.stdout is not search('already-labeled')
+  tags: [server]
+
 - name: Wait for /healthz
   ansible.builtin.uri:
     url: "http://{{ winter_server.listen_addr }}:{{ winter_server.port }}/healthz"
