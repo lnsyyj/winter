@@ -99,6 +99,19 @@
     daemon_reload: true
   tags: [server]
 
+# In HA mode each Server replica binds to its own internal address and Nginx load-balances
+# across them on winter_server.port. That cross-node traffic is blocked unless the cluster
+# subnet is allowed through firewalld. Use the same rich-rule pattern as the HAProxy role so
+# the port is never exposed outside the management subnet.
+- name: Allow Server port through firewall on the cluster subnet
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ winter_server.port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --reload >/dev/null 2>&1
+    echo done
+  changed_when: false
+  failed_when: false
+  tags: [server]
+
 - name: Wait for /healthz
   ansible.builtin.uri:
     url: "http://{{ winter_server.listen_addr }}:{{ winter_server.port }}/healthz"
