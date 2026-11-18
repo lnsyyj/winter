@@ -23,6 +23,25 @@
   when: not nginx_bin.stat.exists
   tags: [nginx]
 
+# Reverse-proxy upstreams (Server / Grafana / Harbor replicas) live on other hosts in HA mode.
+# SELinux blocks nginx from opening outbound connections unless httpd_can_network_connect is on;
+# without it every proxied request fails with EACCES (502) even though L3/L4 is reachable.
+- name: Allow nginx to connect to reverse-proxy upstreams under SELinux
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if getsebool httpd_can_network_connect 2>/dev/null | grep -q ' on$'; then
+      echo already-on
+    else
+      setsebool -P httpd_can_network_connect on
+      echo enabled
+    fi
+  args:
+    executable: /bin/bash
+  register: nginx_netconnect
+  changed_when: nginx_netconnect.stdout is not search('already-on')
+  failed_when: false
+  tags: [nginx]
+
 - name: Create site directories
   ansible.builtin.file:
     path: "{{ item }}"
