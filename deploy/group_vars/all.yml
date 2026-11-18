@@ -369,11 +369,17 @@ server_ha:
   database_host: 127.0.0.1
   audit_database_host: 127.0.0.1
 
-# Harbor HA (ADR-16): multiple Harbor replicas share PostgreSQL, Redis and object storage.
-# External PostgreSQL reuses the platform PG HA cluster. External Redis and NFS storage are site
-# prerequisites — this framework never deploys a Redis or NFS server on its own.
+# Harbor (ADR-16).
+# mode: builtin  — MVP single node. Harbor's own bundled PostgreSQL, Redis and local data volume.
+#                 No external PG / Redis / NFS required. This is the default and matches the
+#                 ADR-16 MVP decision (Harbor's bundled PG or a standalone instance;
+#                 multi-replica + external dependencies are V1).
+# mode: external — V1 HA. Multiple replicas share an external PostgreSQL (the platform PG HA
+#                 entry point), an external Redis and an NFS share. All three are site
+#                 prerequisites; this framework never deploys a Redis or NFS server on its own.
 harbor:
   enabled: false
+  mode: builtin                           # builtin | external
   version: v2.11.0
   tarball: harbor-offline-installer-v2.11.0.tgz
   tarball_subdir: tarball
@@ -382,18 +388,20 @@ harbor:
   hostname: "{{ platform.registry_host }}"
   bind_addr: 127.0.0.1
   http_port: 80
+  # Local data volume used in builtin mode (bundled PG/Redis data lives here too).
+  local_volume: /var/lib/winter/harbor/data
   database:
-    host: ""                              # external PostgreSQL address, required
+    host: ""                              # external PostgreSQL address, required in external mode
     port: "{{ pg_cluster.haproxy.listen_port }}"
     name: registry
     user: harbor
   redis:
-    host: ""                              # external Redis address, required
+    host: ""                              # external Redis address, required in external mode
     port: 6379
     db: 0
   storage:
-    nfs_server: ""                        # NFS server address, required
-    nfs_path: ""                          # exported share path, required
+    nfs_server: ""                        # NFS server address, required in external mode
+    nfs_path: ""                          # exported share path, required in external mode
     mount_point: /var/lib/winter/harbor/shared
     options: "vers=4.1,rw"
   health_path: /api/v2.0/health

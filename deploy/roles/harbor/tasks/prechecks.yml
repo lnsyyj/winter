@@ -1,5 +1,6 @@
 ---
-# Read-only prechecks for Harbor replicas (shared PostgreSQL / Redis / NFS, docker-compose based).
+# Read-only prechecks for Harbor (docker-compose based).
+# ADR-16: builtin mode needs no external PG/Redis/NFS; external mode requires all three.
 - name: Precheck Harbor | Harbor is enabled
   ansible.builtin.assert:
     that: harbor.enabled | bool
@@ -7,31 +8,47 @@
     success_msg: "Harbor is enabled"
     quiet: true
 
-- name: Precheck Harbor | External dependencies are configured
+- name: Precheck Harbor | Mode is valid
+  ansible.builtin.assert:
+    that: (harbor.mode | default('builtin')) in ['builtin', 'external']
+    fail_msg: "harbor.mode must be 'builtin' (MVP single node) or 'external' (V1 HA)"
+    success_msg: "Harbor mode is {{ harbor.mode | default('builtin') }}"
+    quiet: true
+
+- name: Precheck Harbor | Common configuration is present
   ansible.builtin.assert:
     that:
       - harbor.hostname | default('') | length > 0
+      - harbor.http_port | int > 0
+    fail_msg: "Harbor requires a hostname (platform.registry_host) and a positive http_port."
+    success_msg: "Harbor common configuration is present"
+    quiet: true
+
+- name: Precheck Harbor | External dependencies are configured (external mode only)
+  ansible.builtin.assert:
+    that:
       - harbor.database.host | default('') | length > 0
       - harbor.redis.host | default('') | length > 0
       - harbor.storage.nfs_server | default('') | length > 0
       - harbor.storage.nfs_path | default('') | length > 0
-      - harbor.http_port | int > 0
     fail_msg: >-
-      Harbor HA requires an external PostgreSQL (harbor.database.host), Redis (harbor.redis.host),
-      NFS share (harbor.storage.nfs_server and nfs_path) and a hostname. This framework never
-      deploys a Redis or NFS server. Fill all of them in group_vars/all.yml.
+      harbor.mode=external requires an external PostgreSQL (harbor.database.host), Redis
+      (harbor.redis.host) and NFS share (harbor.storage.nfs_server / nfs_path). This framework
+      never deploys a Redis or NFS server. Either fill all of them in group_vars/all.yml or
+      switch to harbor.mode=builtin (MVP single node, no external dependencies).
     success_msg: "Harbor external dependency configuration is present"
+    when: (harbor.mode | default('builtin')) == 'external'
     quiet: true
 
 - name: Precheck Harbor | Credentials are present
   ansible.builtin.assert:
     that:
-      - vault_harbor_db_password | default('') | length > 0
-      - vault_harbor_redis_password | default('') | length > 0
       - vault_harbor_admin_password | default('') | length > 0
+      - (harbor.mode | default('builtin')) == 'builtin' or (vault_harbor_db_password | default('') | length > 0 and vault_harbor_redis_password | default('') | length > 0)
     fail_msg: >-
-      Missing Harbor credentials in deploy/passwords.yml: vault_harbor_db_password,
-      vault_harbor_redis_password and vault_harbor_admin_password must all be set.
+      vault_harbor_admin_password is always required. In external mode, vault_harbor_db_password
+      and vault_harbor_redis_password are required too (deploy/passwords.yml). Builtin mode uses
+      Harbor's bundled PG/Redis and only needs the admin password.
     success_msg: "Harbor credentials are present"
     quiet: true
 

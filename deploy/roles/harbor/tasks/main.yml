@@ -1,22 +1,34 @@
 ---
-# Harbor HA replica (ADR-16): fetch the offline installer from the internal repo, configure it
-# against external PostgreSQL / Redis / NFS, then start it with docker-compose.
+# Harbor (ADR-16): fetch the offline installer from the internal repo, render harbor.yml and start
+# it with docker-compose. Two modes:
+#   builtin  (MVP single node, default): bundled PostgreSQL/Redis, local data volume, no external
+#            dependencies. Only the admin password is required.
+#   external (V1 HA): shared external PostgreSQL, Redis and an NFS volume; all replicas share data.
 # Docker and docker-compose are site prerequisites; this role fails explicitly when they are absent.
 
-- name: Validate Harbor HA prerequisites
+- name: Validate Harbor prerequisites
   ansible.builtin.assert:
     that:
       - harbor.enabled | bool
       - harbor.hostname | default('') | length > 0
+      - (harbor.mode | default('builtin')) in ['builtin', 'external']
+      - vault_harbor_admin_password is defined and vault_harbor_admin_password | length > 0
+    fail_msg: "Harbor requires a hostname and vault_harbor_admin_password; mode must be builtin or external"
+    quiet: true
+  tags: [harbor]
+
+- name: Validate Harbor external-mode prerequisites
+  ansible.builtin.assert:
+    that:
       - harbor.database.host | default('') | length > 0
       - harbor.redis.host | default('') | length > 0
       - harbor.storage.nfs_server | default('') | length > 0
       - harbor.storage.nfs_path | default('') | length > 0
       - vault_harbor_db_password is defined and vault_harbor_db_password | length > 0
       - vault_harbor_redis_password is defined and vault_harbor_redis_password | length > 0
-      - vault_harbor_admin_password is defined and vault_harbor_admin_password | length > 0
-    fail_msg: "Harbor HA requires hostname, external DB/Redis addresses, an NFS share and the vault passwords"
+    fail_msg: "harbor.mode=external requires external DB/Redis/NFS addresses and their vault passwords; use builtin mode otherwise"
     quiet: true
+  when: (harbor.mode | default('builtin')) == 'external'
   tags: [harbor]
 
 - name: Check docker-compose is available
@@ -40,20 +52,38 @@
     mode: "0755"
   loop:
     - "{{ harbor.install_dir }}"
-    - "{{ harbor.storage.mount_point }}"
     - "{{ harbor_staging_dir }}"
   tags: [harbor]
 
-- name: Persist the NFS share in fstab
+# Builtin mode stores all data (including bundled PG/Redis) on a local volume.
+- name: Create the local data volume (builtin mode)
+  ansible.builtin.file:
+    path: "{{ harbor.local_volume | default(harbor.data_dir + '/data') }}"
+    state: directory
+    mode: "0755"
+  when: (harbor.mode | default('builtin')) == 'builtin'
+  tags: [harbor]
+
+# External mode: all replicas share an NFS-backed volume.
+- name: Create the NFS mount point (external mode)
+  ansible.builtin.file:
+    path: "{{ harbor.storage.mount_point }}"
+    state: directory
+    mode: "0755"
+  when: (harbor.mode | default('builtin')) == 'external'
+  tags: [harbor]
+
+- name: Persist the NFS share in fstab (external mode)
   ansible.builtin.lineinfile:
     path: /etc/fstab
     regexp: "^{{ harbor.storage.nfs_server }}:{{ harbor.storage.nfs_path }} "
     line: "{{ harbor.storage.nfs_server }}:{{ harbor.storage.nfs_path }} {{ harbor.storage.mount_point }} nfs {{ harbor.storage.options }} 0 0"
     state: present
     backup: true
+  when: (harbor.mode | default('builtin')) == 'external'
   tags: [harbor]
 
-- name: Mount the shared NFS storage
+- name: Mount the shared NFS storage (external mode)
   ansible.builtin.shell: |
     set -euo pipefail
     if ! findmnt -T "{{ harbor.storage.mount_point }}" >/dev/null 2>&1; then
@@ -68,6 +98,7 @@
     executable: /bin/bash
   register: harbor_mount
   changed_when: harbor_mount.stdout | trim == 'mounted'
+  when: (harbor.mode | default('builtin')) == 'external'
   tags: [harbor]
 
 - name: Fetch the Harbor offline installer from the internal repo
@@ -119,11 +150,20 @@
   delay: "{{ obs_health_delay | default(2) | int }}"
   tags: [harbor]
 
-- name: Print Harbor summary
+- name: Print Harbor summary (builtin mode)
+  ansible.builtin.debug:
+    msg:
+      - "Harbor {{ harbor.mode | default('builtin') }}: {{ harbor.hostname }} (bind {{ harbor.bind_addr }}:{{ harbor.http_port }})"
+      - "Bundled PostgreSQL/Redis with local data volume: {{ harbor.local_volume | default(harbor.data_dir + '/data') }}"
+  when: (harbor.mode | default('builtin')) == 'builtin'
+  tags: [harbor]
+
+- name: Print Harbor summary (external mode)
   ansible.builtin.debug:
     msg:
       - "Harbor replica: {{ harbor.hostname }} (bind {{ harbor.bind_addr }}:{{ harbor.http_port }})"
       - "Shared data: {{ harbor.storage.nfs_server }}:{{ harbor.storage.nfs_path }} on {{ harbor.storage.mount_point }}"
       - "External PostgreSQL: {{ harbor.database.host }}:{{ harbor.database.port }}/{{ harbor.database.name }}"
       - "External Redis: {{ harbor.redis.host }}:{{ harbor.redis.port }}"
+  when: (harbor.mode | default('builtin')) == 'external'
   tags: [harbor]
