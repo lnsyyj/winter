@@ -6,6 +6,9 @@
 # Usage: sh deploy/scripts/fetch-artifacts.sh
 #   GHPROXY=https://ghproxy.net   GitHub proxy; leave empty (GHPROXY=) for a direct GitHub connection
 #   SERVER_BIN=/path/to/binary    override the Server binary source (default server/bin/winter-server)
+#   FETCH_HARBOR=1                also fetch the Harbor offline installer (~629 MB). Opt-in because
+#                                 it exceeds GitHub's 100 MB single-file limit and is NOT committed
+#                                 to git (see .gitignore); stage it into the offline repo manually.
 #
 # Runs fastest on a machine with internet access and direct GitHub connectivity; set GHPROXY if the control machine needs a proxy.
 set -eu
@@ -21,6 +24,8 @@ VL_VERSION=v1.54.0
 AM_TAG=v0.35.0            # the release tag includes the v
 AM_VERSION=0.35.0         # asset filenames do not include the v (Prometheus' release convention differs from VM's)
 GF_VERSION=9.5.20
+HARBOR_VERSION=v2.11.0       # opt-in, large installer; not git-tracked
+FETCH_HARBOR=${FETCH_HARBOR:-0}
 GHPROXY=${GHPROXY-https://ghproxy.net}
 if [ -n "$GHPROXY" ]; then
     GH="$GHPROXY/https://github.com"
@@ -73,6 +78,16 @@ if [ ! -s "$TARBALL/$VMALERT_PKG" ]; then
     cp "$vmbin" "$TMP/vmalert/vmalert-prod"
     tar -czf "$TARBALL/$VMALERT_PKG" -C "$TMP/vmalert" vmalert-prod
     echo "vmalert repackaging complete: $VMALERT_PKG"
+fi
+
+# Harbor offline installer (ADR-16). ~629 MB exceeds GitHub's 100 MB single-file limit, so it is
+# NOT committed to git; fetch it explicitly with FETCH_HARBOR=1 on a packaging machine with internet
+# and stage it into the same offline repo. SHA256SUMS.txt still pins its checksum for transfer checks.
+HARBOR_PKG="harbor-offline-installer-$HARBOR_VERSION.tgz"
+if [ "$FETCH_HARBOR" = "1" ]; then
+    fetch "$GH/goharbor/harbor/releases/download/$HARBOR_VERSION/$HARBOR_PKG" "$TARBALL/$HARBOR_PKG"
+else
+    echo "Harbor installer not fetched (set FETCH_HARBOR=1). Skipping: $HARBOR_PKG"
 fi
 
 # Server single binary: only copy the cross-compiled artifact; never compile on site (ADR-14)

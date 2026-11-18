@@ -71,6 +71,11 @@ platform-bundle-*
 !deploy/artifacts/
 !deploy/artifacts/**
 
+# Large offline installers (>100 MB) cannot be stored in git (GitHub single-file limit).
+# Fetch them on a network-connected packaging machine with deploy/scripts/fetch-large-artifacts.sh
+# and stage them into the local artifact repo; SHA256SUMS.txt still pins their expected checksum.
+deploy/artifacts/repo/tarball/harbor-offline-installer-*.tgz
+
 # Go 构建产物（交付时只传编译好的单二进制，产物不入库）
 /server/bin/
 /server/winter-server
