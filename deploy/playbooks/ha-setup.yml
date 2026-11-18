@@ -103,6 +103,16 @@
         quiet: true
       tags: [always]
 
+    # The Nginx template selects `upstream winter_api` only when server_upstreams is set.
+    # Compute it here (before the nginx role runs) so the reverse proxy targets the Server
+    # replicas instead of falling back to 127.0.0.1:8081, which is wrong in HA mode where
+    # each Server replica binds to its own internal address.
+    - name: Compute Server and Harbor upstream addresses for the Nginx site
+      ansible.builtin.set_fact:
+        server_upstreams: "{{ groups['server_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        harbor_upstreams: "{{ groups['harbor_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+      tags: [always]
+
   roles:
     - role: realserver
       when: ha.lvs.enabled | bool
