@@ -37,15 +37,18 @@ postgresql_defaults:
 
   # Offline install: fetch the following RPMs from the internal repo (roles/local_repo), versions pinned to avoid on-site drift
   rpm_subdir: rpm/pgdg17
-  # No contrib: contrib depends on libperl → perl-libs → a whole chain of perl packages,
-  # and HA deployments do not use contrib extensions (pg_stat_statements etc.). Add separately if needed.
+  # contrib is required: the Server migration creates the pgcrypto extension (0001_business.sql /
+  # 0001_audit.sql) on both single-node and HA databases. Without it a clean HA cluster fails
+  # to start the Server with 'extension pgcrypto is not available'.
   rpm_packages:
     - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
-  # Extra dependencies (target machine may lack them). Currently empty: removing contrib leaves no perl dependency
+    - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
+  # contrib links against libperl.so.5.32, provided by perl-libs in the local base repo.
   rpm_deps_subdir: rpm/base
-  rpm_deps: []
+  rpm_deps:
+    - perl-libs-5.32.1-484.el9.x86_64.rpm
   # Local staging directory
   rpm_stage_dir: /var/tmp/winter-pg17
 
