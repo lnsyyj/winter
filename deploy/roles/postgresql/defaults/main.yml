@@ -45,10 +45,12 @@ postgresql_defaults:
     - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
     - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
-  # contrib links against libperl.so.5.32, provided by perl-libs in the local base repo.
+  # contrib links against libperl.so.5.32, which the base OS already provides via perl-libs.
+  # Do NOT pin a perl-libs RPM here: the OS perl package requires an exact perl-libs version
+  # (e.g. 483), and installing a different one from the repo (e.g. 484) causes a dnf conflict.
+  # The local repo still carries perl-libs as a fallback for minimal hosts that lack it.
   rpm_deps_subdir: rpm/base
-  rpm_deps:
-    - perl-libs-5.32.1-484.el9.x86_64.rpm
+  rpm_deps: []
   # Local staging directory
   rpm_stage_dir: /var/tmp/winter-pg17
 
