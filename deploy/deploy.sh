@@ -27,6 +27,7 @@ Stages:
   pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
   pg-scale-out         Add replica nodes to the PG HA cluster (odd final etcd count)
   pg-scale-in          Remove replica nodes from the PG HA cluster (data preserved by default)
+  pg-migrate           Migrate single-node PostgreSQL data into the HA cluster (stop-the-world, ADR-40)
   monitor-scale-out    Add monitor nodes (Alertmanager HA, Grafana replicas, vmalert notifiers)
   monitor-scale-in     Remove monitor nodes from all references, then tear them down (data preserved)
   ha-setup             Deploy multi-replica Server/Harbor behind Nginx + Keepalived VIP
@@ -104,6 +105,9 @@ case "$STAGE" in
         ;;
     pg-scale-in)
         PLAYBOOK="$ROOT/playbooks/pg-scale-in.yml"
+        ;;
+    pg-migrate)
+        PLAYBOOK="$ROOT/playbooks/pg-migrate.yml"
         ;;
     monitor-scale-out)
         PLAYBOOK="$ROOT/playbooks/monitor-scale-out.yml"

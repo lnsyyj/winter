@@ -445,3 +445,30 @@ dns:
   manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
   manage_systemd_resolved: true         # disable the systemd-resolved stub listener to free the DNS port
   check_interval: 60                   # local resolution check retry window (seconds)
+
+# Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
+# instance (postgresql.port); the target is the HA entry point (pg_cluster.haproxy.listen_port).
+# Both use the same database / role names, so only one database is moved.
+pg_migrate:
+  source_port: "{{ postgresql.port | default(5432) }}"
+  target_port: "{{ pg_cluster.haproxy.listen_port }}"
+  database: "{{ postgresql.db_name | default('winter') }}"
+  role: "{{ postgresql.db_user | default('winter') }}"
+  # Marker written on the HA primary after a verified migration; makes the stage idempotent.
+  marker_file: /etc/winter/pg-migrated
+  # Staging area for the dump on the control host (deleted after a successful verified restore).
+  dump_dir: /var/tmp/winter-pg-migrate
+  # Per-table row-count comparison; checksums add a full-row hash for the critical tables.
+  verify_checksums: true
+  # Critical tables additionally verified by content hash (business + audit chain).
+  critical_tables:
+    - users
+    - refresh_tokens
+    - regions
+    - azs
+    - clusters
+    - tasks
+    - audit_intents
+    - audit_results
+  # Server services stopped during the maintenance window (no writes to the source).
+  server_service: winter-server
