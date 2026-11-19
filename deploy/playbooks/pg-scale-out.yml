@@ -22,9 +22,13 @@
 
   vars_files:
     - ../group_vars/all.yml
-    # etcdctl path lives in the etcd role defaults; include_role loads them too late for the
-    # member add / promote tasks below, so expose them at play scope explicitly.
+    # include_role only loads a role's defaults on hosts where it runs, and too late for tasks
+    # that reference those vars. Expose every PG-cluster role default at play scope so the
+    # member add / promote / HAProxy tasks can resolve etcd_role, patroni and postgresql on all hosts.
     - ../roles/etcd/defaults/main.yml
+    - ../roles/postgresql/defaults/main.yml
+    - ../roles/patroni/defaults/main.yml
+    - ../roles/haproxy/defaults/main.yml
 
   pre_tasks:
     - name: Load deployment passwords
