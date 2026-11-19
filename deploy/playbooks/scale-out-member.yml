@@ -42,17 +42,26 @@
     pg_etcd_add_result: "{{ (pg_use_learner | bool) | ternary(pg_etcd_add, pg_etcd_add_voting | default({})) }}"
   tags: [always]
 
-- name: Configure the joining node with the member list returned by etcd
+# Parse the member add output without regex backreferences: a Jinja/YAML backslash sequence was
+# rendered literally as "\1" into etcd.service.j2 (etcd then failed with "URL scheme must be http").
+# Split on '=' / whitespace and strip quotes instead.
+# run_once register results are shared with every host, so parse on all hosts: the joining node
+# needs the cluster string and the promote task (delegated to an existing member) needs the member id.
+- name: Extract the etcdctl member add fields on every host
+  ansible.builtin.set_fact:
+    pg_etcd_cluster_line: >-
+      {{ pg_etcd_add_result.stdout_lines | select('search', '^ETCD_INITIAL_CLUSTER=') | first | default('') }}
+    pg_etcd_member_line: >-
+      {{ pg_etcd_add_result.stdout_lines | select('search', '^Member .* added') | first | default('') }}
+    # "ETCD_INITIAL_CLUSTER=ctl=http://...,node-b=http://..." -> value after first '=', minus quotes
+    etcd_initial_cluster: "{{ (pg_etcd_add_result.stdout_lines | select('search', '^ETCD_INITIAL_CLUSTER=') | first | default('')).split('=', 1)[1] | trim | trim('\"') }}"
+    # "Member <id> added to cluster ..." -> second whitespace token
+    pg_join_member_id: "{{ (pg_etcd_add_result.stdout_lines | select('search', '^Member .* added') | first | default('')).split()[1] }}"
+  tags: [always]
+
+- name: Mark this node as joining with the etcd-provided member list
   ansible.builtin.set_fact:
     etcd_joining: true
-    etcd_initial_cluster: >-
-      {{ pg_etcd_add_result.stdout_lines
-         | select('search', '^ETCD_INITIAL_CLUSTER=') | first
-         | regex_replace('^ETCD_INITIAL_CLUSTER="?(.*?)"?$', '\\1') }}
-    pg_join_member_id: >-
-      {{ pg_etcd_add_result.stdout_lines
-         | select('search', '^Member [0-9a-f]+ added') | first
-         | regex_replace('^Member ([0-9a-f]+) added.*$', '\\1') }}
   when: inventory_hostname == pg_join_node
   tags: [always]
 
