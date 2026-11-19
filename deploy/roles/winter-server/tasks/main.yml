@@ -14,15 +14,33 @@
     quiet: true
   tags: [server]
 
-# Single-node MVP deploys PostgreSQL as a local system instance on postgresql.port (5432) with no
-# HAProxy. HA deployments (pg-ha / ha-setup) put PG behind HAProxy on pg_cluster.haproxy.listen_port
-# (5434). Derive the endpoint from topology so a clean single-node deploy connects to the DB that
-# actually exists; server_ha.database_host is an explicit override for HA replicas.
+# Two possible DB backends:
+#   * MVP single node: system PostgreSQL on postgresql.port (5432), no HAProxy.
+#   * HA (pg-ha / ha-setup / single-node HA bootstrap): Patroni behind HAProxy on
+#     pg_cluster.haproxy.listen_port (5434).
+# Node count is NOT a reliable signal — a single-node HA bootstrap has one node but uses HAProxy.
+# Detect the deployed HAProxy entry point on this host instead, and allow an explicit override
+# (server_ha.database_endpoint: direct|haproxy) for operators who want to force one.
+- name: Detect whether the HAProxy PG entry point is deployed on this host
+  ansible.builtin.stat:
+    path: /etc/haproxy/haproxy.cfg
+  register: server_haproxy_cfg
+  tags: [server]
+
 - name: Derive the database endpoint for this Server
   ansible.builtin.set_fact:
-    server_db_host: "{{ server_ha.database_host if ((groups['server_nodes'] | default([]) | length) > 1 or (groups['management'] | default([]) | length) > 1) else '127.0.0.1' }}"
-    server_db_port: "{{ pg_cluster.haproxy.listen_port if ((groups['server_nodes'] | default([]) | length) > 1 or (groups['management'] | default([]) | length) > 1) else (postgresql_overrides.port | default(postgresql.port | default(5432))) }}"
-    server_audit_db_host: "{{ server_ha.audit_database_host if ((groups['server_nodes'] | default([]) | length) > 1 or (groups['management'] | default([]) | length) > 1) else '127.0.0.1' }}"
+    # explicit override wins; otherwise HAProxy config presence decides; multi-node always uses HA
+    server_use_haproxy: >-
+      {{ (server_ha.database_endpoint | default('auto') == 'haproxy') or
+         (server_ha.database_endpoint | default('auto') == 'auto' and
+          (server_haproxy_cfg.stat.exists or (groups['management'] | default([]) | length) > 1)) }}
+    server_db_host: >-
+      {{ (server_ha.database_host if (server_use_haproxy | bool) else '127.0.0.1') }}
+    server_db_port: >-
+      {{ (pg_cluster.haproxy.listen_port if (server_use_haproxy | bool)
+          else (postgresql_overrides.port | default(postgresql.port | default(5432))) ) }}
+    server_audit_db_host: >-
+      {{ (server_ha.audit_database_host if (server_use_haproxy | bool) else '127.0.0.1') }}
   tags: [server]
 
 - name: Create service account

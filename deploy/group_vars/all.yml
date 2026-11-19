@@ -370,6 +370,9 @@ ha:
 # each replica's internal address. database_host must point at the PG HA access point (HAProxy/VIP)
 # once replicas are spread across nodes.
 server_ha:
+  # DB endpoint mode: auto (detect HAProxy config on host, fall back to node count) | direct (local
+  # 5432 system PG) | haproxy (server_ha.database_host:5434). Most deployments leave this on auto.
+  database_endpoint: auto
   database_host: 127.0.0.1
   audit_database_host: 127.0.0.1
 
