@@ -25,12 +25,19 @@
       no_log: true
       tags: [always]
 
+    # A single-member etcd + single Patroni is a valid bootstrap state for the 1 -> 3 growth path,
+    # but has no fault tolerance. Require an explicit opt-in so production never deploys it by
+    # accident; the normal floor remains 3 nodes and an odd count.
     - name: Cluster membership must be odd (etcd requires a quorum)
       ansible.builtin.assert:
         that:
           - groups['management'] | length % 2 == 1
-          - groups['management'] | length >= 3
-        fail_msg: "etcd requires at least 3 nodes and an odd count; currently {{ groups['management'] | length }}"
+          - (groups['management'] | length >= 3) or
+            (pg_cluster.allow_single_node_bootstrap | default(false) | bool and groups['management'] | length == 1)
+        fail_msg: >-
+          etcd requires an odd count and at least 3 nodes; currently {{ groups['management'] | length }}.
+          To bootstrap a single-node HA cluster for a later 1 -> 3 growth, set
+          pg_cluster.allow_single_node_bootstrap=true explicitly (no fault tolerance in that state).
         quiet: true
       run_once: true
       tags: [always]
