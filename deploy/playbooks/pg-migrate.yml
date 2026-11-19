@@ -329,6 +329,16 @@
       tags: [verify]
 
     # ---------------------------------------------------------------- switch traffic
+    - name: "[switch] Point the Server DB URLs at the HA entry point"
+      # Deterministic, not detection-based: after a verified migration the Server MUST use the HA
+      # port. Regex targets only the :port/ segment, preserving password and db name.
+      ansible.builtin.replace:
+        path: "{{ winter_server.env_file }}"
+        regexp: '(@[^:@/]+:)[0-9]+(/[^ ]*)'
+        replace: '\g<1>{{ pg_migrate.target_port }}\g<2>'
+      when: inventory_hostname == pg_migrate_host
+      tags: [switch, always]
+
     - name: "[switch] Write migration marker on verified success"
       ansible.builtin.file:
         path: "{{ pg_migrate.marker_file }}"
@@ -340,7 +350,7 @@
     - name: "[switch] Restart the Server against the HA entry point"
       ansible.builtin.systemd:
         name: "{{ pg_migrate.server_service }}"
-        state: started
+        state: restarted
       when: inventory_hostname == pg_migrate_host
       tags: [switch, always]
 

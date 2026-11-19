@@ -21,10 +21,16 @@
 # Node count is NOT a reliable signal — a single-node HA bootstrap has one node but uses HAProxy.
 # Detect the deployed HAProxy entry point on this host instead, and allow an explicit override
 # (server_ha.database_endpoint: direct|haproxy) for operators who want to force one.
-- name: Detect whether the HAProxy PG entry point is deployed on this host
-  ansible.builtin.stat:
-    path: /etc/haproxy/haproxy.cfg
-  register: server_haproxy_cfg
+# Detect by SERVICE STATE, not config-file presence: a stale haproxy.cfg from a previous HA run
+# would otherwise make a fresh single-node deploy connect to a 5434 that is not running yet.
+- name: Detect whether the HAProxy PG entry point is active on this host
+  ansible.builtin.shell: |
+    systemctl is-active haproxy 2>/dev/null | grep -q '^active$'
+  args:
+    executable: /bin/bash
+  register: server_haproxy_active
+  changed_when: false
+  failed_when: false
   tags: [server]
 
 # Split into two set_fact tasks: keys within a single set_fact are evaluated together, so a later
@@ -35,7 +41,7 @@
     server_use_haproxy: >-
       {{ (server_ha.database_endpoint | default('auto') == 'haproxy') or
          (server_ha.database_endpoint | default('auto') == 'auto' and
-          (server_haproxy_cfg.stat.exists or (groups['management'] | default([]) | length) > 1)) }}
+          (server_haproxy_active.rc == 0 or (groups['management'] | default([]) | length) > 1)) }}
   tags: [server]
 
 - name: Derive the database endpoint for this Server
