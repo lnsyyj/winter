@@ -8,6 +8,24 @@
 # only 1 member is started, wedging the cluster. Learners must be promoted one at a time and only
 # after their raft log has caught up.
 
+# Idempotency: a retry may find the node already registered (e.g. a previous run added it as a
+# learner then failed before promote). Skip member add in that case and reconstruct the membership
+# facts from the cluster instead.
+- name: Check whether {{ pg_join_node }} is already an etcd member
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ etcd_role.bin_dir }}/etcdctl \
+      --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
+      member list 2>/dev/null | grep -q '{{ pg_join_node }}'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  run_once: true
+  register: pg_member_exists
+  changed_when: false
+  failed_when: false
+  tags: [etcd, scale-out]
+
 - name: Add {{ pg_join_node }} to etcd (learner) and capture its cluster membership
   ansible.builtin.command: >-
     {{ etcd_role.bin_dir }}/etcdctl
@@ -19,7 +37,7 @@
   run_once: true
   register: pg_etcd_add
   changed_when: true
-  when: pg_use_learner | bool
+  when: (pg_use_learner | bool) and pg_member_exists.rc != 0
   tags: [etcd, scale-out]
 
 - name: Add {{ pg_join_node }} to etcd (voting member)
@@ -32,8 +50,19 @@
   run_once: true
   register: pg_etcd_add_voting
   changed_when: true
-  when: not (pg_use_learner | bool)
+  when: (not (pg_use_learner | bool)) and pg_member_exists.rc != 0
   tags: [etcd, scale-out]
+
+- name: Refuse to re-add an already registered member without its add output
+  ansible.builtin.assert:
+    that: pg_member_exists.rc != 0
+    fail_msg: >-
+      {{ pg_join_node }} is already an etcd member. Remove the stale member (etcdctl member remove)
+      and wipe its data dir before re-running pg-scale-out; the join facts cannot be reconstructed
+      from an existing member.
+    quiet: true
+  run_once: true
+  tags: [always]
 
 # run_once register results are shared with every host; compute the local fact on each host so the
 # joining node can read the membership string returned by etcdctl.

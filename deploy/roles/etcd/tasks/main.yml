@@ -92,18 +92,23 @@
   failed_when: etcd_health.rc != 0
   tags: [etcd]
 
+# Query a voting member's endpoint: a learner rejects etcdctl RPCs, so using ansible_host fails
+# during a learner-based scale-out. This task is diagnostic only, so never fail the whole run.
 - name: List members
   ansible.builtin.shell: |
     set -o pipefail
-    {{ etcd_role.bin_dir }}/etcdctl --endpoints=http://{{ ansible_host }}:{{ pg_cluster.etcd.client_port }} member list -w table
+    {{ etcd_role.bin_dir }}/etcdctl \
+      --endpoints=http://{{ pg_existing_endpoint | default(ansible_host) }}:{{ pg_cluster.etcd.client_port }} \
+      member list -w table
   args:
     executable: /bin/bash
   register: etcd_members
   changed_when: false
+  failed_when: false
   tags: [etcd]
 
 - name: Show members
   ansible.builtin.debug:
-    msg: "{{ etcd_members.stdout_lines }}"
+    msg: "{{ etcd_members.stdout_lines | default([]) }}"
   run_once: true
   tags: [etcd]
