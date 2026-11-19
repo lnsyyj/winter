@@ -39,7 +39,7 @@
 # joining node can read the membership string returned by etcdctl.
 - name: Resolve the etcd add result for this node
   ansible.builtin.set_fact:
-    pg_etcd_add_result: "{{ (pg_use_learner | bool) | ternary(pg_etcd_add, pg_etcd_add_voting) }}"
+    pg_etcd_add_result: "{{ (pg_use_learner | bool) | ternary(pg_etcd_add, pg_etcd_add_voting | default({})) }}"
   tags: [always]
 
 - name: Configure the joining node with the member list returned by etcd
@@ -66,8 +66,8 @@
   ansible.builtin.include_role:
     name: etcd
   vars:
-    # Only the existing members plus this one are expected to be healthy at this point.
-    pg_healthy_target: "{{ (pg_existing_members | int) + 1 }}"
+    # Existing members plus this iteration's join (pg_join_index is 0-based) are healthy now.
+    pg_healthy_target: "{{ (pg_existing_members | int) + (pg_join_index | int) + 1 }}"
   when: inventory_hostname == pg_join_node
   tags: [etcd]
 
