@@ -334,15 +334,28 @@
       tags: [verify]
 
     # ---------------------------------------------------------------- switch traffic
-    - name: "[switch] Point the Server DB URLs at the HA entry point"
-      # Deterministic, not detection-based: after a verified migration the Server MUST use the HA
-      # port. Regex targets only the :port/ segment, preserving password and db name.
-      ansible.builtin.replace:
+    # Deterministic, not detection-based: after a verified migration BOTH URLs (business and
+    # audit) must use the HA port. Reconstruct each line fully rather than a fragile in-line regex:
+    # the previous port-only replace silently updated only DATABASE_URL.
+    - name: "[switch] Point the business DB URL at the HA entry point"
+      ansible.builtin.lineinfile:
         path: "{{ winter_server.env_file }}"
-        regexp: '(@[^:@/]+:)[0-9]+(/[^ ]*)'
-        replace: '\g<1>{{ pg_migrate.target_port }}\g<2>'
+        regexp: '^DATABASE_URL='
+        line: "DATABASE_URL=postgres://{{ postgresql.db_user | default('winter') }}:{{ vault_pg_password }}@127.0.0.1:{{ pg_migrate.target_port }}/{{ pg_migrate.database }}?sslmode=disable"
+        mode: "0640"
       when: inventory_hostname == pg_migrate_host
       tags: [switch, always]
+      no_log: true
+
+    - name: "[switch] Point the audit DB URL at the HA entry point"
+      ansible.builtin.lineinfile:
+        path: "{{ winter_server.env_file }}"
+        regexp: '^AUDIT_DATABASE_URL='
+        line: "AUDIT_DATABASE_URL=postgres://{{ postgresql.db_user | default('winter') }}:{{ vault_pg_password }}@127.0.0.1:{{ pg_migrate.target_port }}/{{ pg_migrate.database }}?sslmode=disable"
+        mode: "0640"
+      when: inventory_hostname == pg_migrate_host
+      tags: [switch, always]
+      no_log: true
 
     - name: "[switch] Write migration marker on verified success"
       ansible.builtin.file:
@@ -361,7 +374,7 @@
 
     - name: "[switch] Wait for Server health via the HA-backed connection"
       ansible.builtin.uri:
-        url: "http://{{ ansible_host }}:{{ winter_server.port }}/healthz"
+        url: "http://{{ winter_server.listen_addr | default('127.0.0.1') }}:{{ winter_server.port }}/healthz"
         status_code: 200
       register: pm_health
       until: pm_health.status is defined and pm_health.status == 200
