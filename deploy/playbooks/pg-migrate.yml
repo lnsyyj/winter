@@ -49,6 +49,44 @@
       run_once: true
       tags: [always]
 
+    # pg-ha's Patroni role stops the system instance (5432) but preserves its data directory.
+    # The two instances use different ports and data dirs, so start 5432 temporarily; it coexists
+    # with Patroni on 5433. This is a reversible service start (no data mutation) and is needed
+    # for the dump AND for the read-only verification on idempotent re-runs.
+    - name: "[source] Detect the installed system PostgreSQL service name"
+      ansible.builtin.shell: |
+        set -o pipefail
+        systemctl list-unit-files --type=service --no-legend 'postgresql-*.service' 2>/dev/null \
+          | awk '{print $1}' | head -1
+      args:
+        executable: /bin/bash
+      register: pm_source_service
+      changed_when: false
+      when: inventory_hostname == pg_migrate_host
+      tags: [always]
+
+    - name: "[source] Ensure the source system PostgreSQL is running"
+      ansible.builtin.systemd:
+        name: "{{ pm_source_service.stdout | trim }}"
+        state: started
+      when: inventory_hostname == pg_migrate_host and pm_source_service.stdout | trim | length > 0
+      tags: [always]
+
+    - name: "[source] Wait for the source instance to accept connections"
+      ansible.builtin.shell: |
+        set -o pipefail
+        for i in $(seq 1 30); do
+          sudo -u postgres psql -p {{ pg_migrate.source_port }} -tAc 'select 1' 2>/dev/null | grep -q 1 && exit 0
+          sleep 1
+        done
+        exit 1
+      args:
+        executable: /bin/bash
+      register: pm_source_ready
+      changed_when: false
+      when: inventory_hostname == pg_migrate_host
+      tags: [always]
+
   tasks:
     # ---------------------------------------------------------------- prechecks (read only)
     - name: "[precheck] Check source instance is reachable"
