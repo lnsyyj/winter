@@ -211,10 +211,14 @@
       tags: [migrate, always]
 
     # ---------------------------------------------------------------- dump + restore
-    - name: "[dump] Create staging directory (mode 0700)"
+    # pg_dump runs as the postgres OS user (peer auth), so the staging dir must be writable by it.
+    # Keep it 0700 and owned by postgres so the dump is not readable by other local users.
+    - name: "[dump] Create staging directory owned by postgres (mode 0700)"
       ansible.builtin.file:
         path: "{{ pg_migrate.dump_dir }}"
         state: directory
+        owner: postgres
+        group: postgres
         mode: "0700"
       when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
       tags: [migrate]
