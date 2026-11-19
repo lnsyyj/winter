@@ -104,7 +104,7 @@
     - name: "[precheck] Check source database exists and is non-empty"
       ansible.builtin.shell: |
         set -o pipefail
-        sudo -u postgres psql -p {{ pg_migrate.source_port }} -tAc \
+        sudo -u postgres psql -p {{ pg_migrate.source_port }} -d {{ pg_migrate.database }} -tAc \
           "select count(*) from pg_tables where schemaname='public'" 2>/dev/null
       args:
         executable: /bin/bash
@@ -114,9 +114,10 @@
       when: inventory_hostname == pg_migrate_host
       tags: [precheck, always]
 
+    # Patroni REST binds to the internal address (ansible_host), not 127.0.0.1.
     - name: "[precheck] Check HAProxy entry and Patroni primary on target"
       ansible.builtin.uri:
-        url: "http://127.0.0.1:{{ pg_cluster.rest_port }}/primary"
+        url: "http://{{ ansible_host }}:{{ pg_cluster.rest_port }}/primary"
         status_code: 200
       register: pm_primary
       changed_when: false
