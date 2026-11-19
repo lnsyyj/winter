@@ -6,6 +6,12 @@
 # quantity that keeps that final count odd: 1 -> 3 (from an opted-in single-node HA bootstrap),
 # 3 -> 5, and so on. At least one existing member must remain to run etcdctl member add.
 #
+# etcd membership is changed SEQUENTIALLY, one node at a time. Two regimes:
+#   * >= 3 existing members: a voting member can be added and started safely (quorum stays >= 3).
+#   * exactly 1 existing member: adding a voting member would drop quorum (1 -> 2 needs both up),
+#     so the new node joins as a non-voting learner, starts, then is promoted before the next one.
+#   * exactly 2 existing members: rejected — an even-sized cluster is not a supported steady state.
+#
 # Usage:
 #   ./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'
 
@@ -25,9 +31,8 @@
       no_log: true
       tags: [always]
 
-    # Scale targets are already members of [management] (ADR-17: topology is expressed by inventory
-    # groups), so the final etcd member count is groups['management'] | length — NOT management + nodes.
-    # The old expression double-counted the targets and could accept an even final member count.
+    # Scale targets are already members of [management], so the final etcd member count is
+    # groups['management'] | length — NOT management + nodes (the old expression double-counted).
     - name: Validate scale-out plan
       ansible.builtin.assert:
         that:
@@ -36,53 +41,38 @@
           - pg_scale.nodes | difference(groups['management']) | length == 0
           - (groups['management'] | length) % 2 == 1
           - (groups['management'] | difference(pg_scale.nodes) | length) >= 1
+          - (groups['management'] | difference(pg_scale.nodes) | length) != 2
         fail_msg: >-
           pg_scale.nodes must be unique hosts already in [management], at least one existing member
-          must remain to run etcdctl member add, and the final etcd member count must be odd.
+          must remain, the existing member count must be odd (1 or >=3), and the final count odd.
         quiet: true
       run_once: true
       tags: [always]
 
-    - name: Record the expected member count
+    - name: Record existing and expected member counts
       ansible.builtin.set_fact:
+        pg_existing_members: "{{ groups['management'] | difference(pg_scale.nodes) | length }}"
         pg_expected_members: "{{ groups['management'] | length }}"
+        pg_existing_endpoint: "{{ hostvars[groups['management'] | difference(pg_scale.nodes) | first]['ansible_host'] }}"
+        # Learner mode is required only when bootstrapping from a single-member cluster.
+        pg_use_learner: "{{ (groups['management'] | difference(pg_scale.nodes) | length) == 1 }}"
       tags: [always]
 
   tasks:
-    - name: Register new etcd members
-      ansible.builtin.command: >-
-        {{ etcd_role.bin_dir }}/etcdctl
-        --endpoints=http://{{ hostvars[groups['management'] | difference(pg_scale.nodes) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }}
-        member add {{ item }}
-        --peer-urls=http://{{ hostvars[item]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
+    # Add one etcd member at a time, start it, and (in learner mode) promote it before moving on.
+    # Serial is enforced by the loop with run_once; each iteration fully converges one node.
+    - name: Add and converge each new cluster member sequentially
+      ansible.builtin.include_tasks: scale-out-member.yml
       loop: "{{ pg_scale.nodes }}"
-      delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
-      run_once: true
-      register: pg_etcd_add
-      changed_when: true
-      tags: [etcd, scale-out]
+      loop_control:
+        loop_var: pg_join_node
+        label: "{{ pg_join_node }}"
+      tags: [etcd, patroni, scale-out]
 
-    - name: Configure joining nodes with the member list returned by etcd
-      ansible.builtin.set_fact:
-        etcd_joining: true
-        etcd_initial_cluster: >-
-          {{ (pg_etcd_add.results | selectattr('item', 'equalto', inventory_hostname) | first).stdout_lines
-             | select('search', '^ETCD_INITIAL_CLUSTER=') | first
-             | regex_replace('^ETCD_INITIAL_CLUSTER="?(.*?)"?$', '\\1') }}
-      when: inventory_hostname in pg_scale.nodes
-      tags: [etcd, scale-out]
-
-  roles:
-    - role: postgresql
-      when: inventory_hostname in pg_scale.nodes
-      tags: [postgresql, db]
-    - role: etcd
-      when: inventory_hostname in pg_scale.nodes
-      tags: [etcd]
-    - role: patroni
-      when: inventory_hostname in pg_scale.nodes
-      tags: [patroni]
-    - role: haproxy
+    # HAProxy backends reference all [management] members; converge it once after all joined.
+    - name: Configure the HAProxy entry point for the grown cluster
+      ansible.builtin.include_role:
+        name: haproxy
       tags: [haproxy]
 
   post_tasks:
@@ -98,6 +88,6 @@
       ansible.builtin.debug:
         msg:
           - "Added {{ pg_scale.nodes | join(', ') }}; etcd members: {{ pg_expected_members }}"
-          - "Remove the staged join facts after a successful rollout is not required; they are host facts for this run only"
+          - "Learner mode used: {{ pg_use_learner }} (single-member bootstrap path)"
       run_once: true
       tags: [always]

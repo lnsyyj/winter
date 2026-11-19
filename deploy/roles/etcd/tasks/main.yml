@@ -68,16 +68,20 @@
   failed_when: false
   tags: [etcd]
 
+# During incremental scale-out the cluster grows one member at a time, so the health target is the
+# count after this member joined (pg_healthy_target), not the final cluster size. Normal deploys
+# converge all members at once and fall back to the full [management] count.
 - name: Wait for cluster health (quorum ready)
   ansible.builtin.shell: |
     set -o pipefail
+    target="{{ pg_healthy_target | default(pg_expected_members | default(groups['management'] | length)) }}"
     for i in $(seq 1 60); do
       {{ etcd_role.bin_dir }}/etcdctl \
         --endpoints=http://{{ hostvars[groups['management'] | difference((pg_scale | default({})).removed_nodes | default([])) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }} \
-        endpoint health --cluster 2>/dev/null | grep -c "is healthy" | grep -q "{{ pg_expected_members | default(groups['management'] | length) }}" && exit 0
+        endpoint health --cluster 2>/dev/null | grep -c "is healthy" | grep -q "$target" && exit 0
       sleep 2
     done
-    echo "etcd cluster did not reach {{ pg_expected_members | default(groups['management'] | length) }} healthy members within 120s" >&2
+    echo "etcd cluster did not reach $target healthy members within 120s" >&2
     exit 1
   args:
     executable: /bin/bash
