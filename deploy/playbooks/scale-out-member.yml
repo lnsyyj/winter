@@ -107,16 +107,18 @@
   when: pg_use_learner | bool
   tags: [etcd, scale-out]
 
-- name: Wait for this node to become a healthy etcd member
+# Check membership state via `member list` (works for learners); `endpoint health --cluster` would
+# query the learner directly and fail with "rpc not supported for learner".
+- name: Wait for this node to be a started etcd member
   ansible.builtin.shell: |
     set -o pipefail
     for i in $(seq 1 60); do
       {{ etcd_role.bin_dir }}/etcdctl \
         --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
-        endpoint health --cluster 2>/dev/null | grep -q "{{ pg_join_node }} is healthy" && exit 0
+        member list 2>/dev/null | grep -q '{{ pg_join_node }}' && exit 0
       sleep 2
     done
-    echo "member {{ pg_join_node }} was not healthy within 120s" >&2
+    echo "member {{ pg_join_node }} did not join within 120s" >&2
     exit 1
   args:
     executable: /bin/bash
