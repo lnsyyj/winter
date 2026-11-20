@@ -37,7 +37,7 @@ management
 # System initialization runs on every host (management and managed nodes).
 [system-init:children]
 management
-ceph_nodes
+agent
 
 [agent]
 node01 ansible_host=10.0.0.21

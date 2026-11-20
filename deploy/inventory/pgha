@@ -48,7 +48,7 @@ management
 # System initialization runs on every host (management and managed nodes).
 [system-init:children]
 management
-ceph_nodes
+agent
 
 [agent]
 
