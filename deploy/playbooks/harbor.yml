@@ -40,7 +40,14 @@
       tags: [harbor]
 
   post_tasks:
-    - name: Summarize Harbor deployment
+    - name: Summarize Harbor deployment (builtin mode)
       ansible.builtin.debug:
-        msg: "Harbor: https://{{ harbor.hostname }}/ (external DB {{ harbor.database.host }}, NFS {{ harbor.storage.nfs_server }})"
+        msg: "Harbor builtin: {{ harbor.hostname }}:{{ harbor.http_port }} (bundled PostgreSQL/Redis, local volume {{ harbor.local_volume | default(harbor.data_dir + '/data') }})"
+      when: (harbor.mode | default('builtin')) == 'builtin'
+      tags: [always]
+
+    - name: Summarize Harbor deployment (external mode)
+      ansible.builtin.debug:
+        msg: "Harbor external: {{ harbor.hostname }}:{{ harbor.http_port }} (external DB {{ harbor.database.host }}, NFS {{ harbor.storage.nfs_server }})"
+      when: (harbor.mode | default('builtin')) == 'external'
       tags: [always]
