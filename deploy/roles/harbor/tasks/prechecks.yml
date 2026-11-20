@@ -37,8 +37,8 @@
       never deploys a Redis or NFS server. Either fill all of them in group_vars/all.yml or
       switch to harbor.mode=builtin (MVP single node, no external dependencies).
     success_msg: "Harbor external dependency configuration is present"
-    when: (harbor.mode | default('builtin')) == 'external'
     quiet: true
+  when: (harbor.mode | default('builtin')) == 'external'
 
 - name: Precheck Harbor | Credentials are present
   ansible.builtin.assert:
