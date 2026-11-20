@@ -53,7 +53,7 @@ with `SHA256SUMS.txt` for transfer verification. Note two points:
 This role is reused by the two monitoring scale stages. Both stages are idempotent and keep single-node
 behaviour unchanged.
 
-- `./deploy.sh observability-scale-out`: converge the stack on all `[monitor]` nodes, form an Alertmanager gossip
+- `./deploy.sh observability-scale-out`: converge the stack on all `[observability]` nodes, form an Alertmanager gossip
   cluster (`monitoring_scale.cluster_port`, default 9094), point every vmalert instance at all Alertmanager
   replicas, and publish all Grafana replicas to the Nginx upstream.
 - `./deploy.sh observability-scale-in`: rewire the remaining nodes first, then run `tasks/remove.yml` on the

@@ -15,7 +15,7 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
 | PG HA scale out | `./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
 | PG HA scale in | `./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
-| Monitoring scale out | `./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[monitor]`) |
+| Monitoring scale out | `./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[observability]`) |
 | Monitoring scale in | `./deploy.sh observability-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
 | HA converged deployment | `./deploy.sh app-ha -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
 | Scale out (install Agent) | `./deploy.sh agent-scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
@@ -38,15 +38,15 @@ actual value and how to fix it.
 
 | Component | Stage | Inventory group | Precheck tag | Checks |
 | --- | --- | --- | --- | --- |
-| System initialization | `./deploy.sh system-init -i inventory/multinode` | `[system_init_nodes]` | `precheck.system-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
-| Internal repo | `./deploy.sh local-repo -i inventory/multinode` | `[repo_nodes]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
-| PostgreSQL | `./deploy.sh postgresql -i inventory/multinode` | `[db_nodes]` | `precheck.postgresql` | OS, password, offline RPMs, database port |
-| Nginx | `./deploy.sh nginx -i inventory/multinode` | `[nginx_nodes]` | `precheck.nginx` | domain, upstream, web ports, parent paths |
-| Monitoring stack | `./deploy.sh observability -i inventory/multinode` | `[monitor]` | `precheck.monitoring` | component tarballs, ports, Grafana secret |
-| Server | `./deploy.sh winter-server -i inventory/multinode` | `[server_nodes]` | `precheck.server` | JWT secret, binary, DB address, API port |
-| Harbor | `./deploy.sh harbor -i inventory/multinode` | `[harbor_nodes]` | `precheck.harbor` | external PG/Redis/NFS, installer, docker |
-| Keepalived / LVS | `./deploy.sh keepalived -i inventory/multinode` | `[lb]` + `[nginx_nodes]` | `precheck.keepalived` | VIP, interface, VRRP secret, ip_vs, group split |
-| DNS (BIND 9) | `./deploy.sh dns -i inventory/multinode` | `[dns_nodes]` | `precheck.dns` | domain, VIPs, TSIG, RPMs, port 53 |
+| System initialization | `./deploy.sh system-init -i inventory/multinode` | `[system-init]` | `precheck.system-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
+| Internal repo | `./deploy.sh local-repo -i inventory/multinode` | `[local-repo]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
+| PostgreSQL | `./deploy.sh postgresql -i inventory/multinode` | `[postgresql]` | `precheck.postgresql` | OS, password, offline RPMs, database port |
+| Nginx | `./deploy.sh nginx -i inventory/multinode` | `[nginx]` | `precheck.nginx` | domain, upstream, web ports, parent paths |
+| Monitoring stack | `./deploy.sh observability -i inventory/multinode` | `[observability]` | `precheck.monitoring` | component tarballs, ports, Grafana secret |
+| Server | `./deploy.sh winter-server -i inventory/multinode` | `[winter-server]` | `precheck.server` | JWT secret, binary, DB address, API port |
+| Harbor | `./deploy.sh harbor -i inventory/multinode` | `[harbor]` | `precheck.harbor` | external PG/Redis/NFS, installer, docker |
+| Keepalived / LVS | `./deploy.sh keepalived -i inventory/multinode` | `[keepalived]` + `[nginx]` | `precheck.keepalived` | VIP, interface, VRRP secret, ip_vs, group split |
+| DNS (BIND 9) | `./deploy.sh dns -i inventory/multinode` | `[named]` | `precheck.dns` | domain, VIPs, TSIG, RPMs, port 53 |
 
 The groups default to `management` in all shipped inventories, so existing single-node behaviour is
 unchanged. Split them onto dedicated hosts to deploy any component independently. The full converge
@@ -73,7 +73,7 @@ full behaviour (kernel sysctl and optional data disk remain in `roles/bootstrap`
 
 With a non-empty `servers` list the role appends one `include` line to `chrony.conf` and renders
 `server <name> iburst` entries into the drop-in — existing configuration is never overwritten.
-The `[system_init_nodes]` group defaults to all management and managed nodes, so the stage covers
+The `[system-init]` group defaults to all management and managed nodes, so the stage covers
 every host. Re-running is idempotent: packages are queried with `rpm -qa` before install.
 
 ## Offline Artifact Repository (ADR-14 / ADR-15)
@@ -149,7 +149,7 @@ The component list, ports, versions and command-line arguments all live in `grou
 Managed nodes get the Agent during the provisioning phase; at runtime there is no SSH. Scaling the platform means installing or removing the Agent on nodes, not opening inbound ports.
 
 ```bash
-# Add new hosts to [ceph_nodes] first, then target only them
+# Add new hosts to [agent] first, then target only them
 ./deploy.sh agent-scale-out -i inventory/multinode --limit node04
 
 # Remove the Agent; platform data is preserved unless explicitly purged
@@ -227,7 +227,7 @@ After a successful scale-in, remove the hosts from `[management]` in the invento
 
 ### Scaling the Monitoring Stack
 
-Add the new hosts to `[monitor]` in the inventory first; topology is always expressed by inventory groups. Every name in
+Add the new hosts to `[observability]` in the inventory first; topology is always expressed by inventory groups. Every name in
 `monitoring_scale.nodes` / `removed_nodes` must already be a member of that group.
 
 ```bash
@@ -254,23 +254,23 @@ Scope and boundaries:
 ### High Availability (Server / Harbor)
 
 Server is stateless and Harbor is shared-storage based, so both are deployed as multiple replicas
-behind Nginx, with Keepalived providing a floating VIP on the `[lb]` nodes.
+behind Nginx, with Keepalived providing a floating VIP on the `[keepalived]` nodes.
 
 **VRRP alone is failover, not load balancing**: the VIP lives on one node at a time, so every
 connection reaches the same Nginx. Enable `ha.lvs.enabled: true` to use Keepalived's native LVS in
-DR mode. The VIP still moves with VRRP, but connections are scheduled across all `[nginx_nodes]`
+DR mode. The VIP still moves with VRRP, but connections are scheduled across all `[nginx]`
 backends and real servers answer directly with the VIP as source, bypassing the Director.
 
 ```bash
 ./deploy.sh app-ha -i inventory/multinode
 ```
 
-Inventory groups: `[lb]` (LVS Director + Keepalived), `[nginx_nodes]` (real Nginx backends),
-`[server_nodes]` (Server replicas) and `[harbor_nodes]` (Harbor replicas). All default to
+Inventory groups: `[keepalived]` (LVS Director + Keepalived), `[nginx]` (real Nginx backends),
+`[winter-server]` (Server replicas) and `[harbor]` (Harbor replicas). All default to
 `management` in the shipped inventories, so single-node runs are unchanged. With LVS enabled,
-`[lb]` and `[nginx_nodes]` must be disjoint and share an L2 network — the stage refuses an overlap.
+`[keepalived]` and `[nginx]` must be disjoint and share an L2 network — the stage refuses an overlap.
 
-To avoid an idle standby Director, set `ha.vips` to one address per `[lb]` node. Each Director then
+To avoid an idle standby Director, set `ha.vips` to one address per `[keepalived]` node. Each Director then
 owns one VIP as MASTER and backs up the others (active-active). Publish **all** VIPs as A records
 for the platform domain so clients spread across Directors — the `dns` stage (BIND 9) does this
 automatically, otherwise use an external DNS. A single `ha.vip` keeps the original active-standby behaviour.
@@ -278,9 +278,9 @@ automatically, otherwise use an external DNS. A single `ha.vip` keeps the origin
 Configuration in `group_vars/all.yml`:
 
 - `ha.vip`, `ha.interface`, `ha.priority` — VRRP address and election; the shared
-  `vault_keepalived_auth_pass` comes from `passwords.yml`. Priority descends across `[lb]`.
+  `vault_keepalived_auth_pass` comes from `passwords.yml`. Priority descends across `[keepalived]`.
 - `ha.lvs.enabled: true` and `ha.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`) — four-layer load
-  balancing; requires at least two `[nginx_nodes]`. The `realserver` role puts the VIP on `lo`
+  balancing; requires at least two `[nginx]`. The `realserver` role puts the VIP on `lo`
   with ARP suppression on each backend, and persists it with a oneshot systemd unit.
 - `server_ha.database_host` / `audit_database_host` — must point at the PG HA access point once
   Server replicas span nodes; the stage refuses `127.0.0.1` in that case.
@@ -319,7 +319,7 @@ and LVS/DR spreads them across Nginx backends.
 | `dns.manage_firewall` | Open `dns.listen_port`/tcp and /udp with firewalld; `false` for an external firewall |
 | `dns.tsig_key_name` | TSIG key name; the secret is `vault_dns_tsig_secret` in `passwords.yml` |
 
-Topology is in inventory: `[dns_nodes]` (all servers), `[dns_masters]` (defaults to nodes minus
+Topology is in inventory: `[named]` (all servers), `[dns_masters]` (defaults to nodes minus
 slaves) and `[dns_slaves]` (optional). The master renders a full zone with a deterministic serial
 derived from the domain and VIP set; slaves pull a TSIG-signed copy. With no slave group the single
 node is the master. Generate the TSIG secret with `openssl rand -base64 32` and place it only in

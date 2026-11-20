@@ -18,39 +18,39 @@ pg-a
 [pg_repo]
 pg-c
 
-[monitor:children]
+[observability:children]
 management
 
 # HA roles default to the PG nodes; move them to dedicated hosts for HA.
-[lb:children]
+[keepalived:children]
 management
 
-[server_nodes:children]
+[winter-server:children]
 management
 
-[harbor_nodes:children]
+[harbor:children]
 management
 
-# Real Nginx backends for LVS/DR; split from [lb] for multi-active load balancing.
-[nginx_nodes:children]
+# Real Nginx backends for LVS/DR; split from [keepalived] for multi-active load balancing.
+[nginx:children]
 management
 
 # Component groups for independent deployment (one single-component stage per group).
-[repo_nodes:children]
+[local-repo:children]
 management
 
-[db_nodes:children]
+[postgresql:children]
 management
 
-[dns_nodes:children]
+[named:children]
 management
 
 # System initialization runs on every host (management and managed nodes).
-[system_init_nodes:children]
+[system-init:children]
 management
 ceph_nodes
 
-[ceph_nodes]
+[agent]
 
 [all:vars]
 ansible_user=root

@@ -36,7 +36,7 @@
 
 - name: Precheck Server | Database address is valid for the replica count
   ansible.builtin.assert:
-    that: (groups['server_nodes'] | default([]) | length) <= 1 or server_ha.database_host != '127.0.0.1'
+    that: (groups['winter-server'] | default([]) | length) <= 1 or server_ha.database_host != '127.0.0.1'
     fail_msg: >-
       Multiple Server replicas require server_ha.database_host to point at the PG HA access point
       (HAProxy/VIP), not 127.0.0.1; each replica would otherwise use its own local database.

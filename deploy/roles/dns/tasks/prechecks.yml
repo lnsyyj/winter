@@ -27,12 +27,12 @@
 - name: Precheck DNS | Validate topology
   ansible.builtin.assert:
     that:
-      - (groups['dns_nodes'] | default([]) | length) > 0
-      - (groups['dns_masters'] | default(groups['dns_nodes'] | default([])) | length) > 0
+      - (groups['named'] | default([]) | length) > 0
+      - (groups['dns_masters'] | default(groups['named'] | default([])) | length) > 0
     fail_msg: >-
-      No DNS servers found. Add hosts to [dns_nodes] (and optionally [dns_masters] / [dns_slaves])
+      No DNS servers found. Add hosts to [named] (and optionally [dns_masters] / [dns_slaves])
       in the inventory; topology must be expressed with groups, never with hostname checks.
-    success_msg: "DNS topology is valid: nodes={{ groups['dns_nodes'] | default([]) | join(',') }}"
+    success_msg: "DNS topology is valid: nodes={{ groups['named'] | default([]) | join(',') }}"
     quiet: true
 
 - name: Precheck DNS | Check master/slave configuration

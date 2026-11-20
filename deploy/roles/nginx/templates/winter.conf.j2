@@ -17,7 +17,7 @@ upstream winter_grafana {
 {% set winter_grafana_target = 'http://' ~ monitoring_listen_addr ~ ':' ~ (monitoring_ports.grafana | string) %}
 {% endif %}
 
-# Server replicas (ADR-35): stateless, load-balanced across [server_nodes].
+# Server replicas (ADR-35): stateless, load-balanced across [winter-server].
 {% if server_upstreams | default([]) | length > 0 %}
 upstream winter_api {
 {% for backend in server_upstreams %}
@@ -30,7 +30,7 @@ upstream winter_api {
 {% set winter_api_target = nginx.api_upstream %}
 {% endif %}
 
-# Harbor replicas (ADR-16): registry APIs are load-balanced across [harbor_nodes].
+# Harbor replicas (ADR-16): registry APIs are load-balanced across [harbor].
 {% if harbor_upstreams | default([]) | length > 0 %}
 upstream winter_harbor {
 {% for backend in harbor_upstreams %}

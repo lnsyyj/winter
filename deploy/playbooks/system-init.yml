@@ -9,7 +9,7 @@
 #   ./deploy.sh system-init -i inventory/multinode --tags precheck.system-init
 
 - name: Initialize hosts with base tools and clock sync
-  hosts: system_init_nodes
+  hosts: system-init
   become: true
   gather_facts: true
 

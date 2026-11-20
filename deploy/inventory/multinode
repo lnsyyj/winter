@@ -7,39 +7,39 @@
 [management]
 mgr01 ansible_host=10.0.0.11
 
-[monitor:children]
+[observability:children]
 management
 
 # HA roles default to the management node; move them to dedicated hosts for HA.
-[lb:children]
+[keepalived:children]
 management
 
-[server_nodes:children]
+[winter-server:children]
 management
 
-[harbor_nodes:children]
+[harbor:children]
 management
 
-# Real Nginx backends for LVS/DR; split from [lb] for multi-active load balancing.
-[nginx_nodes:children]
+# Real Nginx backends for LVS/DR; split from [keepalived] for multi-active load balancing.
+[nginx:children]
 management
 
 # Component groups for independent deployment (one single-component stage per group).
-[repo_nodes:children]
+[local-repo:children]
 management
 
-[db_nodes:children]
+[postgresql:children]
 management
 
-[dns_nodes:children]
+[named:children]
 management
 
 # System initialization runs on every host (management and managed nodes).
-[system_init_nodes:children]
+[system-init:children]
 management
 ceph_nodes
 
-[ceph_nodes]
+[agent]
 node01 ansible_host=10.0.0.21
 node02 ansible_host=10.0.0.22
 node03 ansible_host=10.0.0.23

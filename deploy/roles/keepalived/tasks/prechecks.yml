@@ -23,7 +23,7 @@
       - vault_keepalived_auth_pass | default('') | length <= 8
     fail_msg: >-
       vault_keepalived_auth_pass must be set in deploy/passwords.yml and at most 8 characters for
-      VRRP PASS authentication. All [lb] nodes must share the same value.
+      VRRP PASS authentication. All [keepalived] nodes must share the same value.
     success_msg: "VRRP authentication password is valid"
     quiet: true
 
@@ -42,8 +42,8 @@
 
 - name: Precheck HA | Director and real server roles do not overlap
   ansible.builtin.assert:
-    that: (not (ha.lvs.enabled | default(false) | bool)) or (groups['lb'] | intersect(groups['nginx_nodes'] | default([])) | length == 0)
-    fail_msg: "LVS/DR requires [lb] and [nginx_nodes] to be disjoint; otherwise the Director and a real server share the same VIP"
+    that: (not (ha.lvs.enabled | default(false) | bool)) or (groups['keepalived'] | intersect(groups['nginx'] | default([])) | length == 0)
+    fail_msg: "LVS/DR requires [keepalived] and [nginx] to be disjoint; otherwise the Director and a real server share the same VIP"
     success_msg: "Director and real server groups are disjoint"
     quiet: true
 
@@ -51,7 +51,7 @@
   ansible.builtin.assert:
     that: not (ha.lvs.enabled | default(false) | bool) or (ha.lvs.real_servers | default([]) | length >= 2)
     fail_msg: >-
-      ha.lvs.enabled requires at least two real servers. app-ha derives them from [nginx_nodes];
+      ha.lvs.enabled requires at least two real servers. app-ha derives them from [nginx];
       when running this role alone, set ha.lvs.real_servers explicitly. VRRP alone is failover,
       not load balancing — every connection would land on the node holding the VIP.
     success_msg: "LVS prerequisites are satisfied"

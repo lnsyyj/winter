@@ -8,7 +8,7 @@
 #   ./deploy.sh local-repo -i inventory/multinode --tags precheck.repo
 
 - name: Deploy the internal artifact repository
-  hosts: repo_nodes
+  hosts: local-repo
   become: true
   gather_facts: true
 

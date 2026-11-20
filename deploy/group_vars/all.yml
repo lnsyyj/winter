@@ -13,9 +13,9 @@ platform:
 
   # Internal software repo (ADR-15): provided by Nginx on the management node (published by roles/local_repo)
   # When the site has no internet access, all RPMs / wheels / binaries are fetched from here.
-  # Derived from the first [repo_nodes] host so it follows the environment instead of a hardcoded site IP;
+  # Derived from the first [local-repo] host so it follows the environment instead of a hardcoded site IP;
   # override platform.repo_base_url in a site-specific vars file if the repo is published elsewhere.
-  repo_base_url: "http://{{ hostvars[groups['repo_nodes'][0]]['ansible_host'] | default(hostvars[groups['repo_nodes'][0]]['inventory_hostname']) }}:{{ repo_listen_port }}"
+  repo_base_url: "http://{{ hostvars[groups['local-repo'][0]]['ansible_host'] | default(hostvars[groups['local-repo'][0]]['inventory_hostname']) }}:{{ repo_listen_port }}"
 
   # Image registry (ADR-16): self-hosted Harbor, all images are pulled through it
   registry_host: ""
@@ -264,8 +264,8 @@ monitoring_vmalert_notifiers:
   - "{{ monitoring_listen_addr }}"
 
 monitoring_scale:
-  nodes: []                  # scale-out targets, must already be listed in the [monitor] group
-  removed_nodes: []          # scale-in targets, kept in [monitor] but excluded from all references
+  nodes: []                  # scale-out targets, must already be listed in the [observability] group
+  removed_nodes: []          # scale-in targets, kept in [observability] but excluded from all references
   purge_data: false          # never remove monitoring data unless explicitly requested
   data_dirs: []              # required and non-empty when purge_data is true
   cluster_port: 9094         # Alertmanager gossip port
@@ -337,13 +337,13 @@ winter_server:
   bin_subdir: bin
 
 # High availability (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas sit behind
-# Nginx, with Keepalived providing a floating VIP on the [lb] nodes. Single-node inventories keep
+# Nginx, with Keepalived providing a floating VIP on the [keepalived] nodes. Single-node inventories keep
 # everything on management and leave ha.enabled=false.
 ha:
   enabled: false
   interface: eth0                         # NIC that carries the VIP
   vip: ""                                 # single VIP (active-standby)
-  # Multiple VIPs enable active-active Directors: each [lb] node owns one VIP as MASTER and
+  # Multiple VIPs enable active-active Directors: each [keepalived] node owns one VIP as MASTER and
   # backs up the rest. Publish every VIP as an A record for the platform domain so clients
   # spread across Directors. Empty falls back to the single ha.vip.
   vips: []                                # e.g. [10.0.0.100, 10.0.0.101]
@@ -353,17 +353,17 @@ ha:
   preempt: true
   auth_type: PASS
   nginx_check_interval: 2                 # health-check script interval in seconds
-  peer_addresses: []                      # other [lb] addresses; computed by the playbook when empty
+  peer_addresses: []                      # other [keepalived] addresses; computed by the playbook when empty
   # LVS/DR four-layer load balancing (Keepalived native). Without it the VIP only provides
   # failover and every connection lands on the single node holding the VIP.
   lvs:
-    enabled: false                        # requires at least two [nginx_nodes]
+    enabled: false                        # requires at least two [nginx]
     scheduler: rr                         # rr / wrr / lc / wlc
     persistence_timeout: 0                # seconds, 0 = no session affinity
     health_interval: 6
     connect_timeout: 3
     real_server_port: "{{ platform.https_port }}"
-    real_servers: []                      # computed by app-ha from [nginx_nodes]
+    real_servers: []                      # computed by app-ha from [nginx]
 
 # Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
 # Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with
@@ -437,7 +437,7 @@ dns:
   ttl: 60
   admin_mailbox: hostmaster
   vips: []                             # empty falls back to ha.vips, then ha.vip
-  master_addresses: []                 # empty derives from [dns_masters] or [dns_nodes] minus [dns_slaves]
+  master_addresses: []                 # empty derives from [dns_masters] or [named] minus [dns_slaves]
   slave_addresses: []                  # empty derives from [dns_slaves]
   tsig_key_name: winter-dns            # secret is vault_dns_tsig_secret in passwords.yml
   allow_query_cidrs: []                # empty = any

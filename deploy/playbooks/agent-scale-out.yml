@@ -5,10 +5,10 @@
 #   ./deploy.sh agent-scale-out -i inventory/multinode --limit node04
 #   ./deploy.sh agent-scale-out -i inventory/multinode --tags agent
 #
-# Add the new hosts to [ceph_nodes] first; use --limit to target only the new ones.
+# Add the new hosts to [agent] first; use --limit to target only the new ones.
 
 - name: Scale out managed nodes (install Agent)
-  hosts: ceph_nodes
+  hosts: agent
   become: true
   gather_facts: true
 

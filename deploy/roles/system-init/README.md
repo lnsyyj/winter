@@ -49,5 +49,5 @@ installation). Every command task uses `changed_when: false`.
 ./deploy.sh bootstrap-servers -i inventory/multinode   # still runs system-init first
 ```
 
-Target hosts come from `[system_init_nodes]`, which defaults to all management hosts in the
+Target hosts come from `[system-init]`, which defaults to all management hosts in the
 shipped inventories. Bootstrap-only concerns (kernel sysctl and data disk) remain in `roles/bootstrap`.

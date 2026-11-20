@@ -29,7 +29,7 @@ Therefore this role's rules are:
 ## High availability upstreams
 
 When `./deploy.sh app-ha` runs, the site gains `upstream winter_api` and `upstream winter_harbor`,
-built from the `[server_nodes]` and `[harbor_nodes]` inventory groups. `/api/v1/` continues to reach the
+built from the `[winter-server]` and `[harbor]` inventory groups. `/api/v1/` continues to reach the
 Server pool, while `/api/v2.0/`, `/v2/`, `/service/` and `/harbor/` are routed to Harbor. Without those
 references the original single `nginx.api_upstream` is kept, so existing deployments are unchanged.
 

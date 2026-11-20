@@ -1,11 +1,11 @@
 ---
 # High availability convergence (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas
-# sit behind Nginx; Keepalived provides a floating VIP on the [lb] nodes. With ha.lvs.enabled=true
-# the [lb] nodes are LVS Directors and [nginx_nodes] are real servers, so the VIP dispatches across
+# sit behind Nginx; Keepalived provides a floating VIP on the [keepalived] nodes. With ha.lvs.enabled=true
+# the [keepalived] nodes are LVS Directors and [nginx] are real servers, so the VIP dispatches across
 # every Nginx replica instead of pinning all traffic to the node currently holding it.
 #
 # Prerequisites are asserted, never silently assumed:
-# - [lb], [server_nodes], [harbor_nodes], [nginx_nodes] groups exist in the inventory
+# - [keepalived], [winter-server], [harbor], [nginx] groups exist in the inventory
 # - ha.vip and vault_keepalived_auth_pass are set when ha.enabled=true
 # - server_ha.database_host points at the PG HA access point when servers span multiple nodes
 # - Harbor has external PostgreSQL / Redis / NFS, Docker, and its offline installer in the repo
@@ -14,7 +14,7 @@
 #   ./deploy.sh app-ha -i inventory/multinode
 
 - name: Deploy stateless Server replicas
-  hosts: server_nodes
+  hosts: winter-server
   become: true
   gather_facts: true
 
@@ -39,7 +39,7 @@
 
     - name: Reject localhost database address for multi-replica Server
       ansible.builtin.assert:
-        that: (groups['server_nodes'] | length) == 1 or server_ha.database_host != '127.0.0.1'
+        that: (groups['winter-server'] | length) == 1 or server_ha.database_host != '127.0.0.1'
         fail_msg: "Server replicas require server_ha.database_host pointing at the PG HA access point (HAProxy/VIP), not 127.0.0.1"
         quiet: true
       tags: [always]
@@ -54,7 +54,7 @@
       tags: [server]
 
 - name: Deploy Harbor replicas
-  hosts: harbor_nodes
+  hosts: harbor
   become: true
   gather_facts: true
 
@@ -80,7 +80,7 @@
       tags: [harbor]
 
 - name: Configure the Nginx real servers behind the LVS VIP
-  hosts: nginx_nodes
+  hosts: nginx
   become: true
   gather_facts: true
 
@@ -109,8 +109,8 @@
     # each Server replica binds to its own internal address.
     - name: Compute Server and Harbor upstream addresses for the Nginx site
       ansible.builtin.set_fact:
-        server_upstreams: "{{ groups['server_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-        harbor_upstreams: "{{ groups['harbor_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        server_upstreams: "{{ groups['winter-server'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        harbor_upstreams: "{{ groups['harbor'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
       tags: [always]
 
   roles:
@@ -121,7 +121,7 @@
       tags: [nginx, web]
 
 - name: Configure the Keepalived Director with LVS load balancing
-  hosts: lb
+  hosts: keepalived
   become: true
   gather_facts: true
 
@@ -138,17 +138,17 @@
 
     - name: Reject overlapping Director and real server roles
       ansible.builtin.assert:
-        that: (not (ha.lvs.enabled | bool)) or (groups['lb'] | intersect(groups['nginx_nodes']) | length == 0)
-        fail_msg: "LVS/DR requires [lb] and [nginx_nodes] to be disjoint; otherwise the Director and a real server share the same VIP"
+        that: (not (ha.lvs.enabled | bool)) or (groups['keepalived'] | intersect(groups['nginx']) | length == 0)
+        fail_msg: "LVS/DR requires [keepalived] and [nginx] to be disjoint; otherwise the Director and a real server share the same VIP"
         quiet: true
       tags: [always]
 
     - name: Compute replica addresses for upstreams, LVS backends and VRRP peers
       ansible.builtin.set_fact:
-        server_upstreams: "{{ groups['server_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-        harbor_upstreams: "{{ groups['harbor_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-        nginx_lvs_backends: "{{ groups['nginx_nodes'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-        ha_peer_addresses: "{{ groups['lb'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        server_upstreams: "{{ groups['winter-server'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        harbor_upstreams: "{{ groups['harbor'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        nginx_lvs_backends: "{{ groups['nginx'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
       tags: [always]
 
     - name: Inject LVS real servers into the Keepalived configuration

@@ -7,12 +7,12 @@
 # VictoriaMetrics / VictoriaLogs keep their single-node local storage; set
 # monitoring_scale.metrics_query_url to a central endpoint if replicas must aggregate.
 #
-# Targets must already be declared in the [monitor] inventory group.
+# Targets must already be declared in the [observability] inventory group.
 # Usage:
 #   ./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
 
 - name: Scale out monitoring components and rewire cross-node references
-  hosts: monitor
+  hosts: observability
   become: true
   gather_facts: true
 
@@ -40,9 +40,9 @@
         that:
           - monitoring_scale.nodes | length > 0
           - monitoring_scale.nodes | unique | length == monitoring_scale.nodes | length
-          - (monitoring_scale.nodes | difference(groups['monitor'])) | length == 0
-          - groups['monitor'] | length >= 2
-        fail_msg: "monitoring_scale.nodes must be non-empty, unique, already listed in [monitor]; scale-out needs at least two monitor nodes"
+          - (monitoring_scale.nodes | difference(groups['observability'])) | length == 0
+          - groups['observability'] | length >= 2
+        fail_msg: "monitoring_scale.nodes must be non-empty, unique, already listed in [observability]; scale-out needs at least two monitor nodes"
         quiet: true
       run_once: true
       tags: [always]
@@ -56,7 +56,7 @@
     - name: Compute active monitor peer addresses
       ansible.builtin.set_fact:
         monitor_peers: >-
-          {{ groups['monitor'] | difference(monitoring_scale.removed_nodes | default([]))
+          {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
       tags: [always]
 
@@ -64,7 +64,7 @@
       ansible.builtin.set_fact:
         monitoring_metrics_url: >-
           {{ monitoring_scale.metrics_query_url if (monitoring_scale.metrics_query_url | default('') | length > 0)
-             else (hostvars[(groups['monitor'] | difference(monitoring_scale.removed_nodes | default([])) | first)]['ansible_host']
+             else (hostvars[(groups['observability'] | difference(monitoring_scale.removed_nodes | default([])) | first)]['ansible_host']
                    | default(monitoring_listen_addr)) }}
       tags: [always]
 
@@ -77,7 +77,7 @@
     - name: Point vmalert at every Alertmanager replica
       ansible.builtin.set_fact:
         monitoring_vmalert_notifiers: >-
-          {{ groups['monitor'] | difference(monitoring_scale.removed_nodes | default([]))
+          {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
       tags: [always]
 
@@ -89,7 +89,7 @@
     - name: Print monitoring scale-out summary
       ansible.builtin.debug:
         msg:
-          - "Monitor nodes: {{ groups['monitor'] | join(', ') }}"
+          - "Monitor nodes: {{ groups['observability'] | join(', ') }}"
           - "Alertmanager gossip peers: {{ monitor_peers | join(', ') }}"
           - "Metrics query endpoint: {{ monitoring_metrics_url }}"
           - "Grafana and vmalert are stateless and can be added incrementally"
@@ -108,7 +108,7 @@
     - name: Compute Grafana upstream addresses
       ansible.builtin.set_fact:
         monitor_grafana_upstreams: >-
-          {{ groups['monitor'] | difference(monitoring_scale.removed_nodes | default([]))
+          {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
       tags: [always]
 

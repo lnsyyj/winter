@@ -8,7 +8,7 @@
 #   ./deploy.sh harbor -i inventory/multinode --tags precheck.harbor
 
 - name: Deploy Harbor
-  hosts: harbor_nodes
+  hosts: harbor
   become: true
   gather_facts: true
 

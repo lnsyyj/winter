@@ -20,7 +20,7 @@
   ansible.builtin.set_fact:
     dns_master_addresses: >-
       {{ dns.master_addresses | default([]) if (dns.master_addresses | default([]) | length > 0)
-         else ((groups['dns_masters'] | default(groups['dns_nodes'] | default([])))
+         else ((groups['dns_masters'] | default(groups['named'] | default([])))
          | difference(groups['dns_slaves'] | default([]))
          | map('extract', hostvars, 'ansible_host') | select('defined') | list) }}
   tags: [dns]

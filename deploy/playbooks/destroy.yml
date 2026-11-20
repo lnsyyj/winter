@@ -29,7 +29,7 @@
       when: uninstall.enabled | bool
 
 - name: Remove Agents from managed nodes
-  hosts: ceph_nodes
+  hosts: agent
   become: true
   gather_facts: true
 

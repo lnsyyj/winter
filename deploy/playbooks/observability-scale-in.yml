@@ -1,7 +1,7 @@
 ---
 # Scale in the monitoring stack (ADR-18 / ADR-33).
 #
-# Nodes listed in monitoring_scale.removed_nodes remain in the [monitor] inventory group but are
+# Nodes listed in monitoring_scale.removed_nodes remain in the [observability] inventory group but are
 # excluded from every cross-node reference. At least one monitor node must remain. Monitoring data
 # is preserved by default; purging is opt-in with an explicit non-empty data_dirs list.
 #
@@ -21,10 +21,10 @@
         that:
           - monitoring_scale.removed_nodes | length > 0
           - monitoring_scale.removed_nodes | unique | length == monitoring_scale.removed_nodes | length
-          - (monitoring_scale.removed_nodes | difference(groups['monitor'])) | length == 0
-          - (groups['monitor'] | length - monitoring_scale.removed_nodes | length) >= 1
+          - (monitoring_scale.removed_nodes | difference(groups['observability'])) | length == 0
+          - (groups['observability'] | length - monitoring_scale.removed_nodes | length) >= 1
           - not (monitoring_scale.purge_data | bool) or (monitoring_scale.data_dirs | default([]) | length > 0)
-        fail_msg: "Scale-in targets must be unique [monitor] members, at least one node must remain, and purge_data=true requires a non-empty data_dirs list"
+        fail_msg: "Scale-in targets must be unique [observability] members, at least one node must remain, and purge_data=true requires a non-empty data_dirs list"
         quiet: true
 
     - name: Register removed nodes for the teardown play
@@ -36,7 +36,7 @@
         label: "{{ item }}"
 
 - name: Rewire remaining monitor nodes and drop removed peers
-  hosts: monitor
+  hosts: observability
   become: true
   gather_facts: true
 
@@ -54,17 +54,17 @@
     - name: Restore localhost binding when a single monitor node remains
       ansible.builtin.set_fact:
         monitoring_bind_addr: >-
-          {{ '0.0.0.0' if ((groups['monitor'] | length - monitoring_scale.removed_nodes | default([]) | length) > 1)
+          {{ '0.0.0.0' if ((groups['observability'] | length - monitoring_scale.removed_nodes | default([]) | length) > 1)
              else monitoring_listen_addr }}
         monitoring_advertise_addr: >-
-          {{ (ansible_host | default(monitoring_listen_addr)) if ((groups['monitor'] | length - monitoring_scale.removed_nodes | default([]) | length) > 1)
+          {{ (ansible_host | default(monitoring_listen_addr)) if ((groups['observability'] | length - monitoring_scale.removed_nodes | default([]) | length) > 1)
              else monitoring_listen_addr }}
       tags: [always]
 
     - name: Compute remaining monitor peer addresses
       ansible.builtin.set_fact:
         monitor_peers: >-
-          {{ groups['monitor'] | difference(monitoring_scale.removed_nodes | default([]))
+          {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
       tags: [always]
 
@@ -72,7 +72,7 @@
       ansible.builtin.set_fact:
         monitoring_metrics_url: >-
           {{ monitoring_scale.metrics_query_url if (monitoring_scale.metrics_query_url | default('') | length > 0)
-             else (hostvars[(groups['monitor'] | difference(monitoring_scale.removed_nodes | default([])) | first)]['ansible_host']
+             else (hostvars[(groups['observability'] | difference(monitoring_scale.removed_nodes | default([])) | first)]['ansible_host']
                    | default(monitoring_listen_addr)) }}
       tags: [always]
 
@@ -85,7 +85,7 @@
     - name: Point vmalert only at remaining Alertmanager replicas
       ansible.builtin.set_fact:
         monitoring_vmalert_notifiers: >-
-          {{ groups['monitor'] | difference(monitoring_scale.removed_nodes | default([]))
+          {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
       tags: [always]
 
@@ -119,7 +119,7 @@
     - name: Compute remaining Grafana upstream addresses
       ansible.builtin.set_fact:
         monitor_grafana_upstreams: >-
-          {{ groups['monitor'] | difference(monitoring_scale.removed_nodes | default([]))
+          {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
       tags: [always]
 

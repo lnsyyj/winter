@@ -8,7 +8,7 @@
 #   ./deploy.sh winter-server -i inventory/multinode --tags precheck.server
 
 - name: Deploy the management Server
-  hosts: server_nodes
+  hosts: winter-server
   become: true
   gather_facts: true
 

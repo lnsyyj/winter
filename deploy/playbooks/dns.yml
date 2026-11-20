@@ -8,7 +8,7 @@
 #   ./deploy.sh dns -i inventory/multinode --tags precheck.dns
 
 - name: Deploy BIND 9 DNS
-  hosts: dns_nodes
+  hosts: named
   become: true
   gather_facts: true
 

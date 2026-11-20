@@ -39,8 +39,8 @@ stub listener is managed outside this role.
 
 ## Topology via inventory groups
 
-- `[dns_nodes]` — all DNS servers (the playbook targets this group).
-- `[dns_masters]` — masters; defaults to `[dns_nodes]` minus `[dns_slaves]`.
+- `[named]` — all DNS servers (the playbook targets this group).
+- `[dns_masters]` — masters; defaults to `[named]` minus `[dns_slaves]`.
 - `[dns_slaves]` — slaves; a slave pulls the zone from the masters with TSIG.
 
 Hostnames are never tested in the playbook; roles derive their role from group membership. With

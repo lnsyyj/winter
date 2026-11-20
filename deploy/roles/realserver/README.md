@@ -3,7 +3,7 @@
 Configures a node as an LVS/DR real server (ADR-16) for the Keepalived VIP: the VIP is bound to
 loopback and ARP suppression is enabled, so the Director can deliver client frames while this node
 answers directly with the VIP as source address. Applied by `./deploy.sh app-ha` to
-`[nginx_nodes]` when `ha.lvs.enabled: true`.
+`[nginx]` when `ha.lvs.enabled: true`.
 
 ## What it changes
 

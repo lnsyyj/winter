@@ -8,7 +8,7 @@
 #   ./deploy.sh nginx -i inventory/multinode --tags precheck.nginx
 
 - name: Deploy the Nginx access layer
-  hosts: nginx_nodes
+  hosts: nginx
   become: true
   gather_facts: true
 

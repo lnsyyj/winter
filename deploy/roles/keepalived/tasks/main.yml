@@ -1,5 +1,5 @@
 ---
-# Keepalived VRRP on the [lb] nodes: a floating VIP fronts the Nginx replicas (ADR-16).
+# Keepalived VRRP on the [keepalived] nodes: a floating VIP fronts the Nginx replicas (ADR-16).
 # A failed Nginx health check releases the VIP so the peer can take over.
 
 - name: Validate Keepalived configuration
@@ -17,7 +17,7 @@
     that:
       - ha.lvs.real_servers | default([]) | length >= 2
       - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
-    fail_msg: "ha.lvs.enabled requires at least two [nginx_nodes] and ha.vip or ha.vips"
+    fail_msg: "ha.lvs.enabled requires at least two [nginx] and ha.vip or ha.vips"
     quiet: true
   when: ha.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]

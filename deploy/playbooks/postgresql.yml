@@ -1,7 +1,7 @@
 ---
 # postgresql · Standalone database stage (ADR-15 / ADR-17).
 # Converges an existing instance or installs PostgreSQL 17 from the internal repo.
-# For an HA cluster use the pg-ha stage instead; this stage targets [db_nodes].
+# For an HA cluster use the pg-ha stage instead; this stage targets [postgresql].
 # Read-only prechecks run before convergence; use --tags precheck.postgresql to run only the checks.
 #
 # Usage:
@@ -9,7 +9,7 @@
 #   ./deploy.sh postgresql -i inventory/multinode --tags precheck.postgresql
 
 - name: Deploy PostgreSQL
-  hosts: db_nodes
+  hosts: postgresql
   become: true
   gather_facts: true
 

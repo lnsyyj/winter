@@ -1,7 +1,7 @@
 ---
 # keepalived · Standalone HA/LVS stage (ADR-16 / ADR-17).
-# Deploys the Keepalived Director (VRRP + optional LVS/DR) on [lb] and the loopback VIP with ARP
-# suppression on [nginx_nodes]. For the full multi-replica convergence use the app-ha stage.
+# Deploys the Keepalived Director (VRRP + optional LVS/DR) on [keepalived] and the loopback VIP with ARP
+# suppression on [nginx]. For the full multi-replica convergence use the app-ha stage.
 # Read-only prechecks run before convergence; use --tags precheck.keepalived to run only the checks.
 #
 # Usage:
@@ -9,7 +9,7 @@
 #   ./deploy.sh keepalived -i inventory/multinode --tags precheck.keepalived
 
 - name: Configure the Keepalived Director
-  hosts: lb
+  hosts: keepalived
   become: true
   gather_facts: true
 
@@ -26,8 +26,8 @@
 
     - name: Compute LVS backends and VRRP peers
       ansible.builtin.set_fact:
-        nginx_lvs_backends: "{{ groups['nginx_nodes'] | default([]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-        ha_peer_addresses: "{{ groups['lb'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        nginx_lvs_backends: "{{ groups['nginx'] | default([]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+        ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
       tags: [always]
 
     - name: Inject LVS real servers into the Keepalived configuration
@@ -55,7 +55,7 @@
       tags: [always]
 
 - name: Configure the LVS real servers
-  hosts: nginx_nodes
+  hosts: nginx
   become: true
   gather_facts: true
 
