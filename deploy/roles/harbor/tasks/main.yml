@@ -138,7 +138,8 @@
     if docker image inspect "goharbor/prepare:{{ harbor.version }}" >/dev/null 2>&1; then
       echo already-loaded
     else
-      docker load -i "{{ harbor.install_dir }}/harbor.v{{ harbor.version }}.tar.gz"
+      # harbor.version already carries the 'v' prefix (v2.11.0); archive is harbor.v2.11.0.tar.gz
+      docker load -i "{{ harbor.install_dir }}/harbor.{{ harbor.version }}.tar.gz"
       echo loaded
     fi
   args:
