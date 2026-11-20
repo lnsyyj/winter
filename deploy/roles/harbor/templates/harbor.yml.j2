@@ -36,6 +36,16 @@ external_redis:
 
 harbor_admin_password: {{ vault_harbor_admin_password }}
 
+# Harbor DB configuration. In builtin mode this is the bundled PostgreSQL; its root password is
+# required by prepare even though no external_database is declared. In external mode the same key
+# is ignored in favour of external_database below, but keeping it satisfies prepare's config parser.
+database:
+  password: {{ vault_harbor_db_password | default(vault_harbor_admin_password) }}
+  max_idle_conns: 100
+  max_open_conns: 900
+  conn_max_lifetime: 5m
+  conn_max_idle_time: 0
+
 jobservice:
   max_job_workers: 10
   job_loggers:
