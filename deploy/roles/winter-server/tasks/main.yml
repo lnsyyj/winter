@@ -16,7 +16,7 @@
 
 # Two possible DB backends:
 #   * MVP single node: system PostgreSQL on postgresql.port (5432), no HAProxy.
-#   * HA (pg-ha / ha-setup / single-node HA bootstrap): Patroni behind HAProxy on
+#   * HA (pg-ha / app-ha / single-node HA bootstrap): Patroni behind HAProxy on
 #     pg_cluster.haproxy.listen_port (5434).
 # Node count is NOT a reliable signal — a single-node HA bootstrap has one node but uses HAProxy.
 # Detect the deployed HAProxy entry point on this host instead, and allow an explicit override

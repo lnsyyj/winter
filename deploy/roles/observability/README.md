@@ -53,10 +53,10 @@ with `SHA256SUMS.txt` for transfer verification. Note two points:
 This role is reused by the two monitoring scale stages. Both stages are idempotent and keep single-node
 behaviour unchanged.
 
-- `./deploy.sh monitor-scale-out`: converge the stack on all `[monitor]` nodes, form an Alertmanager gossip
+- `./deploy.sh observability-scale-out`: converge the stack on all `[monitor]` nodes, form an Alertmanager gossip
   cluster (`monitoring_scale.cluster_port`, default 9094), point every vmalert instance at all Alertmanager
   replicas, and publish all Grafana replicas to the Nginx upstream.
-- `./deploy.sh monitor-scale-in`: rewire the remaining nodes first, then run `tasks/remove.yml` on the
+- `./deploy.sh observability-scale-in`: rewire the remaining nodes first, then run `tasks/remove.yml` on the
   removed nodes, and finally drop their Grafana upstream entries.
 
 Multi-node runs bind components to `0.0.0.0` and advertise each node's `ansible_host`. Scaling back to a
@@ -70,7 +70,7 @@ default; `monitoring_scale.purge_data: true` requires a non-empty `monitoring_sc
 ## Common commands
 
 ```bash
-./deploy.sh deploy --tags observability      # Converge only the monitoring stack (automatically includes the artifact repository)
+./deploy.sh deploy --tags observability      # Converge only the observability stack (automatically includes the artifact repository)
 systemctl status 'winter-*'                 # View all components on the target machine
 journalctl -u winter-grafana -f
 curl -s http://127.0.0.1:8428/health

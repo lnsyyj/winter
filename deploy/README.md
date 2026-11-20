@@ -11,15 +11,15 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 | System initialization | `./deploy.sh system-init -i inventory/multinode` | ✅ **Implemented** (base OS tools + chrony; standalone stage, also reused by bootstrap) |
 | Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|dns\|system-init> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
-| Converge monitoring stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
+| Converge observability stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
 | PG HA scale out | `./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
 | PG HA scale in | `./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
-| Monitoring scale out | `./deploy.sh monitor-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[monitor]`) |
-| Monitoring scale in | `./deploy.sh monitor-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
-| HA converged deployment | `./deploy.sh ha-setup -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
-| Scale out (install Agent) | `./deploy.sh scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
-| Scale in (remove Agent) | `./deploy.sh scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
+| Monitoring scale out | `./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[monitor]`) |
+| Monitoring scale in | `./deploy.sh observability-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
+| HA converged deployment | `./deploy.sh app-ha -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
+| Scale out (install Agent) | `./deploy.sh agent-scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
+| Scale in (remove Agent) | `./deploy.sh agent-scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
 | Destroy (uninstall) | `./deploy.sh destroy -i inventory/multinode` | ✅ **Implemented** (data preserved by default; explicit purge required to delete) |
 | Post-deploy | `./deploy.sh post-deploy -i inventory/multinode` | ✅ **Implemented** (entry-point checks + release manifest) |
 | Reconfigure | `./deploy.sh reconfigure -i inventory/multinode` | ✅ **Implemented** (validates config, then re-converges) |
@@ -39,18 +39,18 @@ actual value and how to fix it.
 | Component | Stage | Inventory group | Precheck tag | Checks |
 | --- | --- | --- | --- | --- |
 | System initialization | `./deploy.sh system-init -i inventory/multinode` | `[system_init_nodes]` | `precheck.system-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
-| Internal repo | `./deploy.sh repo -i inventory/multinode` | `[repo_nodes]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
+| Internal repo | `./deploy.sh local-repo -i inventory/multinode` | `[repo_nodes]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
 | PostgreSQL | `./deploy.sh postgresql -i inventory/multinode` | `[db_nodes]` | `precheck.postgresql` | OS, password, offline RPMs, database port |
 | Nginx | `./deploy.sh nginx -i inventory/multinode` | `[nginx_nodes]` | `precheck.nginx` | domain, upstream, web ports, parent paths |
-| Monitoring stack | `./deploy.sh monitoring -i inventory/multinode` | `[monitor]` | `precheck.monitoring` | component tarballs, ports, Grafana secret |
-| Server | `./deploy.sh server -i inventory/multinode` | `[server_nodes]` | `precheck.server` | JWT secret, binary, DB address, API port |
+| Monitoring stack | `./deploy.sh observability -i inventory/multinode` | `[monitor]` | `precheck.monitoring` | component tarballs, ports, Grafana secret |
+| Server | `./deploy.sh winter-server -i inventory/multinode` | `[server_nodes]` | `precheck.server` | JWT secret, binary, DB address, API port |
 | Harbor | `./deploy.sh harbor -i inventory/multinode` | `[harbor_nodes]` | `precheck.harbor` | external PG/Redis/NFS, installer, docker |
 | Keepalived / LVS | `./deploy.sh keepalived -i inventory/multinode` | `[lb]` + `[nginx_nodes]` | `precheck.keepalived` | VIP, interface, VRRP secret, ip_vs, group split |
 | DNS (BIND 9) | `./deploy.sh dns -i inventory/multinode` | `[dns_nodes]` | `precheck.dns` | domain, VIPs, TSIG, RPMs, port 53 |
 
 The groups default to `management` in all shipped inventories, so existing single-node behaviour is
 unchanged. Split them onto dedicated hosts to deploy any component independently. The full converge
-stage (`deploy`) and the HA stage (`ha-setup`) remain available for one-shot delivery.
+stage (`deploy`) and the HA stage (`app-ha`) remain available for one-shot delivery.
 
 ## System Initialization (chrony and base tools)
 
@@ -150,13 +150,13 @@ Managed nodes get the Agent during the provisioning phase; at runtime there is n
 
 ```bash
 # Add new hosts to [ceph_nodes] first, then target only them
-./deploy.sh scale-out -i inventory/multinode --limit node04
+./deploy.sh agent-scale-out -i inventory/multinode --limit node04
 
 # Remove the Agent; platform data is preserved unless explicitly purged
-./deploy.sh scale-in -i inventory/multinode --limit node03
+./deploy.sh agent-scale-in -i inventory/multinode --limit node03
 ```
 
-Prerequisites for `scale-out` (the role fails with an actionable message when missing, never pretends success):
+Prerequisites for `agent-scale-out` (the role fails with an actionable message when missing, never pretends success):
 
 | Prerequisite | Configuration |
 | --- | --- |
@@ -166,7 +166,7 @@ Prerequisites for `scale-out` (the role fails with an actionable message when mi
 
 Identity: `node_id` defaults to the inventory hostname and must match the certificate `CN` and `SPIFFE URI:spiffe://winter/node/<node_id>`. In `local_csr` mode the private key is generated on the node and never leaves it; a CSR is staged, and the service starts only once a certificate is issued. In `preissued` mode a key/cert pair is copied from the control machine.
 
-Safety: the service account is non-root with an explicit sudoers whitelist (absolute paths, no `ALL`, no interpreters). `scale-in` preserves data by default; `purge_data: true` requires an explicit non-empty `data_dirs` list, and `remove_user` is opt-in.
+Safety: the service account is non-root with an explicit sudoers whitelist (absolute paths, no `ALL`, no interpreters). `agent-scale-in` preserves data by default; `purge_data: true` requires an explicit non-empty `data_dirs` list, and `remove_user` is opt-in.
 
 ## PostgreSQL High Availability (etcd + Patroni + HAProxy)
 
@@ -232,10 +232,10 @@ Add the new hosts to `[monitor]` in the inventory first; topology is always expr
 
 ```bash
 # Add a monitor node: gossip peer + Grafana replica + vmalert notifier
-./deploy.sh monitor-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
+./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
 
 # Remove a monitor node: rewire references first, then tear down services
-./deploy.sh monitor-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'
+./deploy.sh observability-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'
 ```
 
 Scope and boundaries:
@@ -262,7 +262,7 @@ DR mode. The VIP still moves with VRRP, but connections are scheduled across all
 backends and real servers answer directly with the VIP as source, bypassing the Director.
 
 ```bash
-./deploy.sh ha-setup -i inventory/multinode
+./deploy.sh app-ha -i inventory/multinode
 ```
 
 Inventory groups: `[lb]` (LVS Director + Keepalived), `[nginx_nodes]` (real Nginx backends),
@@ -388,7 +388,7 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / monitor-scale-out / monitor-scale-in / ha-setup / scale-out / scale-in / destroy / post-deploy / reconfigure / upgrade
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / observability-scale-out / observability-scale-in / app-ha / agent-scale-out / agent-scale-in / destroy / post-deploy / reconfigure / upgrade
 │                              # plus single-component stages: repo / postgresql / nginx / monitoring / server / harbor / keepalived / dns / system-init
 └── roles/
     ├── bootstrap/             # optional kernel/data-disk settings (reuses system-init for base tools)
@@ -400,7 +400,7 @@ deploy/
     ├── postgresql/ nginx/     # database and access layer
     ├── etcd/ patroni/ haproxy/# PG high availability
     ├── observability/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
-    ├── winter-server/         # Go single binary + systemd (multi-replica via ha-setup)
+    ├── winter-server/         # Go single binary + systemd (multi-replica via app-ha)
     ├── harbor/                # Harbor replicas (external DB/Redis/NFS + docker-compose)
     ├── keepalived/            # VRRP VIP + LVS/DR virtual_server (Director)
     ├── realserver/            # LVS/DR real servers (loopback VIP + ARP suppression)
@@ -449,7 +449,7 @@ sh deploy/scripts/verify-ansible.sh
 
 It parses every YAML file, checks handler/notify consistency, enforces the English-only rule, validates Jinja expressions and links, and runs `ansible-playbook --syntax-check` automatically when ansible-core is installed on the control machine.
 
-Available tags: `bootstrap` / `system-init` / `agent` / `scale-out` / `scale-in` / `destroy` / `repo` / `postgresql` / `nginx` / `monitoring` / `observability` / `server` / `harbor` / `keepalived` / `lvs` / `realserver` / `dns` / `etcd` / `patroni` / `haproxy` / `db`.
+Available tags: `bootstrap` / `system-init` / `agent` / `agent-scale-out` / `agent-scale-in` / `destroy` / `local-repo` / `postgresql` / `nginx` / `observability` / `harbor` / `keepalived` / `lvs` / `realserver` / `dns` / `etcd` / `patroni` / `haproxy` / `db`.
 
 Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups` (global), and `precheck.system-init` / `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.dns` (per component).
 

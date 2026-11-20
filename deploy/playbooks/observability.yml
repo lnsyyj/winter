@@ -4,8 +4,8 @@
 # Read-only prechecks run before convergence; use --tags precheck.monitoring to run only the checks.
 #
 # Usage:
-#   ./deploy.sh monitoring -i inventory/multinode
-#   ./deploy.sh monitoring -i inventory/multinode --tags precheck.monitoring
+#   ./deploy.sh observability -i inventory/multinode
+#   ./deploy.sh observability -i inventory/multinode --tags precheck.monitoring
 
 - name: Deploy the observability stack
   hosts: monitor

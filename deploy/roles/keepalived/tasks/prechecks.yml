@@ -51,7 +51,7 @@
   ansible.builtin.assert:
     that: not (ha.lvs.enabled | default(false) | bool) or (ha.lvs.real_servers | default([]) | length >= 2)
     fail_msg: >-
-      ha.lvs.enabled requires at least two real servers. ha-setup derives them from [nginx_nodes];
+      ha.lvs.enabled requires at least two real servers. app-ha derives them from [nginx_nodes];
       when running this role alone, set ha.lvs.real_servers explicitly. VRRP alone is failover,
       not load balancing — every connection would land on the node holding the VIP.
     success_msg: "LVS prerequisites are satisfied"

@@ -4,8 +4,8 @@
 # Read-only prechecks run before convergence; use --tags precheck.server to run only the checks.
 #
 # Usage:
-#   ./deploy.sh server -i inventory/multinode
-#   ./deploy.sh server -i inventory/multinode --tags precheck.server
+#   ./deploy.sh winter-server -i inventory/multinode
+#   ./deploy.sh winter-server -i inventory/multinode --tags precheck.server
 
 - name: Deploy the management Server
   hosts: server_nodes

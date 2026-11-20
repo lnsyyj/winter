@@ -10,7 +10,7 @@ Deploys the Go single binary cross-compiled from `server/` as a systemd service,
   `JWT_SECRET` / `ADMIN_PASSWORD` also come only from `passwords.yml`.
 - Service: `winter-server.service`, `Type=exec`, `Restart=always`, start on boot.
 - Port: `winter_server.port` (default 8081), must match `nginx.api_upstream`.
-- Multi-replica: `./deploy.sh ha-setup` deploys this role to every `[server_nodes]` host and overrides
+- Multi-replica: `./deploy.sh app-ha` deploys this role to every `[server_nodes]` host and overrides
   `winter_server.listen_addr` with that host's internal address. Set `server_ha.database_host` /
   `audit_database_host` to the PG HA access point, then Nginx load-balances the replicas through
   `upstream winter_api`. The binary is stateless — sessions and tokens live in PostgreSQL (ADR-34).

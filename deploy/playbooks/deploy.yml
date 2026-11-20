@@ -8,7 +8,7 @@
 # Usage:
 #   ./deploy.sh deploy                              # full converge
 #   ./deploy.sh deploy -i inventory/multinode
-#   ./deploy.sh deploy --tags observability,server  # run only the monitoring stack and Server (includes the internal repo)
+#   ./deploy.sh deploy --tags observability,server  # run only the observability stack and Server (includes the internal repo)
 #   ./deploy.sh deploy --list-tasks                 # see what would be done
 
 - name: Converge management plane components (database + access layer + observability + Server)

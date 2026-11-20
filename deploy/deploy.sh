@@ -11,38 +11,38 @@ usage() {
 Usage: ./deploy.sh <stage> [-i inventory] [--tags tag,...] [ansible arguments...]
 
 Stages:
-  bootstrap-servers    Install base dependencies and OS settings (runs system-init + sysctl + data disk)
-  system-init          Install base OS tools and enable chrony only (single component, all hosts)
-  prechecks            Pre-deployment checks (read-only, implemented)
-  repo                 Deploy the internal artifact repository only (single component)
-  postgresql           Deploy PostgreSQL only (single component; use pg-ha for HA)
-  nginx                Deploy the Nginx access layer only (single component)
-  monitoring           Deploy the observability stack only (single component)
-  server               Deploy the management Server only (single component)
-  harbor               Deploy Harbor only (single component)
-  keepalived           Deploy the Keepalived Director and LVS real servers (single component)
-  dns                  Deploy BIND 9 DNS only (single component, multi-VIP round-robin)
-  pull                 Pull images from Harbor (not implemented)
-  deploy               Converge to the target state (internal repo + PostgreSQL + Nginx + observability stack + Server)
-  pg-ha                PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
-  pg-scale-out         Add replica nodes to the PG HA cluster (odd final etcd count)
-  pg-scale-in          Remove replica nodes from the PG HA cluster (data preserved by default)
-  pg-migrate           Migrate single-node PostgreSQL data into the HA cluster (stop-the-world, ADR-40)
-  monitor-scale-out    Add monitor nodes (Alertmanager HA, Grafana replicas, vmalert notifiers)
-  monitor-scale-in     Remove monitor nodes from all references, then tear them down (data preserved)
-  ha-setup             Deploy multi-replica Server/Harbor behind Nginx + Keepalived VIP
-  scale-out            Pre-install the Agent on new managed nodes (use --limit)
-  scale-in             Remove the Agent from managed nodes (use --limit)
-  post-deploy          Acceptance checks and deployment manifest
-  reconfigure          Validate configuration, then re-converge
-  upgrade              Verify artifacts, converge to pinned versions, re-run acceptance
-  destroy              Uninstall the platform (data preserved by default)
+  bootstrap-servers        Install base dependencies and OS settings (system-init + bootstrap roles)
+  system-init              Install base OS tools and enable chrony only (system-init role, all hosts)
+  prechecks                Pre-deployment checks, read-only (prechecks role)
+  local-repo               Internal artifact repository on Nginx (local_repo role)
+  postgresql               PostgreSQL single instance (postgresql role; use pg-ha for HA)
+  nginx                    Nginx access layer (nginx role)
+  observability            VictoriaMetrics + VictoriaLogs + vmalert + Alertmanager + Grafana (observability role)
+  winter-server            Management Server Go binary (winter-server role)
+  harbor                   Harbor registry (harbor role; builtin or external mode, ADR-16)
+  keepalived               Keepalived Director + LVS real servers (keepalived + realserver roles)
+  dns                      BIND 9 DNS, multi-VIP round-robin (dns role)
+  pull                     Pull images from Harbor (not implemented)
+  deploy                   Converge all of: local-repo, postgresql, nginx, observability, winter-server
+  pg-ha                    PostgreSQL HA cluster: etcd + Patroni + HAProxy (postgresql/etcd/patroni/haproxy roles)
+  pg-scale-out             Add PG replica nodes; final etcd count must be odd (same four PG roles)
+  pg-scale-in              Remove PG replica nodes; data preserved by default (same four PG roles)
+  pg-migrate               Migrate single-node PostgreSQL data into the HA cluster (stop-the-world, ADR-40)
+  observability-scale-out  Add monitor nodes: Alertmanager HA + Grafana replicas + vmalert notifiers (observability + nginx)
+  observability-scale-in   Remove monitor nodes from all references, then tear down (data preserved)
+  app-ha                   App-layer HA: winter-server + harbor replicas behind nginx upstream + keepalived VIP/LVS
+  agent-scale-out          Pre-install the winter-agent on managed nodes (agent role, use --limit)
+  agent-scale-in           Remove the winter-agent from managed nodes (agent role, use --limit)
+  post-deploy              Acceptance checks and deployment manifest
+  reconfigure              Validate configuration, then re-converge
+  upgrade                  Verify artifacts, converge to pinned versions, re-run acceptance
+  destroy                  Uninstall the platform (data preserved by default)
 
 Examples:
   ./deploy.sh prechecks -i inventory/multinode
   ./deploy.sh prechecks -i inventory/multinode --tags prechecks.time
-  ./deploy.sh deploy --tags observability,server   # converge only the monitoring stack and Server (automatically includes the internal repo)
-  ./deploy.sh server -i inventory/multinode        # deploy a single component (prechecks run first)
+  ./deploy.sh deploy --tags observability,winter-server   # converge only the observability stack and Server (includes local-repo)
+  ./deploy.sh winter-server -i inventory/multinode        # deploy a single component (prechecks run first)
   ./deploy.sh dns -i inventory/multinode --tags precheck.dns   # run only the DNS prechecks
 EOF
 }
@@ -70,8 +70,8 @@ case "$STAGE" in
     prechecks)
         PLAYBOOK="$ROOT/playbooks/prechecks.yml"
         ;;
-    repo)
-        PLAYBOOK="$ROOT/playbooks/repo.yml"
+    local-repo)
+        PLAYBOOK="$ROOT/playbooks/local-repo.yml"
         ;;
     postgresql)
         PLAYBOOK="$ROOT/playbooks/postgresql.yml"
@@ -79,11 +79,11 @@ case "$STAGE" in
     nginx)
         PLAYBOOK="$ROOT/playbooks/nginx.yml"
         ;;
-    monitoring)
-        PLAYBOOK="$ROOT/playbooks/monitoring.yml"
+    observability)
+        PLAYBOOK="$ROOT/playbooks/observability.yml"
         ;;
-    server)
-        PLAYBOOK="$ROOT/playbooks/server.yml"
+    winter-server)
+        PLAYBOOK="$ROOT/playbooks/winter-server.yml"
         ;;
     harbor)
         PLAYBOOK="$ROOT/playbooks/harbor.yml"
@@ -109,20 +109,20 @@ case "$STAGE" in
     pg-migrate)
         PLAYBOOK="$ROOT/playbooks/pg-migrate.yml"
         ;;
-    monitor-scale-out)
-        PLAYBOOK="$ROOT/playbooks/monitor-scale-out.yml"
+    observability-scale-out)
+        PLAYBOOK="$ROOT/playbooks/observability-scale-out.yml"
         ;;
-    monitor-scale-in)
-        PLAYBOOK="$ROOT/playbooks/monitor-scale-in.yml"
+    observability-scale-in)
+        PLAYBOOK="$ROOT/playbooks/observability-scale-in.yml"
         ;;
-    ha-setup)
-        PLAYBOOK="$ROOT/playbooks/ha-setup.yml"
+    app-ha)
+        PLAYBOOK="$ROOT/playbooks/app-ha.yml"
         ;;
-    scale-out)
-        PLAYBOOK="$ROOT/playbooks/scale-out.yml"
+    agent-scale-out)
+        PLAYBOOK="$ROOT/playbooks/agent-scale-out.yml"
         ;;
-    scale-in)
-        PLAYBOOK="$ROOT/playbooks/scale-in.yml"
+    agent-scale-in)
+        PLAYBOOK="$ROOT/playbooks/agent-scale-in.yml"
         ;;
     destroy)
         PLAYBOOK="$ROOT/playbooks/destroy.yml"
@@ -135,6 +135,22 @@ case "$STAGE" in
         ;;
     upgrade)
         PLAYBOOK="$ROOT/playbooks/upgrade.yml"
+        ;;
+    # Legacy stage names (renamed to match software/role names). Kept as aliases with a warning so
+    # existing operator scripts keep working during migration; not shown in usage.
+    repo|monitoring|server|monitor-scale-out|monitor-scale-in|ha-setup|scale-out|scale-in)
+        case "$STAGE" in
+            repo) NEW=local-repo ;;
+            monitoring) NEW=observability ;;
+            server) NEW=winter-server ;;
+            monitor-scale-out) NEW=observability-scale-out ;;
+            monitor-scale-in) NEW=observability-scale-in ;;
+            ha-setup) NEW=app-ha ;;
+            scale-out) NEW=agent-scale-out ;;
+            scale-in) NEW=agent-scale-in ;;
+        esac
+        echo "WARNING: stage '$STAGE' was renamed to '$NEW'; update your scripts (alias still works)." >&2
+        PLAYBOOK="$ROOT/playbooks/$NEW.yml"
         ;;
     pull)
         echo "Stage '$STAGE' is not implemented yet (see the plan in docs/02-研发线/04-架构师/ADR-17-部署框架.md)." >&2

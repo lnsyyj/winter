@@ -6,7 +6,7 @@
 # is preserved by default; purging is opt-in with an explicit non-empty data_dirs list.
 #
 # Usage:
-#   ./deploy.sh monitor-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon03"]}}'
+#   ./deploy.sh observability-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon03"]}}'
 
 - name: Register monitoring scale-in targets
   hosts: localhost

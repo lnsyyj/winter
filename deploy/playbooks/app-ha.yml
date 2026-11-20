@@ -11,7 +11,7 @@
 # - Harbor has external PostgreSQL / Redis / NFS, Docker, and its offline installer in the repo
 #
 # Usage:
-#   ./deploy.sh ha-setup -i inventory/multinode
+#   ./deploy.sh app-ha -i inventory/multinode
 
 - name: Deploy stateless Server replicas
   hosts: server_nodes

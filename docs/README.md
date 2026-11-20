@@ -109,6 +109,8 @@ docs/
 
 | 44 | [ADR-40-单机PostgreSQL到HA数据迁移.md](./02-研发线/04-架构师/ADR-40-单机PostgreSQL到HA数据迁移.md) | 架构师 ④ | **已确认** · 2026-11-19 | 5432 系统PG→5433 HA 存量数据迁移：停机窗口、pg_dump/restore、逐表校验、幂等与回滚 |
 
+| 45 | [ADR-41-stage命名对齐软件名.md](./02-研发线/04-架构师/ADR-41-stage命名对齐软件名.md) | 架构师 ④ | **已确认** · 2026-11-20 | stage 名对齐软件/role：ha-setup→app-ha、monitoring→observability、scale-out→agent-scale-out 等，旧名保留别名 |
+
 **推荐阅读顺序**：想理解全貌 → `36 → 37 → 3 → 4`；准备拍板 → `4 §8 待决策清单` + `1 §11 待确认问题`；准备动手 → `36 → 3 → 5 → 7 → 8`。
 
 ---

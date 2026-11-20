@@ -1,7 +1,7 @@
 ---
 # keepalived · Standalone HA/LVS stage (ADR-16 / ADR-17).
 # Deploys the Keepalived Director (VRRP + optional LVS/DR) on [lb] and the loopback VIP with ARP
-# suppression on [nginx_nodes]. For the full multi-replica convergence use the ha-setup stage.
+# suppression on [nginx_nodes]. For the full multi-replica convergence use the app-ha stage.
 # Read-only prechecks run before convergence; use --tags precheck.keepalived to run only the checks.
 #
 # Usage:

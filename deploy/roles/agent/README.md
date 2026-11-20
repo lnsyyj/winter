@@ -1,6 +1,6 @@
 # role · agent
 
-Pre-installs and removes the Agent on managed nodes (ADR-35). Used by the `scale-out` and `scale-in` stages; it is deliberately **not** part of the management-plane `deploy` stage.
+Pre-installs and removes the Agent on managed nodes (ADR-35). Used by the `agent-scale-out` and `agent-scale-in` stages; it is deliberately **not** part of the management-plane `deploy` stage.
 
 ## Identity and certificates
 

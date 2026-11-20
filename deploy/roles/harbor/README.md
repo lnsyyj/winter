@@ -36,7 +36,7 @@ Credentials come only from `deploy/passwords.yml`: `vault_harbor_admin_password`
 plus `vault_harbor_db_password` and `vault_harbor_redis_password` in external mode.
 `harbor.yml` is rendered with mode 0640.
 
-Set `harbor.enabled: true` to opt in; standalone `harbor` and `ha-setup` stages skip the role
+Set `harbor.enabled: true` to opt in; standalone `harbor` and `app-ha` stages skip the role
 while it is false.
 
 ## Data safety
@@ -51,7 +51,7 @@ while it is false.
 
 ```bash
 ./deploy.sh harbor -i inventory/all-in-one
-./deploy.sh ha-setup -i inventory/multinode       # multi-replica, requires harbor.mode=external
+./deploy.sh app-ha -i inventory/multinode       # multi-replica, requires harbor.mode=external
 docker-compose -f /opt/winter/harbor/docker-compose.yml ps
 curl -fsS http://127.0.0.1:80/api/v2.0/health
 ```

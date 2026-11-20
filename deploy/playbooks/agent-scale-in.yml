@@ -2,8 +2,8 @@
 # scale-in · remove the Agent from managed nodes (ADR-35)
 #
 # Usage:
-#   ./deploy.sh scale-in -i inventory/multinode --limit node03
-#   ./deploy.sh scale-in -i inventory/multinode --limit node03 -e '{"agent":{"scale_in":{"remove_user":true}}}'
+#   ./deploy.sh agent-scale-in -i inventory/multinode --limit node03
+#   ./deploy.sh agent-scale-in -i inventory/multinode --limit node03 -e '{"agent":{"scale_in":{"remove_user":true}}}'
 #
 # Platform data is preserved by default. Remove the host from [ceph_nodes] only after this stage succeeds.
 

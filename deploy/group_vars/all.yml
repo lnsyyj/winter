@@ -363,7 +363,7 @@ ha:
     health_interval: 6
     connect_timeout: 3
     real_server_port: "{{ platform.https_port }}"
-    real_servers: []                      # computed by ha-setup from [nginx_nodes]
+    real_servers: []                      # computed by app-ha from [nginx_nodes]
 
 # Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
 # Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with

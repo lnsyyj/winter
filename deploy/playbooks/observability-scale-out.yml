@@ -9,7 +9,7 @@
 #
 # Targets must already be declared in the [monitor] inventory group.
 # Usage:
-#   ./deploy.sh monitor-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
+#   ./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
 
 - name: Scale out monitoring components and rewire cross-node references
   hosts: monitor
