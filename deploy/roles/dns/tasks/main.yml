@@ -173,6 +173,14 @@
   notify: restart named
   tags: [dns]
 
+# Handlers normally run at the end of the play, which is AFTER the verification task below. When
+# a VIP changes, verification would query the still-running old zone and fail; that failed host
+# then skips its pending handler, so named never picks up the new records at all. Flush here so
+# the restart happens before verification.
+- name: Apply pending named restarts before verification
+  ansible.builtin.meta: flush_handlers
+  tags: [dns]
+
 - name: Validate the named configuration
   ansible.builtin.command: "named-checkconf {{ dns.config_file }}"
   changed_when: false
