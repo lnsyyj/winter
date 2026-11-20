@@ -42,6 +42,26 @@
   failed_when: false
   tags: [nginx]
 
+# The platform's only externally reachable ports are HTTP/HTTPS on the Nginx entry point. Without
+# firewalld rules, remote clients can reach a VIP held by another node only if that node happens to
+# be the one curling itself (local traffic bypasses firewalld) — which masked this in single-VIP
+# active-standby tests but broke active-active where each VIP lives on a different node.
+- name: Allow HTTP and HTTPS entry ports through firewall (cluster subnet only)
+  ansible.builtin.shell: |
+    set -o pipefail
+    cidr="{{ pg_cluster.vip_iface_cidr | default('192.168.0.0/16') }}"
+    for p in {{ nginx.http_port }} {{ nginx.https_port }}; do
+      firewall-cmd --permanent --add-rich-rule="rule family=ipv4 source address=$cidr port port=$p protocol=tcp accept" >/dev/null 2>&1 || true
+    done
+    firewall-cmd --reload >/dev/null 2>&1 || true
+    echo done
+  args:
+    executable: /bin/bash
+  register: nginx_fw
+  changed_when: false
+  failed_when: false
+  tags: [nginx]
+
 - name: Create site directories
   ansible.builtin.file:
     path: "{{ item }}"
