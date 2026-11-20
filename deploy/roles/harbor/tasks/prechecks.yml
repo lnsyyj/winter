@@ -97,9 +97,14 @@
   changed_when: false
   failed_when: false
 
-- name: Precheck Harbor | HTTP port is free or already owned by Harbor
+# On an idempotent re-run Docker owns the published port via docker-proxy, whose name does not
+# contain "harbor". Accept docker-proxy / docker as a legitimate owner so re-runs stay green.
+- name: Precheck Harbor | HTTP port is free or already owned by Harbor/Docker
   ansible.builtin.assert:
-    that: harbor_port_usage.stdout == '' or ('harbor' in harbor_port_usage.stdout)
+    that: >-
+      harbor_port_usage.stdout == '' or
+      ('harbor' in harbor_port_usage.stdout) or
+      ('docker' in harbor_port_usage.stdout)
     fail_msg: "Port {{ harbor.http_port }} is occupied by another process: {{ harbor_port_usage.stdout }}. Stop it or change harbor.http_port and the Nginx upstream together."
     success_msg: "Harbor HTTP port {{ harbor.http_port }} is available"
     quiet: true
