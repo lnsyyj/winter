@@ -128,6 +128,25 @@
     backup: true
   tags: [harbor]
 
+# The offline installer ships all images as harbor.v<version>.tar.gz, but ./prepare runs
+# `docker run goharbor/prepare:<version>` and docker-compose up pulls the component images.
+# On an offline site the archive MUST be loaded into the local Docker daemon first; otherwise
+# Docker tries to reach Docker Hub and fails. Idempotent: skip when the prepare image exists.
+- name: Load the bundled Harbor images into the local Docker daemon
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if docker image inspect "goharbor/prepare:{{ harbor.version }}" >/dev/null 2>&1; then
+      echo already-loaded
+    else
+      docker load -i "{{ harbor.install_dir }}/harbor.v{{ harbor.version }}.tar.gz"
+      echo loaded
+    fi
+  args:
+    executable: /bin/bash
+  register: harbor_image_load
+  changed_when: harbor_image_load.stdout is search('^loaded$', 'multiline')
+  tags: [harbor]
+
 - name: Prepare and start Harbor
   ansible.builtin.shell: |
     set -euo pipefail
