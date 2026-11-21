@@ -28,6 +28,7 @@
     - ../group_vars/all.yml
   roles:
     - role: prechecks
+      when: winter_ops_action | default('deploy') == 'prechecks'
       tags: [prechecks]
 
 - name: System initialization
@@ -198,3 +199,15 @@
 - name: Uninstall the platform
   import_playbook: destroy.yml
   tags: [destroy]
+
+- name: Deployment acceptance checks
+  import_playbook: post-deploy.yml
+  tags: [verify]
+
+- name: Validate and re-converge configuration
+  import_playbook: reconfigure.yml
+  tags: [reconfigure]
+
+- name: Verify artifacts and converge to pinned versions
+  import_playbook: upgrade.yml
+  tags: [upgrade]

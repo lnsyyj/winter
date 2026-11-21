@@ -1,0 +1,2 @@
+---
+# No role-specific precheck for haproxy; global prechecks cover OS/resources/ports.

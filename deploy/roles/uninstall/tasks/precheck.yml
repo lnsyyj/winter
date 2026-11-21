@@ -1,0 +1,2 @@
+---
+# No role-specific precheck for uninstall; global prechecks cover OS/resources/ports.

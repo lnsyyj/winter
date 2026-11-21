@@ -1,0 +1,2 @@
+---
+# No role-specific precheck for realserver; global prechecks cover OS/resources/ports.
