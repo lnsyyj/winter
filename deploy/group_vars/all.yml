@@ -421,7 +421,7 @@ harbor:
 # Publishes one A record per active-active Director VIP so DNS round-robin spreads clients
 # across Directors; the record set is derived from dns.vips -> ha.vips -> ha.vip.
 # Deploy independently with: ./deploy.sh dns -i inventory/multinode
-dns:
+dns_defaults:
   enabled: false
   # package = dnf from host repos; repo = offline RPMs from the internal static repo
   install_method: package
@@ -449,6 +449,9 @@ dns:
   manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
   manage_systemd_resolved: true         # disable the systemd-resolved stub listener to free the DNS port
   check_interval: 60                   # local resolution check retry window (seconds)
+# ADR-42: operation files set dns_overrides (partial dict); extra-vars @file replaces whole dicts,
+# so merge onto defaults to preserve lazy keys such as domain ({{ platform.domain }}).
+dns: "{{ dns_defaults | combine(dns_overrides | default({}, true), recursive=True) }}"
 
 # Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
 # instance (postgresql.port); the target is the HA entry point (pg_cluster.haproxy.listen_port).
