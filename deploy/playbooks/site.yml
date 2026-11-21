@@ -259,6 +259,7 @@
       tags: [always]
   roles:
     - role: dns
+      when: dns.enabled | bool
       tags: [named]
 
 - name: Agent pre-install on managed nodes
