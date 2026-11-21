@@ -58,6 +58,9 @@ case "$ACTION" in
         ;;
 esac
 
+# Drop the action argument — everything after it is ansible-playbook options.
+shift
+
 if ! command -v ansible-playbook >/dev/null 2>&1; then
     echo "ansible-playbook not found. Install ansible-core on the control machine." >&2
     exit 3
