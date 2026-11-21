@@ -21,7 +21,7 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [pg-scale-in]
 
     - name: Validate scale-in plan
       ansible.builtin.assert:
@@ -35,12 +35,12 @@
         fail_msg: "Removed nodes must be in [management], leave an odd count >= 3, and purge_data requires an explicit data_dirs list"
         quiet: true
       run_once: true
-      tags: [always]
+      tags: [pg-scale-in]
 
     - name: Record the expected member count after removal
       ansible.builtin.set_fact:
         pg_expected_members: "{{ groups['management'] | length - pg_scale.removed_nodes | length }}"
-      tags: [always]
+      tags: [pg-scale-in]
 
   tasks:
     - name: Confirm removed nodes are replicas, never the leader
@@ -49,7 +49,7 @@
         status_code: 200
       loop: "{{ pg_scale.removed_nodes }}"
       delegate_to: "{{ groups['management'] | difference(pg_scale.removed_nodes) | first }}"
-      tags: [scale-in]
+      tags: [pg-scale-in]
 
     - name: Resolve etcd member IDs for removed nodes
       ansible.builtin.shell: |
@@ -64,7 +64,7 @@
       delegate_to: "{{ groups['management'] | difference(pg_scale.removed_nodes) | first }}"
       register: pg_etcd_member_ids
       changed_when: false
-      tags: [etcd, scale-in]
+      tags: [pg-scale-in]
 
     - name: Remove etcd members
       ansible.builtin.command: >-
@@ -76,7 +76,7 @@
       delegate_to: "{{ groups['management'] | difference(pg_scale.removed_nodes) | first }}"
       run_once: true
       changed_when: true
-      tags: [etcd, scale-in]
+      tags: [pg-scale-in]
 
     - name: Stop and disable cluster services on removed nodes
       ansible.builtin.systemd:
@@ -85,7 +85,7 @@
         enabled: false
       loop: [etcd, patroni]
       when: inventory_hostname in pg_scale.removed_nodes
-      tags: [scale-in]
+      tags: [pg-scale-in]
 
     - name: Purge explicitly listed data directories (opt-in)
       ansible.builtin.file:
@@ -93,21 +93,21 @@
         state: absent
       loop: "{{ pg_scale.data_dirs | default([]) }}"
       when: inventory_hostname in pg_scale.removed_nodes and pg_scale.purge_data | bool
-      tags: [scale-in]
+      tags: [pg-scale-in]
 
   roles:
     - role: postgresql
       when: inventory_hostname not in pg_scale.removed_nodes
-      tags: [postgresql, db]
+      tags: [pg-scale-in]
     - role: etcd
       when: inventory_hostname not in pg_scale.removed_nodes
-      tags: [etcd]
+      tags: [pg-scale-in]
     - role: patroni
       when: inventory_hostname not in pg_scale.removed_nodes
-      tags: [patroni]
+      tags: [pg-scale-in]
     - role: haproxy
       when: inventory_hostname not in pg_scale.removed_nodes
-      tags: [haproxy]
+      tags: [pg-scale-in]
 
   post_tasks:
     - name: Report scale-in result
@@ -116,4 +116,4 @@
           - "Removed {{ pg_scale.removed_nodes | join(', ') }}; remaining etcd members: {{ pg_expected_members }}"
           - "Data preserved: {{ not (pg_scale.purge_data | bool) }}. Remove the hosts from [management] in inventory when ready"
       run_once: true
-      tags: [always]
+      tags: [pg-scale-in]

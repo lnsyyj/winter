@@ -27,7 +27,7 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [app-ha]
 
     - name: Confirm this is a supported distribution
       ansible.builtin.assert:
@@ -35,23 +35,23 @@
           - ansible_facts.os_family == "RedHat"
         fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
         quiet: true
-      tags: [always]
+      tags: [app-ha]
 
     - name: Reject localhost database address for multi-replica Server
       ansible.builtin.assert:
         that: (groups['winter-server'] | length) == 1 or server_ha.database_host != '127.0.0.1'
         fail_msg: "Server replicas require server_ha.database_host pointing at the PG HA access point (HAProxy/VIP), not 127.0.0.1"
         quiet: true
-      tags: [always]
+      tags: [app-ha]
 
     - name: Bind this Server replica to its internal address
       ansible.builtin.set_fact:
         winter_server: "{{ winter_server | combine({'listen_addr': ansible_host | default(winter_server.listen_addr)}) }}"
-      tags: [always]
+      tags: [app-ha]
 
   roles:
     - role: winter-server
-      tags: [server]
+      tags: [app-ha]
 
 - name: Deploy Harbor replicas
   hosts: harbor
@@ -67,17 +67,17 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [app-ha]
 
     - name: Bind this Harbor replica to its internal address
       ansible.builtin.set_fact:
         harbor: "{{ harbor | combine({'bind_addr': ansible_host | default(harbor.bind_addr)}) }}"
-      tags: [always]
+      tags: [app-ha]
 
   roles:
     - role: harbor
       when: harbor.enabled | bool
-      tags: [harbor]
+      tags: [app-ha]
 
 - name: Configure the Nginx real servers behind the LVS VIP
   hosts: nginx
@@ -93,7 +93,7 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [app-ha]
 
     - name: Confirm this is a supported distribution
       ansible.builtin.assert:
@@ -101,7 +101,7 @@
           - ansible_facts.os_family == "RedHat"
         fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
         quiet: true
-      tags: [always]
+      tags: [app-ha]
 
     # The Nginx template selects `upstream winter_api` only when server_upstreams is set.
     # Compute it here (before the nginx role runs) so the reverse proxy targets the Server
@@ -111,14 +111,14 @@
       ansible.builtin.set_fact:
         server_upstreams: "{{ groups['winter-server'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
         harbor_upstreams: "{{ groups['harbor'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-      tags: [always]
+      tags: [app-ha]
 
   roles:
     - role: realserver
       when: ha.lvs.enabled | bool
-      tags: [ha, lvs, realserver]
+      tags: [app-ha]
     - role: nginx
-      tags: [nginx, web]
+      tags: [app-ha]
 
 - name: Configure the Keepalived Director with LVS load balancing
   hosts: keepalived
@@ -134,14 +134,14 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [app-ha]
 
     - name: Reject overlapping Director and real server roles
       ansible.builtin.assert:
         that: (not (ha.lvs.enabled | bool)) or (groups['keepalived'] | intersect(groups['nginx']) | length == 0)
         fail_msg: "LVS/DR requires [keepalived] and [nginx] to be disjoint; otherwise the Director and a real server share the same VIP"
         quiet: true
-      tags: [always]
+      tags: [app-ha]
 
     - name: Compute replica addresses for upstreams, LVS backends and VRRP peers
       ansible.builtin.set_fact:
@@ -149,17 +149,17 @@
         harbor_upstreams: "{{ groups['harbor'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
         nginx_lvs_backends: "{{ groups['nginx'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
         ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-      tags: [always]
+      tags: [app-ha]
 
     - name: Inject LVS real servers into the Keepalived configuration
       ansible.builtin.set_fact:
         ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
-      tags: [always]
+      tags: [app-ha]
 
   roles:
     - role: keepalived
       when: ha.enabled | bool
-      tags: [ha, keepalived]
+      tags: [app-ha]
 
   post_tasks:
     - name: Print HA summary
@@ -169,4 +169,4 @@
           - "Harbor upstream: {{ harbor_upstreams | default([]) | join(', ') }}"
           - "LVS/DR backends: {{ nginx_lvs_backends | default([]) | join(', ') }}"
           - "Keepalived VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
-      tags: [always]
+      tags: [app-ha]

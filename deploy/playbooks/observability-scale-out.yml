@@ -25,7 +25,7 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [observability-scale-out]
 
     - name: Confirm this is a supported distribution
       ansible.builtin.assert:
@@ -33,7 +33,7 @@
           - ansible_facts.os_family == "RedHat"
         fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
         quiet: true
-      tags: [always]
+      tags: [observability-scale-out]
 
     - name: Validate monitoring scale-out plan
       ansible.builtin.assert:
@@ -45,20 +45,20 @@
         fail_msg: "monitoring_scale.nodes must be non-empty, unique, already listed in [observability]; scale-out needs at least two monitor nodes"
         quiet: true
       run_once: true
-      tags: [always]
+      tags: [observability-scale-out]
 
     - name: Bind monitoring components to the internal network on multi-node setups
       ansible.builtin.set_fact:
         monitoring_bind_addr: "0.0.0.0"
         monitoring_advertise_addr: "{{ ansible_host | default(monitoring_listen_addr) }}"
-      tags: [always]
+      tags: [observability-scale-out]
 
     - name: Compute active monitor peer addresses
       ansible.builtin.set_fact:
         monitor_peers: >-
           {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
-      tags: [always]
+      tags: [observability-scale-out]
 
     - name: Compute the metrics query endpoint used by Grafana and vmalert
       ansible.builtin.set_fact:
@@ -66,24 +66,24 @@
           {{ monitoring_scale.metrics_query_url if (monitoring_scale.metrics_query_url | default('') | length > 0)
              else (hostvars[(groups['observability'] | difference(monitoring_scale.removed_nodes | default([])) | first)]['ansible_host']
                    | default(monitoring_listen_addr)) }}
-      tags: [always]
+      tags: [observability-scale-out]
 
     - name: Compute the Server endpoint used by the Alertmanager webhook
       ansible.builtin.set_fact:
         monitoring_server_url: >-
           {{ hostvars[groups['management'] | first]['ansible_host'] | default(monitoring_listen_addr) }}
-      tags: [always]
+      tags: [observability-scale-out]
 
     - name: Point vmalert at every Alertmanager replica
       ansible.builtin.set_fact:
         monitoring_vmalert_notifiers: >-
           {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
-      tags: [always]
+      tags: [observability-scale-out]
 
   roles:
     - role: observability
-      tags: [observability, monitoring]
+      tags: [observability-scale-out]
 
   post_tasks:
     - name: Print monitoring scale-out summary
@@ -94,7 +94,7 @@
           - "Metrics query endpoint: {{ monitoring_metrics_url }}"
           - "Grafana and vmalert are stateless and can be added incrementally"
           - "VictoriaMetrics / VictoriaLogs remain single-node local storage; configure monitoring_scale.metrics_query_url for aggregation"
-      tags: [always]
+      tags: [observability-scale-out]
 
 - name: Update the Nginx Grafana upstream with all monitor nodes
   hosts: management
@@ -110,15 +110,15 @@
         monitor_grafana_upstreams: >-
           {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
              | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
-      tags: [always]
+      tags: [observability-scale-out]
 
   roles:
     - role: nginx
-      tags: [nginx, web]
+      tags: [observability-scale-out]
 
   post_tasks:
     - name: Print access summary
       ansible.builtin.debug:
         msg:
           - "Grafana is reachable at https://{{ nginx.server_name }}/grafana/ via {{ monitor_grafana_upstreams | length }} replica(s)"
-      tags: [always]
+      tags: [observability-scale-out]

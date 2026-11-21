@@ -24,7 +24,7 @@
   register: pg_member_exists
   changed_when: false
   failed_when: false
-  tags: [etcd, scale-out]
+  tags: [pg-scale-out]
 
 - name: Add {{ pg_join_node }} to etcd (learner) and capture its cluster membership
   ansible.builtin.command: >-
@@ -38,7 +38,7 @@
   register: pg_etcd_add
   changed_when: true
   when: (pg_use_learner | bool) and pg_member_exists.rc != 0
-  tags: [etcd, scale-out]
+  tags: [pg-scale-out]
 
 - name: Add {{ pg_join_node }} to etcd (voting member)
   ansible.builtin.command: >-
@@ -51,7 +51,7 @@
   register: pg_etcd_add_voting
   changed_when: true
   when: (not (pg_use_learner | bool)) and pg_member_exists.rc != 0
-  tags: [etcd, scale-out]
+  tags: [pg-scale-out]
 
 - name: Refuse to re-add an already registered member without its add output
   ansible.builtin.assert:
@@ -62,14 +62,14 @@
       from an existing member.
     quiet: true
   run_once: true
-  tags: [always]
+  tags: [pg-scale-out]
 
 # run_once register results are shared with every host; compute the local fact on each host so the
 # joining node can read the membership string returned by etcdctl.
 - name: Resolve the etcd add result for this node
   ansible.builtin.set_fact:
     pg_etcd_add_result: "{{ (pg_use_learner | bool) | ternary(pg_etcd_add, pg_etcd_add_voting | default({})) }}"
-  tags: [always]
+  tags: [pg-scale-out]
 
 # Parse the member add output without regex backreferences: a Jinja/YAML backslash sequence was
 # rendered literally as "\1" into etcd.service.j2 (etcd then failed with "URL scheme must be http").
@@ -86,19 +86,19 @@
     etcd_initial_cluster: "{{ (pg_etcd_add_result.stdout_lines | select('search', '^ETCD_INITIAL_CLUSTER=') | first | default('')).split('=', 1)[1] | trim | trim('\"') }}"
     # "Member <id> added to cluster ..." -> second whitespace token
     pg_join_member_id: "{{ (pg_etcd_add_result.stdout_lines | select('search', '^Member .* added') | first | default('')).split()[1] }}"
-  tags: [always]
+  tags: [pg-scale-out]
 
 - name: Mark this node as joining with the etcd-provided member list
   ansible.builtin.set_fact:
     etcd_joining: true
   when: inventory_hostname == pg_join_node
-  tags: [always]
+  tags: [pg-scale-out]
 
 - name: Install PostgreSQL on the joining node
   ansible.builtin.include_role:
     name: postgresql
   when: inventory_hostname == pg_join_node
-  tags: [postgresql, db]
+  tags: [pg-scale-out]
 
 - name: Install and start etcd on the joining node
   ansible.builtin.include_role:
@@ -107,13 +107,13 @@
     # Existing members plus this iteration's join (pg_join_index is 0-based) are healthy now.
     pg_healthy_target: "{{ (pg_existing_members | int) + (pg_join_index | int) + 1 }}"
   when: inventory_hostname == pg_join_node
-  tags: [etcd]
+  tags: [pg-scale-out]
 
 - name: Install and start Patroni on the joining node
   ansible.builtin.include_role:
     name: patroni
   when: inventory_hostname == pg_join_node
-  tags: [patroni]
+  tags: [pg-scale-out]
 
 # Promote only in the single-member bootstrap path. Wait until the learner has caught up, then
 # promote; each promote restores a voting quorum (1 -> 2 -> 3) before the next node is added.
@@ -134,7 +134,7 @@
   run_once: true
   changed_when: true
   when: pg_use_learner | bool
-  tags: [etcd, scale-out]
+  tags: [pg-scale-out]
 
 # Check membership state via `member list` (works for learners); `endpoint health --cluster` would
 # query the learner directly and fail with "rpc not supported for learner".
@@ -154,4 +154,4 @@
   delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   changed_when: false
-  tags: [etcd, scale-out]
+  tags: [pg-scale-out]

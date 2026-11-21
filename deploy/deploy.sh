@@ -97,15 +97,10 @@ if [ -n "$ACTION_TAGS" ]; then
     esac
 fi
 
-# Component-only runs must skip the transactional operation plays entirely. Their imported
-# playbooks carry component tag names internally (pg-ha has 'postgresql', app-ha has 'nginx',
-# etc.), so -t alone is not enough — skip-tags is required to prevent a routine deploy from
-# triggering an HA rebuild, scale or migration.
-OP_TAGS="pg-ha,pg-scale-out,pg-scale-in,pg-migrate,app-ha,observability-scale-out,observability-scale-in,destroy,verify,reconfigure,upgrade"
-case " $* " in
-    *" -t pg-ha"*|*" -t pg-scale"*|*" -t app-ha"*|*" -t observability-scale"*|*" --tags pg-ha"*|*" --tags pg-scale"*|*" --tags app-ha"*|*" --tags observability-scale"*) ;;
-    *) set -- "$@" --skip-tags "$OP_TAGS" ;;
-esac
+# No skip-tags needed: every transactional playbook now tags all its tasks with its single
+# operation tag (pg-ha, pg-migrate, ...), so -t <component> can never trigger an operation and
+# vice versa. The previous skip-tags hack also cancelled -t pg-migrate when extra-vars sat
+# between the flag and its value — removed.
 
 # Lifecycle actions keep their own playbooks: their internal task tags overlap with component
 # names, so importing them into site.yml would leak into `-t <component>` runs (e.g. upgrade tasks

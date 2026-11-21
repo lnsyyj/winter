@@ -23,7 +23,7 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [pg-ha]
 
     # A single-member etcd + single Patroni is a valid bootstrap state for the 1 -> 3 growth path,
     # but has no fault tolerance. Require an explicit opt-in so production never deploys it by
@@ -40,15 +40,15 @@
           pg_cluster.allow_single_node_bootstrap=true explicitly (no fault tolerance in that state).
         quiet: true
       run_once: true
-      tags: [always]
+      tags: [pg-ha]
 
   roles:
     # Order: binaries first → then leader election → then Patroni brings up PG → finally the unified entry point
     - role: postgresql
-      tags: [postgresql, db]
+      tags: [pg-ha]
     - role: etcd
-      tags: [etcd]
+      tags: [pg-ha]
     - role: patroni
-      tags: [patroni]
+      tags: [pg-ha]
     - role: haproxy
-      tags: [haproxy]
+      tags: [pg-ha]

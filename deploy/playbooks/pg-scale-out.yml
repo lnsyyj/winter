@@ -36,7 +36,7 @@
         file: "{{ playbook_dir }}/../passwords.yml"
       failed_when: false
       no_log: true
-      tags: [always]
+      tags: [pg-scale-out]
 
     # Scale targets are already members of [management], so the final etcd member count is
     # groups['management'] | length — NOT management + nodes (the old expression double-counted).
@@ -54,7 +54,7 @@
           must remain, the existing member count must be odd (1 or >=3), and the final count odd.
         quiet: true
       run_once: true
-      tags: [always]
+      tags: [pg-scale-out]
 
     - name: Record existing and expected member counts
       ansible.builtin.set_fact:
@@ -63,7 +63,7 @@
         pg_existing_endpoint: "{{ hostvars[groups['management'] | difference(pg_scale.nodes) | first]['ansible_host'] }}"
         # Learner mode is required only when bootstrapping from a single-member cluster.
         pg_use_learner: "{{ (groups['management'] | difference(pg_scale.nodes) | length) == 1 }}"
-      tags: [always]
+      tags: [pg-scale-out]
 
   tasks:
     # Add one etcd member at a time, start it, and (in learner mode) promote it before moving on.
@@ -75,13 +75,13 @@
         loop_var: pg_join_node
         index_var: pg_join_index
         label: "{{ pg_join_node }}"
-      tags: [etcd, patroni, scale-out]
+      tags: [pg-scale-out]
 
     # HAProxy backends reference all [management] members; converge it once after all joined.
     - name: Configure the HAProxy entry point for the grown cluster
       ansible.builtin.include_role:
         name: haproxy
-      tags: [haproxy]
+      tags: [pg-scale-out]
 
   post_tasks:
     - name: Verify the new nodes are streaming replicas
@@ -90,7 +90,7 @@
         status_code: 200
       loop: "{{ pg_scale.nodes }}"
       delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
-      tags: [scale-out]
+      tags: [pg-scale-out]
 
     - name: Report scale-out result
       ansible.builtin.debug:
@@ -98,4 +98,4 @@
           - "Added {{ pg_scale.nodes | join(', ') }}; etcd members: {{ pg_expected_members }}"
           - "Learner mode used: {{ pg_use_learner }} (single-member bootstrap path)"
       run_once: true
-      tags: [always]
+      tags: [pg-scale-out]
