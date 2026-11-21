@@ -1,0 +1,265 @@
+---
+# winter · single ansible entry point (ADR-42).
+#
+# One play per component / operation, tagged with the role name. `winter_ops_action` selects the
+# task file each role executes (prechecks | deploy | destroy | verify | reconfigure | upgrade);
+# tags / inventory groups select which plays actually run. Any failure stops the whole run.
+#
+# Usage (deploy.sh wraps these):
+#   ./deploy.sh deploy    -i inventory/multinode                       # all enabled components
+#   ./deploy.sh deploy    -i inventory/multinode -t local-repo         # one component
+#   ./deploy.sh prechecks -i inventory/pgha    -t pg-ha                # one role's precheck
+#   ./deploy.sh deploy    -i inventory/operations/scale-out-pg -t pg-scale-out -e @group_vars/operations/pg-scale-out.yml
+#
+# Play order == dependency order: base OS -> repo -> database -> access -> app -> HA -> acceptance.
+
+- name: Global pre-deployment checks
+  hosts: all
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [prechecks]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: prechecks
+      tags: [prechecks]
+
+- name: System initialization
+  hosts: system-init
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [system-init]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: system-init
+      tags: [system-init]
+
+- name: Base dependencies and OS settings
+  hosts: all
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [bootstrap]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: bootstrap
+      when: bootstrap.enabled | default(true) | bool
+      tags: [bootstrap]
+
+- name: Internal artifact repository
+  hosts: local-repo
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [local-repo]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: local_repo
+      tags: [local-repo]
+
+- name: PostgreSQL single instance
+  hosts: postgresql
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [postgresql]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: postgresql
+      tags: [postgresql]
+
+- name: Nginx access layer
+  hosts: nginx
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [nginx]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: nginx
+      tags: [nginx]
+
+- name: Observability stack
+  hosts: observability
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [observability]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: observability
+      when: observability.enabled | bool
+      tags: [observability]
+
+- name: Management Server
+  hosts: winter-server
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [winter-server]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: winter-server
+      when: winter_server.enabled | bool
+      tags: [winter-server]
+
+- name: Harbor registry
+  hosts: harbor
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [harbor]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: harbor
+      when: harbor.enabled | bool
+      tags: [harbor]
+
+- name: Keepalived Director and LVS real servers
+  hosts: keepalived
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [keepalived]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: keepalived
+      when: ha.enabled | bool
+      tags: [keepalived]
+
+- name: BIND 9 DNS
+  hosts: named
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [named]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: dns
+      tags: [named]
+
+- name: Agent pre-install on managed nodes
+  hosts: agent
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [agent]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: agent
+      tags: [agent]
+
+# ---- Operate-type roles: transactional orchestrations (stateful, ordered) ----
+
+- name: PostgreSQL HA cluster bootstrap
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [pg-ha]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: pg-ha
+      tags: [pg-ha]
+
+- name: PostgreSQL HA scale out
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [pg-scale-out]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: pg-scale-out
+      tags: [pg-scale-out]
+
+- name: PostgreSQL HA scale in
+  hosts: management
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tags: [pg-scale-in]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: pg-scale-in
+      tags: [pg-scale-in]
+
+- name: PostgreSQL single-node to HA data migration
+  hosts: management
+  become: true
+  gather_facts: true
+  serial: 1
+  any_errors_fatal: true
+  tags: [pg-migrate]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: pg-migrate
+      tags: [pg-migrate]
+
+- name: Observability scale out
+  hosts: observability
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [observability-scale-out]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: observability-scale-out
+      tags: [observability-scale-out]
+
+- name: Observability scale in
+  hosts: observability
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [observability-scale-in]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: observability-scale-in
+      tags: [observability-scale-in]
+
+- name: Application layer HA
+  hosts: winter-server
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [app-ha]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: app-ha
+      tags: [app-ha]
+
+# ---- Lifecycle: uninstall ----
+
+- name: Uninstall the platform
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [destroy]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: uninstall
+      tags: [destroy]
