@@ -1,17 +1,22 @@
 ---
 # winter · single ansible entry point (ADR-42).
 #
-# One play per component / operation, tagged with the role name. `winter_ops_action` selects the
-# task file each role executes (prechecks | deploy | destroy | verify | reconfigure | upgrade);
-# tags / inventory groups select which plays actually run. Any failure stops the whole run.
+# All deployment work enters through this one file. It has two kinds of plays:
+#   1. Component plays — one per component role. The role's tasks/main.yml dispatches on
+#      `winter_ops_action` (deploy | prechecks | destroy | verify | reconfigure | upgrade) to the
+#      matching task file. Tags/inventory groups select which components run.
+#   2. Transactional orchestrations — imported playbooks (pg-ha, pg-scale-*, pg-migrate, app-ha,
+#      observability-scale-*). These span multiple host groups with ordered, stateful steps and
+#      cannot be expressed as a single role; they stay as playbooks but are no longer direct CLI
+#      entry points (deploy.sh always invokes site.yml).
+#
+# Any failure stops the run (any_errors_fatal) — partial convergence is not a valid state.
 #
 # Usage (deploy.sh wraps these):
-#   ./deploy.sh deploy    -i inventory/multinode                       # all enabled components
-#   ./deploy.sh deploy    -i inventory/multinode -t local-repo         # one component
-#   ./deploy.sh prechecks -i inventory/pgha    -t pg-ha                # one role's precheck
-#   ./deploy.sh deploy    -i inventory/operations/scale-out-pg -t pg-scale-out -e @group_vars/operations/pg-scale-out.yml
-#
-# Play order == dependency order: base OS -> repo -> database -> access -> app -> HA -> acceptance.
+#   ./deploy.sh deploy    -i inventory/multinode                        # converge all components
+#   ./deploy.sh deploy    -i inventory/multinode -t local-repo          # one component
+#   ./deploy.sh prechecks -i inventory/pgha                             # all component prechecks
+#   ./deploy.sh deploy    -i inventory/operations/scale-out-pg -t pg-scale-out  # operate
 
 - name: Global pre-deployment checks
   hosts: all
@@ -74,6 +79,22 @@
     - role: postgresql
       tags: [postgresql]
 
+- name: PostgreSQL high availability cluster
+  import_playbook: pg-ha.yml
+  tags: [pg-ha]
+
+- name: PostgreSQL HA scale out
+  import_playbook: pg-scale-out.yml
+  tags: [pg-scale-out]
+
+- name: PostgreSQL HA scale in
+  import_playbook: pg-scale-in.yml
+  tags: [pg-scale-in]
+
+- name: PostgreSQL single-node to HA data migration
+  import_playbook: pg-migrate.yml
+  tags: [pg-migrate]
+
 - name: Nginx access layer
   hosts: nginx
   become: true
@@ -98,6 +119,14 @@
     - role: observability
       when: observability.enabled | bool
       tags: [observability]
+
+- name: Observability scale out
+  import_playbook: observability-scale-out.yml
+  tags: [observability-scale-out]
+
+- name: Observability scale in
+  import_playbook: observability-scale-in.yml
+  tags: [observability-scale-in]
 
 - name: Management Server
   hosts: winter-server
@@ -124,6 +153,10 @@
     - role: harbor
       when: harbor.enabled | bool
       tags: [harbor]
+
+- name: Application layer HA
+  import_playbook: app-ha.yml
+  tags: [app-ha]
 
 - name: Keepalived Director and LVS real servers
   hosts: keepalived
@@ -162,104 +195,6 @@
     - role: agent
       tags: [agent]
 
-# ---- Operate-type roles: transactional orchestrations (stateful, ordered) ----
-
-- name: PostgreSQL HA cluster bootstrap
-  hosts: management
-  become: true
-  gather_facts: true
-  any_errors_fatal: true
-  tags: [pg-ha]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: pg-ha
-      tags: [pg-ha]
-
-- name: PostgreSQL HA scale out
-  hosts: management
-  become: true
-  gather_facts: true
-  any_errors_fatal: true
-  tags: [pg-scale-out]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: pg-scale-out
-      tags: [pg-scale-out]
-
-- name: PostgreSQL HA scale in
-  hosts: management
-  become: true
-  gather_facts: true
-  serial: 1
-  any_errors_fatal: true
-  tags: [pg-scale-in]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: pg-scale-in
-      tags: [pg-scale-in]
-
-- name: PostgreSQL single-node to HA data migration
-  hosts: management
-  become: true
-  gather_facts: true
-  serial: 1
-  any_errors_fatal: true
-  tags: [pg-migrate]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: pg-migrate
-      tags: [pg-migrate]
-
-- name: Observability scale out
-  hosts: observability
-  become: true
-  gather_facts: true
-  any_errors_fatal: true
-  tags: [observability-scale-out]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: observability-scale-out
-      tags: [observability-scale-out]
-
-- name: Observability scale in
-  hosts: observability
-  become: true
-  gather_facts: true
-  any_errors_fatal: true
-  tags: [observability-scale-in]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: observability-scale-in
-      tags: [observability-scale-in]
-
-- name: Application layer HA
-  hosts: winter-server
-  become: true
-  gather_facts: true
-  any_errors_fatal: true
-  tags: [app-ha]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: app-ha
-      tags: [app-ha]
-
-# ---- Lifecycle: uninstall ----
-
 - name: Uninstall the platform
-  hosts: management
-  become: true
-  gather_facts: true
-  any_errors_fatal: true
+  import_playbook: destroy.yml
   tags: [destroy]
-  vars_files:
-    - ../group_vars/all.yml
-  roles:
-    - role: uninstall
-      tags: [destroy]
