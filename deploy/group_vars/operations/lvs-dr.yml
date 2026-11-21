@@ -11,3 +11,8 @@ ha_overrides:
     enabled: true
     scheduler: rr
     persistence_timeout: 0
+# Multi-replica Servers need the PG HA access point, not localhost (app-ha prerequisite).
+server_ha_overrides:
+  database_endpoint: haproxy
+  database_host: 192.168.101.189
+  audit_database_host: 192.168.101.189
