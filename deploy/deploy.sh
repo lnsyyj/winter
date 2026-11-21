@@ -87,7 +87,7 @@ case "$ACTION" in
         ACTION_TAGS="destroy"
         ;;
     verify|reconfigure|upgrade)
-        ACTION_TAGS="$COMPONENT_TAGS"
+        ACTION_TAGS="$ACTION"
         ;;
 esac
 if [ -n "$ACTION_TAGS" ]; then
@@ -97,8 +97,12 @@ if [ -n "$ACTION_TAGS" ]; then
     esac
 fi
 
-set -- "$@" -e "winter_ops_action=$ACTION"
+# Map the CLI action to the role task-file name. 'prechecks' is the user-facing command but
+# role task files use singular 'precheck', matching the reference framework's convention.
+TASK_ACTION=$ACTION
+[ "$ACTION" = "prechecks" ] && TASK_ACTION="precheck"
+set -- "$@" -e "winter_ops_action=$TASK_ACTION"
 
 cd "$ROOT"
-echo "Running: ansible-playbook site.yml -e winter_ops_action=$ACTION $*"
+echo "Running: ansible-playbook site.yml -e winter_ops_action=$TASK_ACTION $*"
 exec ansible-playbook playbooks/site.yml "$@"

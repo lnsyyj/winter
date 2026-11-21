@@ -28,7 +28,7 @@
     - ../group_vars/all.yml
   roles:
     - role: prechecks
-      when: winter_ops_action | default('deploy') == 'prechecks'
+      when: winter_ops_action | default('deploy') == 'precheck'
       tags: [prechecks]
 
 - name: System initialization
