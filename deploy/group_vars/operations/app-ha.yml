@@ -1,0 +1,10 @@
+---
+# Operation variables: application-layer HA (ADR-42).
+server_ha:
+  database_endpoint: haproxy
+  database_host: 192.168.101.189       # PG HA entry point (HAProxy/VIP)
+  audit_database_host: 192.168.101.189
+ha:
+  enabled: true
+  vip: 192.168.101.250
+  interface: ens34

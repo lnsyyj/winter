@@ -1,0 +1,5 @@
+---
+# Operation variables: single-node PostgreSQL -> HA migration (ADR-42 / ADR-40).
+# Stop-the-world: Server is stopped during dump/restore/verify.
+pg_migrate:
+  verify_checksums: true
