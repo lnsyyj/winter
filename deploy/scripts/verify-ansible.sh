@@ -88,8 +88,14 @@ echo "Shell syntax passed"
 
 # Optional full syntax check when ansible-core is available on the control machine
 if command -v ansible-playbook >/dev/null 2>&1; then
+    # ansible.cfg (roles_path, etc.) lives in deploy/; use it explicitly because this script runs
+    # from the repo root. scale-out-member.yml is a task fragment, not a playbook — skip it.
     for play in deploy/playbooks/*.yml; do
-        ansible-playbook --syntax-check -i deploy/inventory/all-in-one "$play" >/dev/null || exit 1
+        case "$play" in
+            *scale-out-member.yml) continue ;;
+        esac
+        ANSIBLE_CONFIG=deploy/ansible.cfg ansible-playbook --syntax-check \
+            -i deploy/inventory/all-in-one "$play" >/dev/null || exit 1
     done
     echo "ansible-playbook --syntax-check passed"
 else
