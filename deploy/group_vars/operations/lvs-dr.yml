@@ -1,0 +1,13 @@
+---
+# Operation variables: enable LVS/DR load balancing (ADR-16 / ADR-42).
+# Usage: ./deploy.sh deploy -i inventory/operations/lvs-dr -t app-ha \
+#          -e @group_vars/operations/lvs-dr.yml -e vault_keepalived_auth_pass=<secret>
+# Only overrides are listed; group_vars/all.yml merges them onto ha_defaults.
+ha_overrides:
+  enabled: true
+  vip: 192.168.101.250
+  interface: ens34
+  lvs:
+    enabled: true
+    scheduler: rr
+    persistence_timeout: 0

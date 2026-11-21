@@ -1,0 +1,44 @@
+# Operation inventory: enable LVS/DR four-layer load balancing (ADR-16 / ADR-42).
+# LVS/DR requires [keepalived] (Director) and [nginx] (RealServers) to be DISJOINT:
+# the Director owns the VIP on its NIC; RealServers bind it on lo with ARP suppression.
+# With 3 nodes: ctl = Director, node-b/node-c = RealServers (>=2 required).
+# Application Server replicas remain on all management nodes and are nginx upstreams.
+[management]
+ctl       ansible_host=192.168.101.189
+node-b    ansible_host=192.168.101.197
+node-c    ansible_host=192.168.101.198
+
+# LVS Director(s): hold the VIP and run ipvs. VRRP pair would need >=2 directors; here single.
+[keepalived]
+ctl
+
+# LVS RealServers: nginx binds VIP on lo; >=2 required by the keepalived role.
+[nginx]
+node-b
+node-c
+
+# Application / platform groups (unaffected by the Director/RealServer split).
+[winter-server:children]
+management
+
+[harbor:children]
+management
+
+[postgresql:children]
+management
+
+[observability:children]
+management
+
+[local-repo:children]
+management
+
+[named:children]
+management
+
+[system-init:children]
+management
+
+[all:vars]
+ansible_user=root
+ansible_python_interpreter=/usr/bin/python3
