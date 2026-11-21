@@ -34,6 +34,7 @@
     paths: "{{ playbook_dir }}/../artifacts/repo/rpm"
     patterns: "*.rpm"
     file_type: file
+    recurse: true
   delegate_to: localhost
   connection: local
   register: pg_local_rpms
