@@ -26,6 +26,13 @@
   tags: [prechecks]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: prechecks
       when: winter_ops_action | default('deploy') == 'precheck'
@@ -39,6 +46,13 @@
   tags: [system-init]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: system-init
       tags: [system-init]
@@ -51,6 +65,13 @@
   tags: [bootstrap]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: bootstrap
       when: bootstrap.enabled | default(true) | bool
@@ -64,6 +85,13 @@
   tags: [local-repo]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: local_repo
       tags: [local-repo]
@@ -76,6 +104,13 @@
   tags: [postgresql]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: postgresql
       tags: [postgresql]
@@ -104,6 +139,13 @@
   tags: [nginx]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: nginx
       tags: [nginx]
@@ -116,6 +158,13 @@
   tags: [observability]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: observability
       when: observability.enabled | bool
@@ -137,6 +186,13 @@
   tags: [winter-server]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: winter-server
       when: winter_server.enabled | bool
@@ -150,6 +206,13 @@
   tags: [harbor]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: harbor
       when: harbor.enabled | bool
@@ -167,6 +230,13 @@
   tags: [keepalived]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: keepalived
       when: ha.enabled | bool
@@ -180,6 +250,13 @@
   tags: [named]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: dns
       tags: [named]
@@ -192,6 +269,13 @@
   tags: [agent]
   vars_files:
     - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
   roles:
     - role: agent
       tags: [agent]
