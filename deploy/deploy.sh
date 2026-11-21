@@ -97,6 +97,27 @@ if [ -n "$ACTION_TAGS" ]; then
     esac
 fi
 
+# Component-only runs must skip the transactional operation plays entirely. Their imported
+# playbooks carry component tag names internally (pg-ha has 'postgresql', app-ha has 'nginx',
+# etc.), so -t alone is not enough — skip-tags is required to prevent a routine deploy from
+# triggering an HA rebuild, scale or migration.
+OP_TAGS="pg-ha,pg-scale-out,pg-scale-in,pg-migrate,app-ha,observability-scale-out,observability-scale-in,destroy,verify,reconfigure,upgrade"
+case " $* " in
+    *" -t pg-ha"*|*" -t pg-scale"*|*" -t app-ha"*|*" -t observability-scale"*|*" --tags pg-ha"*|*" --tags pg-scale"*|*" --tags app-ha"*|*" --tags observability-scale"*) ;;
+    *) set -- "$@" --skip-tags "$OP_TAGS" ;;
+esac
+
+# Lifecycle actions keep their own playbooks: their internal task tags overlap with component
+# names, so importing them into site.yml would leak into `-t <component>` runs (e.g. upgrade tasks
+# tagged 'postgresql' firing on a routine deploy). They enter through deploy.sh but not via site.yml.
+case "$ACTION" in
+    destroy)    PLAYBOOK="playbooks/destroy.yml" ;;
+    verify)     PLAYBOOK="playbooks/post-deploy.yml" ;;
+    reconfigure) PLAYBOOK="playbooks/reconfigure.yml" ;;
+    upgrade)    PLAYBOOK="playbooks/upgrade.yml" ;;
+    *)          PLAYBOOK="playbooks/site.yml" ;;
+esac
+
 # Map the CLI action to the role task-file name. 'prechecks' is the user-facing command but
 # role task files use singular 'precheck', matching the reference framework's convention.
 TASK_ACTION=$ACTION
@@ -104,5 +125,5 @@ TASK_ACTION=$ACTION
 set -- "$@" -e "winter_ops_action=$TASK_ACTION"
 
 cd "$ROOT"
-echo "Running: ansible-playbook site.yml -e winter_ops_action=$TASK_ACTION $*"
-exec ansible-playbook playbooks/site.yml "$@"
+echo "Running: ansible-playbook $PLAYBOOK -e winter_ops_action=$TASK_ACTION $*"
+exec ansible-playbook "$PLAYBOOK" "$@"
