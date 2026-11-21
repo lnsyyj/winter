@@ -129,7 +129,7 @@ agent_overrides:
 
 # PostgreSQL HA membership changes (ADR-17 / ADR-37). Nodes must already be in [management] in inventory/pgha.
 # The final etcd member count must stay odd and >= 3. Data is preserved unless purge_data is set.
-pg_scale:
+pg_scale_defaults:
   nodes: []            # scale-out targets, e.g. [pg-d, pg-e]
   removed_nodes: []    # scale-in targets, e.g. [pg-e]
   purge_data: false
@@ -213,7 +213,7 @@ nginx_overrides:
 
 # PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
 # All ports are configurable; the 5433 default avoids port 5432, already occupied by argus on .194
-pg_cluster:
+pg_cluster_defaults:
   scope: winter-pg
   # Single-node HA bootstrap (1-member etcd + single Patroni + HAProxy) is technically valid but
   # offers no fault tolerance. Opt in explicitly for a 1 -> 3 online growth path; keep false for
@@ -263,7 +263,7 @@ monitoring_retention_days: 30       # 30 days each for metrics and logs; audits 
 monitoring_vmalert_notifiers:
   - "{{ monitoring_listen_addr }}"
 
-monitoring_scale:
+monitoring_scale_defaults:
   nodes: []                  # scale-out targets, must already be listed in the [observability] group
   removed_nodes: []          # scale-in targets, kept in [observability] but excluded from all references
   purge_data: false          # never remove monitoring data unless explicitly requested
@@ -339,7 +339,7 @@ winter_server:
 # High availability (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas sit behind
 # Nginx, with Keepalived providing a floating VIP on the [keepalived] nodes. Single-node inventories keep
 # everything on management and leave ha.enabled=false.
-ha:
+ha_defaults:
   enabled: false
   interface: eth0                         # NIC that carries the VIP
   vip: ""                                 # single VIP (active-standby)
@@ -364,17 +364,21 @@ ha:
     connect_timeout: 3
     real_server_port: "{{ platform.https_port }}"
     real_servers: []                      # computed by app-ha from [nginx]
+# ADR-42: operations set ha_overrides (partial dict); extra-vars @file replaces whole dicts, so
+# merging is required or ha.lvs / ha.virtual_router_id disappear during an operation run.
+ha: "{{ ha_defaults | combine(ha_overrides | default({}, true), recursive=True) }}"
 
 # Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
 # Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with
 # each replica's internal address. database_host must point at the PG HA access point (HAProxy/VIP)
 # once replicas are spread across nodes.
-server_ha:
+server_ha_defaults:
   # DB endpoint mode: auto (detect HAProxy config on host, fall back to node count) | direct (local
   # 5432 system PG) | haproxy (server_ha.database_host:5434). Most deployments leave this on auto.
   database_endpoint: auto
   database_host: 127.0.0.1
   audit_database_host: 127.0.0.1
+server_ha: "{{ server_ha_defaults | combine(server_ha_overrides | default({}, true), recursive=True) }}"
 
 # Harbor (ADR-16).
 # mode: builtin  — MVP single node. Harbor's own bundled PostgreSQL, Redis and local data volume.
@@ -449,7 +453,7 @@ dns:
 # Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
 # instance (postgresql.port); the target is the HA entry point (pg_cluster.haproxy.listen_port).
 # Both use the same database / role names, so only one database is moved.
-pg_migrate:
+pg_migrate_defaults:
   source_port: "{{ postgresql.port | default(5432) }}"
   target_port: "{{ pg_cluster.haproxy.listen_port }}"
   database: "{{ postgresql.db_name | default('winter') }}"
@@ -472,3 +476,12 @@ pg_migrate:
     - audit_results
   # Server services stopped during the maintenance window (no writes to the source).
   server_service: winter-server
+# ADR-42: operations set pg_migrate_overrides (partial dict); merge to preserve defaults.
+pg_migrate: "{{ pg_migrate_defaults | combine(pg_migrate_overrides | default({}, true), recursive=True) }}"
+
+
+# ADR-42: operation var files set *_overrides (partial dicts). extra-vars @file replaces whole
+# dicts, so merge onto defaults to preserve keys not listed in an operation file.
+pg_scale: "{{ pg_scale_defaults | combine(pg_scale_overrides | default({}, true), recursive=True) }}"
+pg_cluster: "{{ pg_cluster_defaults | combine(pg_cluster_overrides | default({}, true), recursive=True) }}"
+monitoring_scale: "{{ monitoring_scale_defaults | combine(monitoring_scale_overrides | default({}, true), recursive=True) }}"

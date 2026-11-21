@@ -1,4 +1,4 @@
 ---
 # Operation variables: remove observability replicas (ADR-42 / ADR-18).
-monitoring_scale:
+monitoring_scale_overrides:
   removed_nodes: [node-c]

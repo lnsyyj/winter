@@ -1,10 +1,11 @@
 ---
 # Operation variables: application-layer HA (ADR-42).
-server_ha:
+# Only overrides are listed; group_vars/all.yml merges them onto ha_defaults / server_ha defaults.
+server_ha_overrides:
   database_endpoint: haproxy
   database_host: 192.168.101.189       # PG HA entry point (HAProxy/VIP)
   audit_database_host: 192.168.101.189
-ha:
+ha_overrides:
   enabled: true
   vip: 192.168.101.250
   interface: ens34

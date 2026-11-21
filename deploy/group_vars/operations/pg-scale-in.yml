@@ -1,6 +1,6 @@
 ---
 # Operation variables: remove PG replicas (ADR-42 / ADR-39).
-pg_scale:
+pg_scale_overrides:
   removed_nodes: [node-c]              # must leave an odd count >= 3
   purge_data: false
   data_dirs: []
