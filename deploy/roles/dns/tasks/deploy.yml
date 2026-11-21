@@ -1,0 +1,235 @@
+---
+# BIND 9 DNS server (ADR-16 / ADR-17). One A record per active-active VIP is published for the
+# platform domain so DNS round-robin spreads clients across Directors. A slave keeps a TSIG-synced
+# copy. Every value comes from dns.* in group_vars/all.yml; topology comes from inventory groups.
+- name: Assert DNS is enabled
+  ansible.builtin.assert:
+    that:
+      - dns.enabled | bool
+      - dns.domain | default('') | length > 0
+    fail_msg: "dns.enabled must be true and dns.domain must be set before running the DNS role"
+    quiet: true
+  tags: [dns]
+
+- name: Derive DNS server role from inventory groups
+  ansible.builtin.set_fact:
+    dns_server_role: "{{ 'slave' if inventory_hostname in groups.get('dns_slaves', []) else 'master' }}"
+  tags: [dns]
+
+- name: Derive DNS master addresses
+  ansible.builtin.set_fact:
+    dns_master_addresses: >-
+      {{ dns.master_addresses | default([]) if (dns.master_addresses | default([]) | length > 0)
+         else ((groups['dns_masters'] | default(groups['named'] | default([])))
+         | difference(groups['dns_slaves'] | default([]))
+         | map('extract', hostvars, 'ansible_host') | select('defined') | list) }}
+  tags: [dns]
+
+- name: Derive DNS slave addresses
+  ansible.builtin.set_fact:
+    dns_slave_addresses: >-
+      {{ dns.slave_addresses | default([]) if (dns.slave_addresses | default([]) | length > 0)
+         else (groups['dns_slaves'] | default([])
+         | map('extract', hostvars, 'ansible_host') | select('defined') | list) }}
+  tags: [dns]
+
+- name: Derive VIP A records
+  ansible.builtin.set_fact:
+    dns_vips: >-
+      {{ dns.vips | default([]) if (dns.vips | default([]) | length > 0)
+         else (ha.vips | default([]) if (ha.vips | default([]) | length > 0)
+         else ([ha.vip] if (ha.vip | default('') | length > 0) else [])) }}
+  tags: [dns]
+
+- name: Derive DNS query access list
+  ansible.builtin.set_fact:
+    dns_allow_query: >-
+      {{ dns.allow_query_cidrs | default([]) if (dns.allow_query_cidrs | default([]) | length > 0)
+         else ['any'] }}
+  tags: [dns]
+
+- name: Compute a stable zone serial from the published records
+  ansible.builtin.set_fact:
+    dns_zone_serial: "{{ ((dns.domain ~ '|' ~ (dns_vips | sort | join('|'))) | hash('sha256'))[:8] | int(base=16) }}"
+  when: dns_server_role == 'master'
+  tags: [dns]
+
+# Stock RHEL/Rocky hosts run systemd-resolved with a stub listener on 127.0.0.53:53.
+# BIND listening on listen_addr:any cannot bind port 53 while that stub is active. Disable only
+# the stub listener with a vendor-documented drop-in (the resolver service and /etc/resolv.conf
+# stay intact), then restart it immediately so the port is free before named starts.
+- name: Free the DNS port from the systemd-resolved stub listener
+  when: dns.manage_systemd_resolved | default(true) | bool
+  tags: [dns, dns.install]
+  block:
+    - name: Check whether systemd-resolved holds the DNS port
+      ansible.builtin.shell: "ss -H -lntup '( sport = :{{ dns.listen_port }} )' | grep -q 'systemd-resolve' && echo in_use || echo free"
+      register: dns_resolved_stub_state
+      changed_when: false
+
+    - name: Ensure the systemd-resolved drop-in directory exists
+      ansible.builtin.file:
+        path: /etc/systemd/resolved.conf.d
+        state: directory
+        owner: root
+        group: root
+        mode: '0755'
+      when: dns_resolved_stub_state.stdout == 'in_use'
+
+    - name: Install the systemd-resolved drop-in that disables its stub listener
+      ansible.builtin.copy:
+        dest: /etc/systemd/resolved.conf.d/winter-dns.conf
+        content: |
+          # Managed by Ansible (role: dns). Frees port {{ dns.listen_port }} for BIND 9.
+          [Resolve]
+          DNSStubListener=no
+        owner: root
+        group: root
+        mode: '0644'
+      register: dns_resolved_dropin
+      when: dns_resolved_stub_state.stdout == 'in_use'
+
+    - name: Restart systemd-resolved so it releases the DNS port
+      ansible.builtin.systemd:
+        name: systemd-resolved
+        state: restarted
+      when:
+        - dns_resolved_stub_state.stdout == 'in_use'
+        - dns_resolved_dropin is changed
+
+# PostgreSQL (pgdg) repos are unrelated to DNS and can be unreachable on offline sites;
+# leaving them enabled makes dnf fail before it can resolve BIND from the system repos.
+- name: Install BIND 9 packages from configured repositories
+  ansible.builtin.dnf:
+    name: "{{ dns.packages }}"
+    state: present
+    disablerepo: "*pgdg*"
+  when: dns.install_method == 'package'
+  tags: [dns, dns.install]
+
+- name: Create the local RPM staging directory
+  ansible.builtin.file:
+    path: /var/tmp/winter-dns
+    state: directory
+    mode: '0755'
+  when: dns.install_method == 'repo'
+  tags: [dns, dns.install]
+
+- name: Download BIND 9 RPMs from the internal repo
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ dns.rpm_subdir }}/{{ item }}"
+    dest: "/var/tmp/winter-dns/{{ item }}"
+    mode: '0644'
+  loop: "{{ dns.rpm_files }}"
+  when: dns.install_method == 'repo'
+  tags: [dns, dns.install]
+
+- name: Install BIND 9 from local RPMs
+  ansible.builtin.dnf:
+    name: /var/tmp/winter-dns/*.rpm
+    state: present
+    disable_gpg_check: true
+    disablerepo: "*pgdg*"
+  when: dns.install_method == 'repo'
+  tags: [dns, dns.install]
+
+- name: Create the zone directory
+  ansible.builtin.file:
+    path: "{{ dns.zone_dir }}"
+    state: directory
+    owner: named
+    group: named
+    mode: '0755'
+  tags: [dns]
+
+- name: Create the slave zone directory
+  ansible.builtin.file:
+    path: "{{ dns.zone_dir }}/slaves"
+    state: directory
+    owner: named
+    group: named
+    mode: '0770'
+  when: dns_server_role == 'slave'
+  tags: [dns]
+
+- name: Render named.conf
+  ansible.builtin.template:
+    src: named.conf.j2
+    dest: "{{ dns.config_file }}"
+    owner: root
+    group: named
+    mode: '0640'
+  notify: restart named
+  tags: [dns]
+
+- name: Render the master zone file
+  ansible.builtin.template:
+    src: zone.j2
+    dest: "{{ dns.zone_dir }}/{{ dns.domain }}.zone"
+    owner: named
+    group: named
+    mode: '0644'
+  when: dns_server_role == 'master'
+  notify: restart named
+  tags: [dns]
+
+# Handlers normally run at the end of the play, which is AFTER the verification task below. When
+# a VIP changes, verification would query the still-running old zone and fail; that failed host
+# then skips its pending handler, so named never picks up the new records at all. Flush here so
+# the restart happens before verification.
+- name: Apply pending named restarts before verification
+  ansible.builtin.meta: flush_handlers
+  tags: [dns]
+
+- name: Validate the named configuration
+  ansible.builtin.command: "named-checkconf {{ dns.config_file }}"
+  changed_when: false
+  tags: [dns]
+
+- name: Ensure named is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ dns.service }}"
+    enabled: true
+    state: started
+  tags: [dns]
+
+- name: Open the DNS port in the firewall (TCP)
+  ansible.builtin.command: "firewall-cmd --permanent --add-port={{ dns.listen_port }}/tcp"
+  register: dns_fw_tcp
+  changed_when: "'success' in dns_fw_tcp.stdout"
+  when: dns.manage_firewall | default(true) | bool
+  tags: [dns]
+
+- name: Open the DNS port in the firewall (UDP)
+  ansible.builtin.command: "firewall-cmd --permanent --add-port={{ dns.listen_port }}/udp"
+  register: dns_fw_udp
+  changed_when: "'success' in dns_fw_udp.stdout"
+  when: dns.manage_firewall | default(true) | bool
+  tags: [dns]
+
+- name: Reload the firewall when rules changed
+  ansible.builtin.command: firewall-cmd --reload
+  changed_when: false
+  when:
+    - dns.manage_firewall | default(true) | bool
+    - (dns_fw_tcp.changed | default(false)) or (dns_fw_udp.changed | default(false))
+  tags: [dns]
+
+- name: Verify local DNS resolution
+  ansible.builtin.command: "dig +short @127.0.0.1 {{ dns.domain }} A"
+  register: dns_resolution
+  changed_when: false
+  retries: 5
+  delay: 2
+  until: dns_resolution.stdout_lines | length >= (dns_vips | length)
+  when: dns_server_role == 'master'
+  tags: [dns]
+
+- name: Summarize DNS deployment
+  ansible.builtin.debug:
+    msg:
+      - "Domain: {{ dns.domain }}"
+      - "Server role: {{ dns_server_role }}"
+      - "VIP A records: {{ dns_vips | join(', ') }}"
+      - "Listener: {{ dns.listen_addr }}:{{ dns.listen_port }}"
+  tags: [always]

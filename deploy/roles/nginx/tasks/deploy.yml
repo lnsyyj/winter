@@ -1,0 +1,152 @@
+---
+# Nginx: add this platform's site on top of the existing Nginx
+#
+# Constraints (important):
+# - Do not modify /etc/nginx/nginx.conf or anyone else's files under conf.d
+# - Do not declare default_server: the default virtual host on the same port still belongs to the existing site
+# - Route only by server_name (only requests for this platform's domain enter our block)
+# - reload rather than restart: do not drop existing connections
+
+- name: Check whether nginx is installed
+  ansible.builtin.stat:
+    path: /usr/sbin/nginx
+  register: nginx_bin
+  tags: [nginx]
+
+- name: Install nginx (only if missing)
+  # Never call dnf on machines where it is already installed: sites often have unreachable third-party repos (e.g. pgdg),
+  # and triggering a metadata refresh would fail the whole run, while no package installation is needed here.
+  ansible.builtin.dnf:
+    name: nginx
+    state: present
+    disablerepo: "pgdg*"
+  when: not nginx_bin.stat.exists
+  tags: [nginx]
+
+# Reverse-proxy upstreams (Server / Grafana / Harbor replicas) live on other hosts in HA mode.
+# SELinux blocks nginx from opening outbound connections unless httpd_can_network_connect is on;
+# without it every proxied request fails with EACCES (502) even though L3/L4 is reachable.
+- name: Allow nginx to connect to reverse-proxy upstreams under SELinux
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if getsebool httpd_can_network_connect 2>/dev/null | grep -q ' on$'; then
+      echo already-on
+    else
+      setsebool -P httpd_can_network_connect on
+      echo enabled
+    fi
+  args:
+    executable: /bin/bash
+  register: nginx_netconnect
+  changed_when: nginx_netconnect.stdout is not search('already-on')
+  failed_when: false
+  tags: [nginx]
+
+# The platform's only externally reachable ports are HTTP/HTTPS on the Nginx entry point. Without
+# firewalld rules, remote clients can reach a VIP held by another node only if that node happens to
+# be the one curling itself (local traffic bypasses firewalld) — which masked this in single-VIP
+# active-standby tests but broke active-active where each VIP lives on a different node.
+- name: Allow HTTP and HTTPS entry ports through firewall (cluster subnet only)
+  ansible.builtin.shell: |
+    set -o pipefail
+    cidr="{{ pg_cluster.vip_iface_cidr | default('192.168.0.0/16') }}"
+    for p in {{ nginx.http_port }} {{ nginx.https_port }}; do
+      firewall-cmd --permanent --add-rich-rule="rule family=ipv4 source address=$cidr port port=$p protocol=tcp accept" >/dev/null 2>&1 || true
+    done
+    firewall-cmd --reload >/dev/null 2>&1 || true
+    echo done
+  args:
+    executable: /bin/bash
+  register: nginx_fw
+  changed_when: false
+  failed_when: false
+  tags: [nginx]
+
+- name: Create site directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - "{{ nginx.doc_root }}"
+    - "{{ nginx.tls_dir }}"
+  tags: [nginx]
+
+- name: Generate self-signed certificate (first run only, leave existing untouched)
+  ansible.builtin.shell: |
+    set -o pipefail
+    openssl req -x509 -nodes -newkey rsa:2048 -days {{ nginx.tls_days }} \
+      -subj "/CN={{ nginx.server_name }}" \
+      -addext "subjectAltName=DNS:{{ nginx.server_name }}" \
+      -keyout {{ nginx.tls_dir }}/server.key \
+      -out {{ nginx.tls_dir }}/server.crt
+  args:
+    executable: /bin/bash
+    creates: "{{ nginx.tls_dir }}/server.crt"
+  tags: [nginx]
+
+- name: Set certificate private key permissions
+  ansible.builtin.file:
+    path: "{{ nginx.tls_dir }}/server.key"
+    mode: "0600"
+  tags: [nginx]
+
+- name: Install placeholder homepage (accessible before the Server is up)
+  ansible.builtin.copy:
+    dest: "{{ nginx.doc_root }}/index.html"
+    mode: "0644"
+    content: |
+      <!doctype html>
+      <meta charset="utf-8">
+      <title>winter</title>
+      <h1>winter platform</h1>
+      <p>Access layer is ready; management plane API is not yet deployed.</p>
+      <p>Health check: <code>/healthz</code></p>
+  tags: [nginx]
+
+- name: Install site configuration
+  # Do not use validate: Ansible's validate must contain a %s placeholder, but this is a conf.d fragment
+  # that cannot be validated in isolation from the main config. Instead: write to disk → global nginx -t → reload only if it passes:
+  # a validation failure aborts the play, the handler does not fire, and the running nginx keeps the old config.
+  ansible.builtin.template:
+    src: winter.conf.j2
+    dest: "{{ nginx.conf_path }}"
+    mode: "0644"
+    backup: true
+  notify: reload nginx
+  tags: [nginx]
+
+- name: Validate full configuration
+  ansible.builtin.command:
+    cmd: nginx -t
+  register: nginx_test
+  changed_when: false
+  failed_when: nginx_test.rc != 0
+  tags: [nginx]
+
+- name: Apply changes immediately (do not defer handlers to end of play)
+  ansible.builtin.meta: flush_handlers
+  tags: [nginx]
+
+- name: Verify health check endpoint
+  ansible.builtin.shell: |
+    set -o pipefail
+    curl -ksS --max-time 5 -H "Host: {{ nginx.server_name }}" \
+      "https://127.0.0.1:{{ nginx.https_port }}/healthz"
+  args:
+    executable: /bin/bash
+  register: nginx_health
+  changed_when: false
+  retries: 3
+  delay: 2
+  until: nginx_health.rc == 0
+  failed_when: nginx_health.rc != 0 or 'ok' not in nginx_health.stdout
+  tags: [nginx]
+
+- name: Print summary
+  ansible.builtin.debug:
+    msg:
+      - "Site https://{{ nginx.server_name }}:{{ nginx.https_port }} → {{ nginx.doc_root }}"
+      - "API reverse proxy /api/ → {{ nginx.api_upstream }} (returns 502 before the Server is up; expected)"
+      - "healthz returned: {{ nginx_health.stdout | trim }}"
+  tags: [nginx]

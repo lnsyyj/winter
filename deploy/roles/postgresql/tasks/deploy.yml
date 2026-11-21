@@ -1,0 +1,145 @@
+---
+# PostgreSQL: converge to "usable + has the platform's database and account"
+#
+# Order: detect existing instance → install only if absent → confirm service → create database/role → optional tuning → verify
+# Constraints:
+# - Never delete any existing database/role
+# - Do not change memory parameters by default (tuning requires a restart, which affects other services on the same machine)
+# - Password is read only from vault_pg_password, never written into group_vars
+
+- name: Verify password is provided
+  ansible.builtin.assert:
+    that:
+      - vault_pg_password is defined
+      - vault_pg_password | length >= 12
+    fail_msg: "vault_pg_password is missing (≥12 characters). Define it in deploy/passwords.yml, which is not checked in."
+    quiet: true
+  tags: [postgresql]
+
+- name: Detect running PostgreSQL
+  ansible.builtin.shell: |
+    set -o pipefail
+    systemctl list-units --type=service --state=running --no-legend 'postgresql-*.service' \
+      | awk '{print $1}' | sed -E 's/^postgresql-([0-9]+)\.service$/\1/' | head -1
+  args:
+    executable: /bin/bash
+  register: pg_running
+  changed_when: false
+  failed_when: false
+  tags: [postgresql]
+
+- name: Record detection result
+  ansible.builtin.set_fact:
+    pg_major: >-
+      {{ postgresql.major
+         if postgresql.major | length > 0
+         else (pg_running.stdout | trim) }}
+  tags: [postgresql]
+
+- name: No running instance found → install (only this branch installs packages)
+  ansible.builtin.include_tasks: install.yml
+  when: pg_major | length == 0
+  tags: [postgresql]
+
+- name: Detect data directory
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -tAc "show data_directory"
+  args:
+    executable: /bin/bash
+  register: pg_datadir_query
+  changed_when: false
+  failed_when: false
+  when: pg_major | length > 0
+  tags: [postgresql]
+
+- name: Determine data directory and service name
+  ansible.builtin.set_fact:
+    pg_datadir: "{{ postgresql.data_dir if postgresql.data_dir | length > 0 else (pg_datadir_query.stdout | trim | default('/var/lib/pgsql/' ~ pg_major ~ '/data', true)) }}"
+    pg_service: "{{ postgresql.service_name if postgresql.service_name | length > 0 else 'postgresql-' ~ pg_major }}"
+  tags: [postgresql]
+
+- name: Ensure service is enabled and running
+  ansible.builtin.systemd:
+    name: "{{ pg_service }}"
+    state: started
+    enabled: true
+  tags: [postgresql]
+
+- name: Wait for instance to accept connections
+  # Do not use pg_isready: PGDG binaries live in /usr/pgsql-<ver>/bin, which is not on the postgres user's PATH;
+  # only psql has a /usr/bin symlink. Probing with psql is most reliable.
+  ansible.builtin.shell: |
+    set -o pipefail
+    for i in $(seq 1 20); do
+      sudo -u postgres psql -tAc "select 1" >/dev/null 2>&1 && exit 0
+      sleep 1
+    done
+    echo "postgres not ready" >&2; exit 1
+  args:
+    executable: /bin/bash
+  changed_when: false
+  tags: [postgresql]
+
+- name: Create application role (if absent)
+  ansible.builtin.shell: |
+    set -o pipefail
+    exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_roles WHERE rolname='{{ postgresql.db_user }}'")
+    if [ "$exists" != "1" ]; then
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+        "CREATE ROLE {{ postgresql.db_user }} LOGIN PASSWORD '{{ vault_pg_password }}'"
+      echo created
+    elif [ "{{ postgresql.force_password | bool }}" = "True" ]; then
+      sudo -u postgres psql -v ON_ERROR_STOP=1 -c \
+        "ALTER ROLE {{ postgresql.db_user }} WITH LOGIN PASSWORD '{{ vault_pg_password }}'"
+      echo rotated
+    else
+      echo exists
+    fi
+  args:
+    executable: /bin/bash
+  register: pg_role_result
+  changed_when: pg_role_result.stdout is search('created|rotated')
+  no_log: true
+  tags: [postgresql]
+
+- name: Create application database (if absent, owned by the application role)
+  ansible.builtin.shell: |
+    set -o pipefail
+    exists=$(sudo -u postgres psql -tAc "SELECT 1 FROM pg_database WHERE datname='{{ postgresql.db_name }}'")
+    if [ "$exists" != "1" ]; then
+      sudo -u postgres createdb -O {{ postgresql.db_user }} -E UTF8 {{ postgresql.db_name }}
+      echo created
+    else
+      echo exists
+    fi
+  args:
+    executable: /bin/bash
+  register: pg_db_result
+  changed_when: "'created' in pg_db_result.stdout"
+  tags: [postgresql]
+
+- name: Database and role listing (for verification)
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -tAc "SELECT 'db='||count(*) FROM pg_database WHERE datname='{{ postgresql.db_name }}'"
+    sudo -u postgres psql -tAc "SELECT 'role='||count(*) FROM pg_roles WHERE rolname='{{ postgresql.db_user }}'"
+  args:
+    executable: /bin/bash
+  register: pg_verify
+  changed_when: false
+  failed_when: not (pg_verify.stdout is search('db=1') and pg_verify.stdout is search('role=1'))
+  tags: [postgresql]
+
+- name: Tune parameters (disabled by default; requires an instance restart)
+  ansible.builtin.include_tasks: tune.yml
+  when: postgresql.tune | bool
+  tags: [postgresql, postgresql-tune]
+
+- name: Report result
+  ansible.builtin.debug:
+    msg:
+      - "PostgreSQL {{ pg_major }} running, data directory {{ pg_datadir }}"
+      - "Database {{ postgresql.db_name }} / role {{ postgresql.db_user }} ready"
+      - "Listening on {{ postgresql.listen_addresses }}:{{ postgresql.port }} (defaults, not changed this run)"
+  tags: [postgresql]

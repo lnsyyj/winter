@@ -1,0 +1,120 @@
+---
+# Read-only DNS prechecks. Every command/shell task sets changed_when: false; nothing is installed,
+# no config is written and no firewall rule is changed. Run with: ./deploy.sh dns --tags precheck.dns
+- name: Precheck DNS | Derive VIP addresses
+  ansible.builtin.set_fact:
+    dns_check_vips: >-
+      {{ dns.vips | default([]) if (dns.vips | default([]) | length > 0)
+         else (ha.vips | default([]) if (ha.vips | default([]) | length > 0)
+         else ([ha.vip] if (ha.vip | default('') | length > 0) else [])) }}
+
+- name: Precheck DNS | Validate basic configuration
+  ansible.builtin.assert:
+    that:
+      - dns.enabled | bool
+      - dns.domain | default('') | length > 0
+      - dns.listen_port | int > 0
+      - dns.install_method in ['package', 'repo']
+      - (dns_check_vips | length) > 0
+    fail_msg: >-
+      Invalid DNS configuration: enabled={{ dns.enabled }}, domain={{ dns.domain | default('') }},
+      listen_port={{ dns.listen_port }}, install_method={{ dns.install_method }},
+      vips={{ dns_check_vips | default([]) }}. Set dns.domain and either dns.vips, ha.vips or ha.vip
+      in group_vars/all.yml; supported install methods are package and repo.
+    success_msg: "DNS configuration is valid: domain={{ dns.domain }}, vips={{ dns_check_vips | join(',') }}"
+    quiet: true
+
+- name: Precheck DNS | Validate topology
+  ansible.builtin.assert:
+    that:
+      - (groups['named'] | default([]) | length) > 0
+      - (groups['dns_masters'] | default(groups['named'] | default([])) | length) > 0
+    fail_msg: >-
+      No DNS servers found. Add hosts to [named] (and optionally [dns_masters] / [dns_slaves])
+      in the inventory; topology must be expressed with groups, never with hostname checks.
+    success_msg: "DNS topology is valid: nodes={{ groups['named'] | default([]) | join(',') }}"
+    quiet: true
+
+- name: Precheck DNS | Check master/slave configuration
+  ansible.builtin.assert:
+    that:
+      - >-
+        (groups['dns_slaves'] | default([]) | length) == 0
+        or (vault_dns_tsig_secret | default('') | length) > 0
+    fail_msg: >-
+      DNS slaves are configured but vault_dns_tsig_secret is missing in deploy/passwords.yml.
+      Copy passwords.yml.example, generate a base64 HMAC-SHA256 key (for example
+      "openssl rand -base64 32") and set vault_dns_tsig_secret before deploying slaves.
+    success_msg: "DNS master/slave prerequisites are satisfied"
+    quiet: true
+
+- name: Precheck DNS | Check package source availability
+  ansible.builtin.assert:
+    that:
+      - >-
+        dns.install_method != 'repo'
+        or ((dns.rpm_files | default([]) | length) > 0
+            and (dns.rpm_subdir | default('') | length) > 0)
+    fail_msg: >-
+      dns.install_method=repo requires a non-empty dns.rpm_files list and a dns.rpm_subdir path.
+      Place the BIND RPMs under deploy/artifacts/repo/{{ dns.rpm_subdir | default('rpm/bind') }}
+      and list their filenames in dns.rpm_files, or switch to dns.install_method=package.
+    success_msg: "DNS package source is configured: {{ dns.install_method }}"
+    quiet: true
+
+- name: Precheck DNS | Check offline RPM staging directory (control machine)
+  ansible.builtin.find:
+    paths: "{{ dns.rpm_dir }}"
+    patterns: "*.rpm"
+    file_type: file
+  delegate_to: localhost
+  connection: local
+  register: dns_local_rpms
+  changed_when: false
+  when: dns.install_method == 'repo'
+
+- name: Precheck DNS | Offline RPMs are present on the control machine
+  ansible.builtin.assert:
+    that: dns_local_rpms.files | default([]) | length > 0
+    fail_msg: >-
+      No BIND RPMs found in {{ dns.rpm_dir }} on the control machine. Run the artifact fetch
+      script on a machine with internet access, or switch dns.install_method to package.
+    success_msg: "BIND RPMs found: {{ dns_local_rpms.files | default([]) | length }}"
+    quiet: true
+  when: dns.install_method == 'repo'
+
+- name: Precheck DNS | Inspect DNS port usage
+  ansible.builtin.shell: "ss -H -lntup '( sport = :{{ dns.listen_port }} )' || true"
+  register: dns_port_usage
+  changed_when: false
+  failed_when: false
+
+- name: Precheck DNS | DNS port is free or owned by a releasable service
+  ansible.builtin.assert:
+    that:
+      - >-
+        dns_port_usage.stdout == ''
+        or ('named' in dns_port_usage.stdout)
+        or (dns.manage_systemd_resolved | default(true) | bool and 'systemd-resolve' in dns_port_usage.stdout)
+    fail_msg: >-
+      Port {{ dns.listen_port }} is occupied by another process: {{ dns_port_usage.stdout }}.
+      Enable dns.manage_systemd_resolved to let the role release a systemd-resolved stub listener,
+      stop the conflicting process, or change dns.listen_port in group_vars/all.yml before deploying DNS.
+    success_msg: "DNS port {{ dns.listen_port }} is available or will be released before BIND starts"
+    quiet: true
+
+- name: Precheck DNS | Firewall management tool is available
+  ansible.builtin.command: firewall-cmd --state
+  register: dns_firewall_state
+  changed_when: false
+  failed_when: false
+
+- name: Precheck DNS | Report firewall tool availability
+  ansible.builtin.assert:
+    that: dns_firewall_state.rc == 0
+    fail_msg: >-
+      firewall-cmd is not usable on {{ inventory_hostname }} (rc={{ dns_firewall_state.rc }}).
+      Install firewalld or set dns.manage_firewall: false and open {{ dns.listen_port }}/tcp and
+      /udp with the site firewall tool before deploying DNS.
+    success_msg: "firewall-cmd is available"
+    quiet: true

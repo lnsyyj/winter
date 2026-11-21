@@ -1,0 +1,112 @@
+---
+# bootstrap-servers: install base dependencies and apply the settings that prechecks only reports.
+# Read-only by default for kernel/disk settings; those become effective only when explicitly enabled.
+
+- name: Confirm this is a supported distribution
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "RedHat"
+    fail_msg: "Only RHEL family distributions are supported (CentOS Stream 9 / RHEL 9); actual: {{ ansible_facts.distribution }}"
+    quiet: true
+  tags: [bootstrap]
+
+# Base packages and chrony live in roles/system-init; bootstrap-servers runs that role first.
+
+- name: Render winter sysctl profile
+  ansible.builtin.template:
+    src: sysctl.conf.j2
+    dest: "{{ bootstrap.sysctl_file }}"
+    mode: "0644"
+  register: bootstrap_sysctl_file
+  when: bootstrap.enforce_kernel | bool
+  tags: [bootstrap]
+
+# modprobe was removed from ansible-core; use command guarded by a /sys/module check.
+- name: Check whether br_netfilter is loaded
+  ansible.builtin.stat:
+    path: /sys/module/br_netfilter
+  register: bootstrap_br_netfilter_loaded
+  changed_when: false
+  when: bootstrap.enforce_kernel | bool
+  tags: [bootstrap]
+
+- name: Load br_netfilter module
+  ansible.builtin.command: modprobe br_netfilter
+  when:
+    - bootstrap.enforce_kernel | bool
+    - not bootstrap_br_netfilter_loaded.stat.exists
+  tags: [bootstrap]
+
+- name: Apply winter sysctl profile
+  ansible.builtin.command: "sysctl -p {{ bootstrap.sysctl_file }}"
+  when: bootstrap.enforce_kernel | bool and bootstrap_sysctl_file is changed
+  changed_when: false
+  tags: [bootstrap]
+
+- name: Check data device filesystem
+  ansible.builtin.command: "blkid -o value -s TYPE {{ bootstrap.data_disk.device }}"
+  register: bootstrap_disk_fstype
+  changed_when: false
+  failed_when: false
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.format_if_empty | bool or bootstrap.data_disk.mount | bool
+  tags: [bootstrap]
+
+# filesystem and mount were removed from ansible-core; use builtin command/file/lineinfile.
+- name: Create filesystem on data device (only when explicitly enabled and empty)
+  ansible.builtin.command: "mkfs.{{ bootstrap.data_disk.filesystem }} {{ bootstrap.data_disk.device }}"
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.format_if_empty | bool
+    - bootstrap_disk_fstype.stdout | trim | length == 0
+  tags: [bootstrap]
+
+- name: Ensure data mount point directory exists
+  ansible.builtin.file:
+    path: "{{ bootstrap.data_disk.mount_point }}"
+    state: directory
+    mode: "0755"
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.mount | bool
+  tags: [bootstrap]
+
+- name: Persist data device in fstab
+  ansible.builtin.lineinfile:
+    path: /etc/fstab
+    line: "{{ bootstrap.data_disk.device }} {{ bootstrap.data_disk.mount_point }} {{ bootstrap.data_disk.filesystem }} defaults 0 0"
+    regexp: "^{{ bootstrap.data_disk.device | regex_escape('python') }}[[:space:]]"
+    state: present
+    create: false
+    backup: true
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.mount | bool
+  tags: [bootstrap]
+
+- name: Check whether data device is mounted
+  ansible.builtin.command: "findmnt -n -o SOURCE --target {{ bootstrap.data_disk.mount_point }}"
+  register: bootstrap_mount_source
+  changed_when: false
+  failed_when: false
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.mount | bool
+  tags: [bootstrap]
+
+- name: Mount data device
+  ansible.builtin.command: "mount {{ bootstrap.data_disk.mount_point }}"
+  when:
+    - bootstrap.data_disk.device | length > 0
+    - bootstrap.data_disk.mount | bool
+    - bootstrap_mount_source.stdout | trim | length == 0
+  tags: [bootstrap]
+
+- name: Report bootstrap result
+  ansible.builtin.debug:
+    msg:
+      - "Base packages and clock sync: handled by roles/system-init (system_init_overrides)"
+      - "Kernel settings applied: {{ bootstrap.enforce_kernel | bool }} (profile {{ bootstrap.sysctl_file }})"
+      - "Data device: {{ bootstrap.data_disk.device | default('none', true) }} (format={{ bootstrap.data_disk.format_if_empty }}, mount={{ bootstrap.data_disk.mount }})"
+  tags: [bootstrap]

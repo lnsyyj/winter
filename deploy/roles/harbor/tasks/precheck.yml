@@ -1,0 +1,110 @@
+---
+# Read-only prechecks for Harbor (docker-compose based).
+# ADR-16: builtin mode needs no external PG/Redis/NFS; external mode requires all three.
+- name: Precheck Harbor | Harbor is enabled
+  ansible.builtin.assert:
+    that: harbor.enabled | bool
+    fail_msg: "harbor.enabled is false in group_vars/all.yml; enable it before deploying Harbor"
+    success_msg: "Harbor is enabled"
+    quiet: true
+
+- name: Precheck Harbor | Mode is valid
+  ansible.builtin.assert:
+    that: (harbor.mode | default('builtin')) in ['builtin', 'external']
+    fail_msg: "harbor.mode must be 'builtin' (MVP single node) or 'external' (V1 HA)"
+    success_msg: "Harbor mode is {{ harbor.mode | default('builtin') }}"
+    quiet: true
+
+- name: Precheck Harbor | Common configuration is present
+  ansible.builtin.assert:
+    that:
+      - harbor.hostname | default('') | length > 0
+      - harbor.http_port | int > 0
+    fail_msg: "Harbor requires a hostname (platform.registry_host) and a positive http_port."
+    success_msg: "Harbor common configuration is present"
+    quiet: true
+
+- name: Precheck Harbor | External dependencies are configured (external mode only)
+  ansible.builtin.assert:
+    that:
+      - harbor.database.host | default('') | length > 0
+      - harbor.redis.host | default('') | length > 0
+      - harbor.storage.nfs_server | default('') | length > 0
+      - harbor.storage.nfs_path | default('') | length > 0
+    fail_msg: >-
+      harbor.mode=external requires an external PostgreSQL (harbor.database.host), Redis
+      (harbor.redis.host) and NFS share (harbor.storage.nfs_server / nfs_path). This framework
+      never deploys a Redis or NFS server. Either fill all of them in group_vars/all.yml or
+      switch to harbor.mode=builtin (MVP single node, no external dependencies).
+    success_msg: "Harbor external dependency configuration is present"
+    quiet: true
+  when: (harbor.mode | default('builtin')) == 'external'
+
+- name: Precheck Harbor | Credentials are present
+  ansible.builtin.assert:
+    that:
+      - vault_harbor_admin_password | default('') | length > 0
+      - (harbor.mode | default('builtin')) == 'builtin' or (vault_harbor_db_password | default('') | length > 0 and vault_harbor_redis_password | default('') | length > 0)
+    fail_msg: >-
+      vault_harbor_admin_password is always required. In external mode, vault_harbor_db_password
+      and vault_harbor_redis_password are required too (deploy/passwords.yml). Builtin mode uses
+      Harbor's bundled PG/Redis and only needs the admin password.
+    success_msg: "Harbor credentials are present"
+    quiet: true
+
+- name: Precheck Harbor | Offline installer exists on the control machine
+  ansible.builtin.stat:
+    path: "{{ playbook_dir }}/../artifacts/repo/tarball/{{ harbor.tarball }}"
+  delegate_to: localhost
+  connection: local
+  register: harbor_tarball_stat
+  changed_when: false
+
+- name: Precheck Harbor | Offline installer is available
+  ansible.builtin.assert:
+    that: harbor_tarball_stat.stat.exists
+    fail_msg: "Harbor installer {{ harbor.tarball }} is missing in deploy/artifacts/repo/tarball. Fetch it on a machine with internet access."
+    success_msg: "Harbor offline installer is present"
+    quiet: true
+
+- name: Precheck Harbor | Docker is available
+  ansible.builtin.command: docker --version
+  register: harbor_docker
+  changed_when: false
+  failed_when: false
+
+- name: Precheck Harbor | docker-compose is available
+  ansible.builtin.command: "{{ harbor_compose_command }} --version"
+  register: harbor_compose
+  changed_when: false
+  failed_when: false
+
+- name: Precheck Harbor | Container runtime prerequisites are satisfied
+  ansible.builtin.assert:
+    that:
+      - harbor_docker.rc == 0
+      - harbor_compose.rc == 0
+    fail_msg: >-
+      Harbor requires Docker and {{ harbor_compose_command }} on every Harbor node
+      (docker rc={{ harbor_docker.rc }}, compose rc={{ harbor_compose.rc }}). Install them first;
+      bootstrap-servers does not provide a container runtime.
+    success_msg: "Docker and docker-compose are available"
+    quiet: true
+
+- name: Precheck Harbor | Inspect Harbor HTTP port usage
+  ansible.builtin.shell: "ss -H -lntup '( sport = :{{ harbor.http_port }} )' || true"
+  register: harbor_port_usage
+  changed_when: false
+  failed_when: false
+
+# On an idempotent re-run Docker owns the published port via docker-proxy, whose name does not
+# contain "harbor". Accept docker-proxy / docker as a legitimate owner so re-runs stay green.
+- name: Precheck Harbor | HTTP port is free or already owned by Harbor/Docker
+  ansible.builtin.assert:
+    that: >-
+      harbor_port_usage.stdout == '' or
+      ('harbor' in harbor_port_usage.stdout) or
+      ('docker' in harbor_port_usage.stdout)
+    fail_msg: "Port {{ harbor.http_port }} is occupied by another process: {{ harbor_port_usage.stdout }}. Stop it or change harbor.http_port and the Nginx upstream together."
+    success_msg: "Harbor HTTP port {{ harbor.http_port }} is available"
+    quiet: true

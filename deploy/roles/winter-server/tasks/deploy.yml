@@ -1,0 +1,197 @@
+---
+# Deploy the Server single binary + systemd (ADR-14: no compilation on site, only fetch artifacts from the internal repo)
+#
+# Overwriting a running binary triggers ETXTBSY, so use mv to atomically replace the inode,
+# rather than cp/install writing the original file directly; only content changes trigger a restart.
+
+- name: Validate deployment passwords are complete (fail explicitly if any is missing, do not generate weak passwords)
+  ansible.builtin.assert:
+    that:
+      - vault_pg_password is defined and vault_pg_password | length > 0
+      - vault_jwt_secret is defined and vault_jwt_secret | length >= 32
+      - vault_admin_password is defined and vault_admin_password | length > 0
+    fail_msg: "deploy/passwords.yml is missing vault_pg_password / vault_jwt_secret(>=32) / vault_admin_password"
+    quiet: true
+  tags: [server]
+
+# Two possible DB backends:
+#   * MVP single node: system PostgreSQL on postgresql.port (5432), no HAProxy.
+#   * HA (pg-ha / app-ha / single-node HA bootstrap): Patroni behind HAProxy on
+#     pg_cluster.haproxy.listen_port (5434).
+# Node count is NOT a reliable signal — a single-node HA bootstrap has one node but uses HAProxy.
+# Detect the deployed HAProxy entry point on this host instead, and allow an explicit override
+# (server_ha.database_endpoint: direct|haproxy) for operators who want to force one.
+# Detect by SERVICE STATE, not config-file presence: a stale haproxy.cfg from a previous HA run
+# would otherwise make a fresh single-node deploy connect to a 5434 that is not running yet.
+- name: Detect whether the HAProxy PG entry point is active on this host
+  ansible.builtin.shell: |
+    systemctl is-active haproxy 2>/dev/null | grep -q '^active$'
+  args:
+    executable: /bin/bash
+  register: server_haproxy_active
+  changed_when: false
+  failed_when: false
+  tags: [server]
+
+# Split into two set_fact tasks: keys within a single set_fact are evaluated together, so a later
+# key cannot reference server_use_haproxy defined in the same task.
+- name: Decide whether this Server uses the HAProxy DB entry point
+  ansible.builtin.set_fact:
+    # explicit override wins; otherwise HAProxy config presence decides; multi-node always uses HA
+    server_use_haproxy: >-
+      {{ (server_ha.database_endpoint | default('auto') == 'haproxy') or
+         (server_ha.database_endpoint | default('auto') == 'auto' and
+          (server_haproxy_active.rc == 0 or (groups['management'] | default([]) | length) > 1)) }}
+  tags: [server]
+
+- name: Derive the database endpoint for this Server
+  ansible.builtin.set_fact:
+    server_db_host: "{{ server_ha.database_host if (server_use_haproxy | bool) else '127.0.0.1' }}"
+    server_db_port: "{{ pg_cluster.haproxy.listen_port if (server_use_haproxy | bool) else (postgresql_overrides.port | default(postgresql.port | default(5432))) }}"
+    server_audit_db_host: "{{ server_ha.audit_database_host if (server_use_haproxy | bool) else '127.0.0.1' }}"
+  tags: [server]
+
+- name: Create service account
+  ansible.builtin.user:
+    name: "{{ server_run_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  tags: [server]
+
+- name: Create config and staging directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ item.owner | default('root') }}"
+    group: "{{ item.owner | default('root') }}"
+    mode: "{{ item.mode }}"
+  loop:
+    # /etc/winter is a shared parent for all winter service accounts (server, monitor, ...).
+    # Keep it world-traversable so siblings can reach their own 0750 config subdirectories;
+    # secrets remain protected by the 0640 files inside those subdirectories.
+    - { path: "{{ winter_server.config_dir }}", mode: "0755", owner: "{{ server_run_user }}" }
+    - { path: /var/tmp/winter-server, mode: "0755" }
+  tags: [server]
+
+- name: Fetch Server binary from internal repo
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ winter_server.bin_subdir }}/{{ winter_server.artifact }}"
+    dest: "/var/tmp/winter-server/winter-server.new"
+    mode: "0755"
+    timeout: 120
+  tags: [server]
+
+- name: Install binary (skip if unchanged; same-directory mv avoids ETXTBSY)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    src=/var/tmp/winter-server/winter-server.new
+    dst={{ winter_server.bin_dir }}/{{ winter_server.artifact }}
+    if [ -x "$dst" ] && cmp -s "$src" "$dst"; then
+      echo unchanged
+    else
+      # Copy to the target directory first, then replace atomically: keep the source file so get_url stays idempotent,
+      # and do not write directly to the running binary (which would trigger ETXTBSY).
+      cp "$src" "$dst.new"
+      chmod 0755 "$dst.new"
+      mv "$dst.new" "$dst"
+      echo installed
+    fi
+  args:
+    executable: /bin/bash
+  register: server_install
+  changed_when: "'installed' in server_install.stdout"
+  notify: restart winter-server
+  tags: [server]
+
+- name: Render environment file (contains passwords, 0640)
+  ansible.builtin.template:
+    src: server.env.j2
+    dest: "{{ winter_server.env_file }}"
+    owner: "{{ server_run_user }}"
+    group: "{{ server_run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart winter-server
+  tags: [server]
+
+- name: Render systemd unit
+  ansible.builtin.template:
+    src: winter-server.service.j2
+    dest: /etc/systemd/system/winter-server.service
+    mode: "0644"
+    backup: true
+  notify: restart winter-server
+  tags: [server]
+
+- name: Apply changes (restart first)
+  ansible.builtin.meta: flush_handlers
+  tags: [server]
+
+- name: Start and enable on boot
+  ansible.builtin.systemd:
+    name: winter-server
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [server]
+
+# In HA mode each Server replica binds to its own internal address and Nginx load-balances
+# across them on winter_server.port. That cross-node traffic is blocked unless the cluster
+# subnet is allowed through firewalld. Use the same rich-rule pattern as the HAProxy role so
+# the port is never exposed outside the management subnet.
+- name: Allow Server port through firewall on the cluster subnet
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ winter_server.port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --reload >/dev/null 2>&1
+    echo done
+  changed_when: false
+  failed_when: false
+  tags: [server]
+
+# The Server port must be labeled http_port_t so that Nginx (and other confined clients)
+# can open outbound connections to it. Without this, SELinux denies connect() with EACCES
+# and every HA upstream request returns 502, even when the port is reachable at L3/L4.
+- name: Ensure semanage is available for SELinux port labeling
+  ansible.builtin.dnf:
+    name: policycoreutils-python-utils
+    state: present
+    disablerepo: "pgdg*"
+  tags: [server]
+
+- name: Label the Server port as http_port_t under SELinux
+  ansible.builtin.shell: |
+    set -euo pipefail
+    if semanage port -l -t http_port_t | grep -qE '[[:space:]]{{ winter_server.port }}([[:space:]]|$)'; then
+      echo already-labeled
+    elif semanage port -l | grep -qE '[[:space:]]{{ winter_server.port }}([[:space:]]|$)'; then
+      semanage port -m -t http_port_t -p tcp {{ winter_server.port }}
+      echo relabeled
+    else
+      semanage port -a -t http_port_t -p tcp {{ winter_server.port }}
+      echo labeled
+    fi
+  args:
+    executable: /bin/bash
+  register: server_seport
+  changed_when: server_seport.stdout is not search('already-labeled')
+  tags: [server]
+
+- name: Wait for /healthz
+  ansible.builtin.uri:
+    url: "http://{{ winter_server.listen_addr }}:{{ winter_server.port }}/healthz"
+    status_code: 200
+    return_content: false
+  register: server_health
+  until: server_health.status is defined and server_health.status == 200
+  retries: "{{ server_health_retries | int }}"
+  delay: "{{ server_health_delay | int }}"
+  tags: [server]
+
+- name: Print summary
+  ansible.builtin.debug:
+    msg:
+      - "Server: {{ winter_server.listen_addr }}:{{ winter_server.port }} (systemd: winter-server)"
+      - "Nginx reverse proxy /api/ -> {{ nginx.api_upstream | default('not configured (server stage runs standalone)', true) }}; confirm both ports match"
+      - "Migrations and the break-glass administrator are handled automatically at process startup"
+  tags: [server]

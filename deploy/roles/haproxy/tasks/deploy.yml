@@ -1,0 +1,125 @@
+---
+# HAProxy: install package (internal repo) → write config → start service → verify connection to primary
+
+- name: Check if already installed
+  ansible.builtin.stat:
+    path: /usr/sbin/haproxy
+  register: haproxy_bin
+  tags: [haproxy]
+
+- name: Fetch RPM from internal repo
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ haproxy_role.rpm_subdir }}/{{ haproxy_role.rpm }}"
+    dest: /var/tmp/{{ haproxy_role.rpm }}
+    mode: "0644"
+    timeout: 60
+  when: not haproxy_bin.stat.exists
+  tags: [haproxy]
+
+- name: Install locally (no remote repository access)
+  ansible.builtin.shell: |
+    set -o pipefail
+    dnf -y --disablerepo='*' --nogpgcheck install /var/tmp/{{ haproxy_role.rpm }}
+  args:
+    executable: /bin/bash
+  when: not haproxy_bin.stat.exists
+  tags: [haproxy]
+
+- name: Install configuration
+  ansible.builtin.template:
+    src: haproxy.cfg.j2
+    dest: "{{ haproxy_role.config }}"
+    mode: "0644"
+    backup: true
+  notify: restart haproxy
+  tags: [haproxy]
+
+- name: Validate configuration
+  ansible.builtin.command:
+    cmd: haproxy -c -f {{ haproxy_role.config }}
+  register: haproxy_check
+  changed_when: false
+  failed_when: haproxy_check.rc != 0
+  tags: [haproxy]
+
+- name: Ensure semanage is available (needed to label non-standard ports under SELinux)
+  ansible.builtin.dnf:
+    name: policycoreutils-python-utils
+    state: present
+    disablerepo: "pgdg*"
+  when: ansible_facts.selinux.status == 'enabled'
+  tags: [haproxy]
+
+- name: Label the entry port's SELinux type
+  # Without the label, haproxy reports cannot bind socket (Permission denied):
+  # SELinux only allows ports of type http_port_t; 5434 is not among them
+  ansible.builtin.shell: |
+    set -o pipefail
+    semanage port -a -t http_port_t -p tcp {{ pg_cluster.haproxy.listen_port }} 2>/dev/null \
+      || semanage port -m -t http_port_t -p tcp {{ pg_cluster.haproxy.listen_port }}
+    semanage port -l | grep "{{ pg_cluster.haproxy.listen_port }}"
+  args:
+    executable: /bin/bash
+  register: haproxy_seport
+  changed_when: "'http_port_t' in haproxy_seport.stdout"
+  when: ansible_facts.selinux.status == 'enabled'
+  tags: [haproxy]
+
+- name: Allow haproxy to connect to any port (SELinux outbound restriction)
+  # The backends are PG 5433 and Patroni REST 8008, neither is in the http_port_t allowlist;
+  # Without this boolean set, the symptom is "port connects but is immediately dropped"
+  ansible.builtin.shell: |
+    set -o pipefail
+    if [ "$(getsebool haproxy_connect_any | awk '{print $3}')" != "on" ]; then
+      setsebool -P haproxy_connect_any on && echo changed
+    else
+      echo unchanged
+    fi
+  args:
+    executable: /bin/bash
+  register: haproxy_sebool
+  changed_when: "'changed' in haproxy_sebool.stdout"
+  when: ansible_facts.selinux.status == 'enabled'
+  tags: [haproxy]
+
+- name: Start service and enable start on boot
+  ansible.builtin.systemd:
+    name: haproxy
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [haproxy]
+
+- name: Apply configuration changes
+  ansible.builtin.meta: flush_handlers
+  tags: [haproxy]
+
+- name: Allow entry port through firewall (cluster subnet and localhost only)
+  ansible.builtin.shell: |
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.haproxy.listen_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --reload >/dev/null 2>&1
+    echo done
+  changed_when: false
+  failed_when: false
+  tags: [haproxy]
+
+- name: Verify entry point points to primary (query current primary identity)
+  ansible.builtin.shell: |
+    set -o pipefail
+    PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ pg_cluster.haproxy.listen_port }} \
+      -U {{ patroni.app_user }} -d {{ patroni.app_db }} -tAc "select inet_server_addr()||':'||inet_server_port()"
+  args:
+    executable: /bin/bash
+  register: haproxy_probe
+  changed_when: false
+  retries: 6
+  delay: 5
+  until: haproxy_probe.rc == 0
+  failed_when: haproxy_probe.rc != 0
+  tags: [haproxy]
+
+- name: Show conclusion
+  ansible.builtin.debug:
+    msg:
+      - "Application entry 127.0.0.1:{{ pg_cluster.haproxy.listen_port }} → primary {{ haproxy_probe.stdout | trim }}"
+  tags: [haproxy]
