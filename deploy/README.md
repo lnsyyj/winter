@@ -2,7 +2,39 @@
 
 Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.md): the structure is aligned with kolla-ansible, but the code is independent — no fork and no dependency on its Python packages.
 
-## Current Status
+## Single-entry interface (ADR-42, current)
+
+All deployment work enters through one command shape. `deploy.sh` maps the action to
+`winter_ops_action` and invokes `playbooks/site.yml` (lifecycle actions route to their own playbooks).
+
+```bash
+./deploy.sh <action> -i <inventory> [-t tag,...] [-e @group_vars/operations/<op>.yml]
+
+# actions: deploy | prechecks | destroy | verify | reconfigure | upgrade
+./deploy.sh deploy -i inventory/all-in-one                              # all components
+./deploy.sh deploy -i inventory/multinode -t local-repo                 # one component
+./deploy.sh prechecks -i inventory/pgha -t postgresql                   # one role's prechecks
+./deploy.sh deploy -i inventory/operations/scale-out-pg -t pg-scale-out \
+    -e @group_vars/operations/pg-scale-out.yml                          # transactional operation
+./deploy.sh deploy -i inventory/pgha -t pg-ha \
+    -e @group_vars/operations/pg-ha.yml                                 # PG HA bootstrap
+```
+
+- Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`pg-ha`,
+  `pg-scale-*`, `pg-migrate`, `app-ha`, `observability-scale-*`) must be selected explicitly with `-t`
+  and are also excluded by an automatic `--skip-tags` to prevent accidental execution.
+- Component tags: `prechecks system-init bootstrap local-repo postgresql nginx observability
+  winter-server harbor keepalived named agent`.
+- Operation tags: `pg-ha pg-scale-out pg-scale-in pg-migrate app-ha observability-scale-out
+  observability-scale-in`.
+- Per-operation variables live in `group_vars/operations/`; operation inventories in
+  `inventory/operations/`. Component roles dispatch on `winter_ops_action` to `tasks/deploy.yml`
+  or `tasks/precheck.yml` via `tasks/main.yml`.
+
+The stage table below documents the legacy per-stage command names from ADR-17/41; those direct
+stage commands were removed in ADR-42 — use the action + tag form above.
+
+## Current Status (legacy stage names — see ADR-42 for current CLI)
 
 | Stage | Command | Status |
 | --- | --- | --- |

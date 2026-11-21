@@ -111,6 +111,8 @@ docs/
 
 | 45 | [ADR-41-stage命名对齐软件名.md](./02-研发线/04-架构师/ADR-41-stage命名对齐软件名.md) | 架构师 ④ | **已确认** · 2026-11-20 | stage 名对齐软件/role：ha-setup→app-ha、monitoring→observability、scale-out→agent-scale-out 等，旧名保留别名 |
 
+| 46 | [ADR-42-单入口部署架构.md](./02-研发线/04-架构师/ADR-42-单入口部署架构.md) | 架构师 ④ | **已确认** · 2026-11-21 | 单一 site.yml 入口 + winter_ops_action 分发；role tasks 拆 precheck/deploy；事务编排以 import_playbook 收编并做 tag 隔离 |
+
 **推荐阅读顺序**：想理解全貌 → `36 → 37 → 3 → 4`；准备拍板 → `4 §8 待决策清单` + `1 §11 待确认问题`；准备动手 → `36 → 3 → 5 → 7 → 8`。
 
 ---
