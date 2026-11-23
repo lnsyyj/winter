@@ -24,8 +24,11 @@
   tags: [post-deploy]
 
 - name: Verify Server health endpoint
+  # HA mode binds the Server to each node's internal address (winter_server.listen_addr is
+  # overridden by app-ha); probing 127.0.0.1 then gets connection refused. Use ansible_host,
+  # which matches both single-node (loopback is reachable via the host IP) and HA deployments.
   ansible.builtin.uri:
-    url: "http://{{ winter_server.listen_addr }}:{{ winter_server.port }}/healthz"
+    url: "http://{{ ansible_host }}:{{ winter_server.port }}/healthz"
     status_code: 200
   register: postdeploy_server
   tags: [post-deploy]
