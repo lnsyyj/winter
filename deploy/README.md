@@ -18,8 +18,9 @@ ADR-42's `import_playbook` approach).
 ./deploy.sh prechecks -i inventory/pgha -t postgresql                   # one role's prechecks
 ./deploy.sh deploy -i inventory/operations/scale-out-pg -t pg-scale-out \
     -e @group_vars/operations/pg-scale-out.yml                          # transactional operation
-./deploy.sh deploy -i inventory/pgha -t pg-ha \
-    -e @group_vars/operations/pg-ha.yml                                 # PG HA bootstrap
+./deploy.sh deploy -i inventory/pgha -t pg-ha                          # PG HA bootstrap (defaults)
+./deploy.sh deploy -i inventory/site1 -t pg-ha \
+    -e @group_vars/operations/pg-ha-single.yml                         # single-node HA bootstrap
 ```
 
 - Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`pg-ha`,

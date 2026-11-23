@@ -1,6 +1,0 @@
----
-# Operation variables: single-node PostgreSQL -> HA migration (ADR-42 / ADR-40).
-# Stop-the-world: Server is stopped during dump/restore/verify.
-# Only overrides are listed; group_vars/all.yml merges them onto pg_migrate_defaults.
-pg_migrate_overrides:
-  verify_checksums: true
