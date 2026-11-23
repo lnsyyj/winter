@@ -593,7 +593,9 @@
   roles:
     - role: destroy
       tasks_from: management
-      when: uninstall.enabled | bool
+      # No enabled gate: destroy is an explicit action. The uninstall role's own task file
+      # enforces its preconditions; gating here would need uninstall.defaults which this
+      # wrapper role does not load (ADR-43).
       tags: [destroy]
 
 - name: Remove Agents from managed nodes
