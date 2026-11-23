@@ -1,0 +1,19 @@
+---
+# Keepalived Director + LVS real servers (migrated from keepalived.yml, ADR-43). Split per host group.
+# Play 2: Configure the LVS real servers (hosts: nginx)
+
+# ---- pre_tasks ----
+- name: Load deployment passwords
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [always]
+
+
+# ---- roles ----
+- name: Apply role realserver
+  ansible.builtin.include_role:
+    name: realserver
+  when: ha.lvs.enabled | default(false) | bool
+  tags: [ha, lvs, realserver]

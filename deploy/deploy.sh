@@ -97,21 +97,10 @@ if [ -n "$ACTION_TAGS" ]; then
     esac
 fi
 
-# No skip-tags needed: every transactional playbook now tags all its tasks with its single
-# operation tag (pg-ha, pg-migrate, ...), so -t <component> can never trigger an operation and
-# vice versa. The previous skip-tags hack also cancelled -t pg-migrate when extra-vars sat
-# between the flag and its value — removed.
-
-# Lifecycle actions keep their own playbooks: their internal task tags overlap with component
-# names, so importing them into site.yml would leak into `-t <component>` runs (e.g. upgrade tasks
-# tagged 'postgresql' firing on a routine deploy). They enter through deploy.sh but not via site.yml.
-case "$ACTION" in
-    destroy)    PLAYBOOK="playbooks/destroy.yml" ;;
-    verify)     PLAYBOOK="playbooks/post-deploy.yml" ;;
-    reconfigure) PLAYBOOK="playbooks/reconfigure.yml" ;;
-    upgrade)    PLAYBOOK="playbooks/upgrade.yml" ;;
-    *)          PLAYBOOK="playbooks/site.yml" ;;
-esac
+# ADR-43: ALL actions — including lifecycle (destroy/verify/reconfigure/upgrade) — now enter
+# through site.yml. Every operation's tasks live in roles/<name>/tasks/*.yml with their own
+# dedicated tag, so -t <component> can never trigger an operation and vice versa. No skip-tags
+# hack and no separate lifecycle playbooks are needed anymore.
 
 # Map the CLI action to the role task-file name. 'prechecks' is the user-facing command but
 # role task files use singular 'precheck', matching the reference framework's convention.
@@ -120,5 +109,5 @@ TASK_ACTION=$ACTION
 set -- "$@" -e "winter_ops_action=$TASK_ACTION"
 
 cd "$ROOT"
-echo "Running: ansible-playbook $PLAYBOOK -e winter_ops_action=$TASK_ACTION $*"
-exec ansible-playbook "$PLAYBOOK" "$@"
+echo "Running: ansible-playbook playbooks/site.yml -e winter_ops_action=$TASK_ACTION $*"
+exec ansible-playbook playbooks/site.yml "$@"

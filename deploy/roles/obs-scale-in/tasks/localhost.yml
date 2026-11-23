@@ -1,0 +1,23 @@
+---
+# Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
+# Play 1: Register monitoring scale-in targets (hosts: localhost)
+
+# ---- tasks ----
+- name: Validate monitoring scale-in plan
+  ansible.builtin.assert:
+    that:
+      - monitoring_scale.removed_nodes | length > 0
+      - monitoring_scale.removed_nodes | unique | length == monitoring_scale.removed_nodes | length
+      - (monitoring_scale.removed_nodes | difference(groups['observability'])) | length == 0
+      - (groups['observability'] | length - monitoring_scale.removed_nodes | length) >= 1
+      - not (monitoring_scale.purge_data | bool) or (monitoring_scale.data_dirs | default([]) | length > 0)
+    fail_msg: "Scale-in targets must be unique [observability] members, at least one node must remain, and purge_data=true requires a non-empty data_dirs list"
+    quiet: true
+
+- name: Register removed nodes for the teardown play
+  ansible.builtin.add_host:
+    name: "{{ item }}"
+    groups: monitoring_scale_targets
+  loop: "{{ monitoring_scale.removed_nodes }}"
+  loop_control:
+    label: "{{ item }}"

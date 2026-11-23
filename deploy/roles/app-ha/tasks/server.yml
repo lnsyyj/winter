@@ -1,0 +1,38 @@
+---
+# Application HA convergence (migrated from app-ha.yml, ADR-43). Split per host group; site.yml attaches each slice via tasks_from.
+# Play 1: Deploy stateless Server replicas (hosts: winter-server)
+
+# ---- pre_tasks ----
+- name: Load deployment passwords
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [app-ha]
+
+- name: Confirm this is a supported distribution
+  ansible.builtin.assert:
+    that:
+      - ansible_facts.os_family == "RedHat"
+    fail_msg: "Only RHEL family distributions are supported; actual: {{ ansible_facts.distribution }}"
+    quiet: true
+  tags: [app-ha]
+
+- name: Reject localhost database address for multi-replica Server
+  ansible.builtin.assert:
+    that: (groups['winter-server'] | length) == 1 or server_ha.database_host != '127.0.0.1'
+    fail_msg: "Server replicas require server_ha.database_host pointing at the PG HA access point (HAProxy/VIP), not 127.0.0.1"
+    quiet: true
+  tags: [app-ha]
+
+- name: Bind this Server replica to its internal address
+  ansible.builtin.set_fact:
+    winter_server: "{{ winter_server | combine({'listen_addr': ansible_host | default(winter_server.listen_addr)}) }}"
+  tags: [app-ha]
+
+
+# ---- roles ----
+- name: Apply role winter-server
+  ansible.builtin.include_role:
+    name: winter-server
+  tags: [app-ha]

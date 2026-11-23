@@ -1,22 +1,18 @@
 ---
-# winter · single ansible entry point (ADR-42).
+# winter · single ansible entry point (ADR-43).
 #
-# All deployment work enters through this one file. It has two kinds of plays:
-#   1. Component plays — one per component role. The role's tasks/main.yml dispatches on
-#      `winter_ops_action` (deploy | prechecks | destroy | verify | reconfigure | upgrade) to the
-#      matching task file. Tags/inventory groups select which components run.
-#   2. Transactional orchestrations — imported playbooks (pg-ha, pg-scale-*, pg-migrate, app-ha,
-#      observability-scale-*). These span multiple host groups with ordered, stateful steps and
-#      cannot be expressed as a single role; they stay as playbooks but are no longer direct CLI
-#      entry points (deploy.sh always invokes site.yml).
+# Thin orchestration only: every play is `hosts + roles`. ALL task logic lives in
+# roles/<name>/tasks/*.yml; each role's main.yml dispatches on winter_ops_action, and
+# multi-host operations attach per-host slices via `include_role tasks_from: <slice>`.
 #
+# Play-level keywords that roles cannot express (vars_files, serial, when) stay here.
 # Any failure stops the run (any_errors_fatal) — partial convergence is not a valid state.
 #
 # Usage (deploy.sh wraps these):
-#   ./deploy.sh deploy    -i inventory/multinode                        # converge all components
-#   ./deploy.sh deploy    -i inventory/multinode -t local-repo          # one component
-#   ./deploy.sh prechecks -i inventory/pgha                             # all component prechecks
-#   ./deploy.sh deploy    -i inventory/operations/scale-out-pg -t pg-scale-out  # operate
+#   ./deploy.sh deploy    -i inventory/multinode -t local-repo
+#   ./deploy.sh prechecks -i inventory/pgha -t postgresql
+#   ./deploy.sh deploy    -i inventory/operations/scale-out-pg -t pg-scale-out \
+#       -e @group_vars/operations/pg-scale-out.yml
 
 - name: Global pre-deployment checks
   hosts: all
@@ -115,22 +111,6 @@
     - role: postgresql
       tags: [postgresql]
 
-- name: PostgreSQL high availability cluster
-  import_playbook: pg-ha.yml
-  tags: [pg-ha]
-
-- name: PostgreSQL HA scale out
-  import_playbook: pg-scale-out.yml
-  tags: [pg-scale-out]
-
-- name: PostgreSQL HA scale in
-  import_playbook: pg-scale-in.yml
-  tags: [pg-scale-in]
-
-- name: PostgreSQL single-node to HA data migration
-  import_playbook: pg-migrate.yml
-  tags: [pg-migrate]
-
 - name: Nginx access layer
   hosts: nginx
   become: true
@@ -169,14 +149,6 @@
     - role: observability
       when: observability.enabled | bool
       tags: [observability]
-
-- name: Observability scale out
-  import_playbook: observability-scale-out.yml
-  tags: [observability-scale-out]
-
-- name: Observability scale in
-  import_playbook: observability-scale-in.yml
-  tags: [observability-scale-in]
 
 - name: Management Server
   hosts: winter-server
@@ -217,10 +189,6 @@
     - role: harbor
       when: harbor.enabled | bool
       tags: [harbor]
-
-- name: Application layer HA
-  import_playbook: app-ha.yml
-  tags: [app-ha]
 
 - name: Keepalived Director and LVS real servers
   hosts: keepalived
@@ -281,6 +249,428 @@
     - role: agent
       tags: [agent]
 
-# Lifecycle playbooks (destroy, post-deploy/verify, reconfigure, upgrade) are NOT imported here:
-# their internal task tags collide with component names and would leak into `-t <component>` runs.
-# deploy.sh routes those actions directly to their original playbooks.
+- name: PostgreSQL high availability cluster
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [pg-ha]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: pg-ha
+      tags: [pg-ha]
+
+- name: PostgreSQL HA scale out
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [pg-scale-out]
+  vars_files:
+    - ../group_vars/all.yml
+    - ../roles/etcd/defaults/main.yml
+    - ../roles/postgresql/defaults/main.yml
+    - ../roles/patroni/defaults/main.yml
+    - ../roles/haproxy/defaults/main.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: pg-scale-out
+      tags: [pg-scale-out]
+
+- name: PostgreSQL HA scale in
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [pg-scale-in]
+  serial: 1
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: pg-scale-in
+      tags: [pg-scale-in]
+
+- name: PostgreSQL single-node to HA data migration
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [pg-migrate]
+  serial: 1
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: pg-migrate
+      tags: [pg-migrate]
+
+- name: App HA - Server replicas
+  hosts: winter-server
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [app-ha]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: app-ha
+      tasks_from: server
+      tags: [app-ha]
+
+- name: App HA - Harbor replicas
+  hosts: harbor
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [app-ha]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: app-ha
+      tasks_from: harbor
+      when: harbor.enabled | bool
+      tags: [app-ha]
+
+- name: App HA - Nginx and LVS real servers
+  hosts: nginx
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [app-ha]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: app-ha
+      tasks_from: nginx
+      tags: [app-ha]
+
+- name: App HA - Keepalived Director
+  hosts: keepalived
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [app-ha]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: app-ha
+      tasks_from: keepalived
+      when: ha.enabled | bool
+      tags: [app-ha]
+
+- name: Keepalived Director (standalone)
+  hosts: keepalived
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [keepalived-ops]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: keepalived-ops
+      tasks_from: director
+      when: ha.enabled | bool
+      tags: [keepalived-ops]
+
+- name: LVS real servers (standalone)
+  hosts: nginx
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [keepalived-ops]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: keepalived-ops
+      tasks_from: realserver
+      when: ha.lvs.enabled | bool
+      tags: [keepalived-ops]
+
+- name: Observability scale out - monitor nodes
+  hosts: observability
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [observability-scale-out]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: obs-scale-out
+      tasks_from: monitor
+      tags: [observability-scale-out]
+
+- name: Observability scale out - nginx upstream
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [observability-scale-out]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: obs-scale-out
+      tasks_from: nginx
+      tags: [observability-scale-out]
+
+- name: Observability scale in - register targets
+  hosts: localhost
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [observability-scale-in]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: obs-scale-in
+      tasks_from: localhost
+      tags: [observability-scale-in]
+
+- name: Observability scale in - remaining nodes
+  hosts: observability
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [observability-scale-in]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: obs-scale-in
+      tasks_from: monitor
+      tags: [observability-scale-in]
+
+- name: Observability scale in - remove targets
+  hosts: monitoring_scale_targets
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [observability-scale-in]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: obs-scale-in
+      tasks_from: remove
+      tags: [observability-scale-in]
+
+- name: Observability scale in - nginx upstream
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [observability-scale-in]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: obs-scale-in
+      tasks_from: nginx
+      tags: [observability-scale-in]
+
+- name: Uninstall platform from management nodes
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [destroy]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: destroy
+      tasks_from: management
+      when: uninstall.enabled | bool
+      tags: [destroy]
+
+- name: Remove Agents from managed nodes
+  hosts: agent
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [destroy]
+  vars_files:
+    - ../group_vars/all.yml
+  roles:
+    - role: destroy
+      tasks_from: agent
+      tags: [destroy]
+
+- name: Deployment acceptance checks
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [verify]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: verify
+      tasks_from: acceptance
+      tags: [verify]
+
+- name: Validate configuration
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [reconfigure]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: reconfigure
+      tasks_from: validate
+      tags: [reconfigure]
+
+- name: Verify artifacts and version plan
+  hosts: management
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [upgrade]
+  vars_files:
+    - ../group_vars/all.yml
+  pre_tasks:
+    - name: Load deployment passwords
+      ansible.builtin.include_vars:
+        file: "{{ playbook_dir }}/../passwords.yml"
+      failed_when: false
+      no_log: true
+      tags: [always]
+  roles:
+    - role: upgrade
+      tasks_from: validate
+      tags: [upgrade]
+
+# Notes:
+# - reconfigure/upgrade also converge via the component plays above (select with -t); the old
+#   `import_playbook: deploy.yml` is expressed by tag combination, not a separate play.
+# - lifecycle actions (destroy/verify/reconfigure/upgrade) have dedicated tags so their tasks
+#   cannot leak into `-t <component>` runs.

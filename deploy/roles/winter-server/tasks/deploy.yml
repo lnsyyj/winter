@@ -4,6 +4,13 @@
 # Overwriting a running binary triggers ETXTBSY, so use mv to atomically replace the inode,
 # rather than cp/install writing the original file directly; only content changes trigger a restart.
 
+# In HA mode each replica binds its own internal address (migrated from app-ha/winter-server play
+# pre_tasks). Single-node deploy keeps the configured default.
+- name: Bind this Server replica to its internal address
+  ansible.builtin.set_fact:
+    winter_server: "{{ winter_server | combine({'listen_addr': ansible_host | default(winter_server.listen_addr)}) }}"
+  tags: [winter-server, app-ha]
+
 - name: Validate deployment passwords are complete (fail explicitly if any is missing, do not generate weak passwords)
   ansible.builtin.assert:
     that:

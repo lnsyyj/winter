@@ -1,0 +1,27 @@
+---
+# Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
+# Play 4: Drop removed Grafana replicas from the Nginx upstream (hosts: management)
+
+# ---- pre_tasks ----
+- name: Compute remaining Grafana upstream addresses
+  ansible.builtin.set_fact:
+    monitor_grafana_upstreams: >-
+      {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
+         | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
+  tags: [observability-scale-in]
+
+
+# ---- post_tasks ----
+- name: Print monitoring scale-in summary
+  ansible.builtin.debug:
+    msg:
+      - "Removed nodes: {{ monitoring_scale.removed_nodes | join(', ') }}"
+      - "Remaining Grafana replicas: {{ monitor_grafana_upstreams | join(', ') }}"
+      - "Monitoring data preserved unless monitoring_scale.purge_data=true"
+  tags: [observability-scale-in]
+
+# ---- roles ----
+- name: Apply role nginx
+  ansible.builtin.include_role:
+    name: nginx
+  tags: [observability-scale-in]

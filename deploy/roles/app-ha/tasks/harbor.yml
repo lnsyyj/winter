@@ -1,0 +1,24 @@
+---
+# Application HA convergence (migrated from app-ha.yml, ADR-43). Split per host group; site.yml attaches each slice via tasks_from.
+# Play 2: Deploy Harbor replicas (hosts: harbor)
+
+# ---- pre_tasks ----
+- name: Load deployment passwords
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [app-ha]
+
+- name: Bind this Harbor replica to its internal address
+  ansible.builtin.set_fact:
+    harbor: "{{ harbor | combine({'bind_addr': ansible_host | default(harbor.bind_addr)}) }}"
+  tags: [app-ha]
+
+
+# ---- roles ----
+- name: Apply role harbor
+  ansible.builtin.include_role:
+    name: harbor
+  when: harbor.enabled | bool
+  tags: [app-ha]

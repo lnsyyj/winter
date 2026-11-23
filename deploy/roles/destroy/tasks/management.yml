@@ -1,0 +1,19 @@
+---
+# Platform uninstall (migrated from destroy.yml, ADR-43). Split per host group; data preserved by default.
+# Play 1: Uninstall platform components from management nodes (hosts: management)
+
+# ---- pre_tasks ----
+- name: Load deployment passwords (deploy/passwords.yml, skip if absent)
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [always]
+
+
+# ---- roles ----
+- name: Apply role uninstall
+  ansible.builtin.include_role:
+    name: uninstall
+  when: uninstall.enabled | bool
+  tags: [destroy]

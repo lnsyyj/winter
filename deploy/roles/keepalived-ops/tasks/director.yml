@@ -1,0 +1,45 @@
+---
+# Keepalived Director + LVS real servers (migrated from keepalived.yml, ADR-43). Split per host group.
+# Play 1: Configure the Keepalived Director (hosts: keepalived)
+
+# ---- pre_tasks ----
+- name: Load deployment passwords
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [always]
+
+- name: Compute LVS backends and VRRP peers
+  ansible.builtin.set_fact:
+    nginx_lvs_backends: "{{ groups['nginx'] | default([]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+    ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+  tags: [always]
+
+- name: Inject LVS real servers into the Keepalived configuration
+  ansible.builtin.set_fact:
+    ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
+  tags: [always]
+
+- name: Run Keepalived prechecks
+  ansible.builtin.include_role:
+    name: keepalived
+    tasks_from: prechecks
+  tags: [precheck, precheck.keepalived]
+
+
+# ---- post_tasks ----
+- name: Summarize Keepalived deployment
+  ansible.builtin.debug:
+    msg:
+      - "VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
+      - "LVS/DR backends: {{ nginx_lvs_backends | default([]) | join(', ') }}"
+  tags: [always]
+
+
+# ---- roles ----
+- name: Apply role keepalived
+  ansible.builtin.include_role:
+    name: keepalived
+  when: ha.enabled | bool
+  tags: [ha, keepalived, lvs]

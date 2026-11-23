@@ -1,0 +1,378 @@
+---
+# Single-node PostgreSQL -> HA migration (migrated from pg-migrate.yml, ADR-43). NOTE: original play had serial:1 — site.yml play must keep serial:1.
+
+# ---- migrated from playbook pre_tasks ----
+- name: Load deployment passwords
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [pg-migrate]
+
+- name: Confirm this is a supported distribution
+  ansible.builtin.assert:
+    that: ansible_facts.os_family == "RedHat"
+    fail_msg: "Only RHEL family distributions are supported"
+    quiet: true
+  tags: [pg-migrate]
+
+# Restrict to a single host: the source instance is local to the bootstrap host. Running on
+# multiple management nodes would dump/restore the same local source more than once.
+- name: Select the migration host (first management node)
+  ansible.builtin.set_fact:
+    pg_migrate_host: "{{ groups['management'] | first }}"
+  run_once: true
+  tags: [pg-migrate]
+
+# pg-ha's Patroni role stops the system instance (5432) but preserves its data directory.
+# The two instances use different ports and data dirs, so start 5432 temporarily; it coexists
+# with Patroni on 5433. This is a reversible service start (no data mutation) and is needed
+# for the dump AND for the read-only verification on idempotent re-runs.
+- name: "[source] Detect the installed system PostgreSQL service name"
+  ansible.builtin.shell: |
+    set -o pipefail
+    systemctl list-unit-files --type=service --no-legend 'postgresql-*.service' 2>/dev/null \
+      | awk '{print $1}' | head -1
+  args:
+    executable: /bin/bash
+  register: pm_source_service
+  changed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[source] Ensure the source system PostgreSQL is running"
+  ansible.builtin.systemd:
+    name: "{{ pm_source_service.stdout | trim }}"
+    state: started
+  when: inventory_hostname == pg_migrate_host and pm_source_service.stdout | trim | length > 0
+  tags: [pg-migrate]
+
+- name: "[source] Wait for the source instance to accept connections"
+  ansible.builtin.shell: |
+    set -o pipefail
+    for i in $(seq 1 30); do
+      sudo -u postgres psql -p {{ pg_migrate.source_port }} -tAc 'select 1' 2>/dev/null | grep -q 1 && exit 0
+      sleep 1
+    done
+    exit 1
+  args:
+    executable: /bin/bash
+  register: pm_source_ready
+  changed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+
+# ---- migrated from playbook tasks ----
+# ---------------------------------------------------------------- prechecks (read only)
+- name: "[precheck] Check source instance is reachable"
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -p {{ pg_migrate.source_port }} -tAc 'select 1' 2>/dev/null | grep -q 1
+  args:
+    executable: /bin/bash
+  register: pm_source
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[precheck] Check source database exists and is non-empty"
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres psql -p {{ pg_migrate.source_port }} -d {{ pg_migrate.database }} -tAc \
+      "select count(*) from pg_tables where schemaname='public'" 2>/dev/null
+  args:
+    executable: /bin/bash
+  register: pm_source_tables
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+# Patroni REST binds to the internal address (ansible_host), not 127.0.0.1.
+- name: "[precheck] Check HAProxy entry and Patroni primary on target"
+  ansible.builtin.uri:
+    url: "http://{{ ansible_host }}:{{ pg_cluster.rest_port }}/primary"
+    status_code: 200
+  register: pm_primary
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[precheck] Check migration marker state"
+  ansible.builtin.stat:
+    path: "{{ pg_migrate.marker_file }}"
+  register: pm_marker
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[precheck] Check target database table count (for empty/non-empty decision)"
+  ansible.builtin.shell: |
+    set -o pipefail
+    PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ pg_migrate.target_port }} \
+      -U {{ pg_migrate.role }} -d {{ pg_migrate.database }} -tAc \
+      "select count(*) from pg_tables where schemaname='public'" 2>/dev/null
+  args:
+    executable: /bin/bash
+  register: pm_target_tables
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[precheck] Enforce all preconditions"
+  ansible.builtin.assert:
+    that:
+      - pm_source.rc == 0
+      - (pm_source_tables.stdout | trim | int) > 0
+      - pm_primary.status is defined and pm_primary.status == 200
+      - (pm_target_tables.stdout | trim | int) == 0 or pm_marker.stat.exists
+    fail_msg: >-
+      Migration preconditions failed: source reachable={{ pm_source.rc == 0 }},
+      source tables={{ pm_source_tables.stdout | trim }}, HA primary={{ pm_primary.status | default('n/a') }},
+      target tables={{ pm_target_tables.stdout | trim }}, marker={{ pm_marker.stat.exists }}.
+      Target must be empty or already marked migrated; never overwrite unknown data.
+    quiet: true
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[precheck] Check free disk space for dump staging"
+  ansible.builtin.shell: |
+    set -o pipefail
+    df -BG {{ pg_migrate.dump_dir | dirname }} | awk 'NR==2 {gsub(/G/,"",$4); print $4}'
+  args:
+    executable: /bin/bash
+  register: pm_free_gb
+  changed_when: false
+  failed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+# ---------------------------------------------------------------- idempotent fast path
+- name: "[idempotent] Report already-migrated state and skip data copy"
+  ansible.builtin.debug:
+    msg: "Already migrated (marker {{ pg_migrate.marker_file }} present). Run verification only."
+  when: inventory_hostname == pg_migrate_host and pm_marker.stat.exists
+  tags: [pg-migrate]
+
+# ---------------------------------------------------------------- maintenance window
+- name: "[window] Stop the Server (quiesce writes)"
+  ansible.builtin.systemd:
+    name: "{{ pg_migrate.server_service }}"
+    state: stopped
+  when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
+  tags: [pg-migrate]
+
+- name: "[window] Confirm no client connections to the source database"
+  ansible.builtin.shell: |
+    set -o pipefail
+    n=$(sudo -u postgres psql -p {{ pg_migrate.source_port }} -tAc \
+      "select count(*) from pg_stat_activity where datname='{{ pg_migrate.database }}' and pid<>pg_backend_pid()")
+    [ "$n" -eq 0 ]
+  args:
+    executable: /bin/bash
+  register: pm_no_conns
+  changed_when: false
+  when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
+  tags: [pg-migrate]
+
+- name: "[window] Refuse to proceed while source still has clients"
+  ansible.builtin.assert:
+    that: pm_no_conns.rc == 0
+    fail_msg: "Source database still has active client connections; stop all writers and retry."
+    quiet: true
+  when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
+  tags: [pg-migrate]
+
+# ---------------------------------------------------------------- dump + restore
+# pg_dump runs as the postgres OS user (peer auth), so the staging dir must be writable by it.
+# Keep it 0700 and owned by postgres so the dump is not readable by other local users.
+- name: "[dump] Create staging directory owned by postgres (mode 0700)"
+  ansible.builtin.file:
+    path: "{{ pg_migrate.dump_dir }}"
+    state: directory
+    owner: postgres
+    group: postgres
+    mode: "0700"
+  when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
+  tags: [pg-migrate]
+
+- name: "[dump] Export source database with pg_dump -Fc"
+  ansible.builtin.shell: |
+    set -o pipefail
+    sudo -u postgres pg_dump -Fc --no-owner --no-acl \
+      -p {{ pg_migrate.source_port }} -d {{ pg_migrate.database }} \
+      -f {{ pg_migrate.dump_dir }}/{{ pg_migrate.database }}.dump
+    chmod 0600 {{ pg_migrate.dump_dir }}/{{ pg_migrate.database }}.dump
+  args:
+    executable: /bin/bash
+  when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
+  tags: [pg-migrate]
+
+- name: "[restore] Import into the HA primary database"
+  # --clean --if-exists lets a partially populated target be re-converged idempotently;
+  # prechecks already guarantee the target is empty or previously marked migrated.
+  ansible.builtin.shell: |
+    set -o pipefail
+    PGPASSWORD='{{ vault_pg_password }}' pg_restore --clean --if-exists --no-owner --no-acl \
+      -h 127.0.0.1 -p {{ pg_migrate.target_port }} \
+      -U {{ pg_migrate.role }} -d {{ pg_migrate.database }} \
+      {{ pg_migrate.dump_dir }}/{{ pg_migrate.database }}.dump 2>&1 | grep -v -E 'WARNING|errors ignored' || true
+  args:
+    executable: /bin/bash
+  when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
+  tags: [pg-migrate]
+
+# ---------------------------------------------------------------- verification
+- name: "[verify] Collect per-table row counts from source"
+  ansible.builtin.shell: |
+    set -o pipefail
+    for t in $(sudo -u postgres psql -p {{ pg_migrate.source_port }} -d {{ pg_migrate.database }} -tAc \
+      "select tablename from pg_tables where schemaname='public' order by tablename"); do
+      c=$(sudo -u postgres psql -p {{ pg_migrate.source_port }} -d {{ pg_migrate.database }} -tAc \
+        "select count(*) from \"$t\"")
+      echo "$t:$c"
+    done
+  args:
+    executable: /bin/bash
+  register: pm_src_counts
+  changed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[verify] Collect per-table row counts from target"
+  ansible.builtin.shell: |
+    set -o pipefail
+    for t in $(PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ pg_migrate.target_port }} \
+      -U {{ pg_migrate.role }} -d {{ pg_migrate.database }} -tAc \
+      "select tablename from pg_tables where schemaname='public' order by tablename"); do
+      c=$(PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ pg_migrate.target_port }} \
+        -U {{ pg_migrate.role }} -d {{ pg_migrate.database }} -tAc "select count(*) from \"$t\"")
+      echo "$t:$c"
+    done
+  args:
+    executable: /bin/bash
+  register: pm_dst_counts
+  changed_when: false
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[verify] Assert per-table row counts match"
+  ansible.builtin.assert:
+    that:
+      - (pm_src_counts.stdout_lines | sort) == (pm_dst_counts.stdout_lines | sort)
+    fail_msg: >-
+      Row counts differ between source and target. Server remains stopped for safety.
+      source={{ pm_src_counts.stdout_lines }} target={{ pm_dst_counts.stdout_lines }}
+    quiet: true
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[verify] Collect checksums for critical tables on source"
+  ansible.builtin.shell: |
+    set -o pipefail
+    {% for t in pg_migrate.critical_tables %}
+    c=$(sudo -u postgres psql -p {{ pg_migrate.source_port }} -d {{ pg_migrate.database }} -tAc \
+      "select md5(coalesce(string_agg(x::text, '|' order by x::text),'')) from (select * from \"{{ t }}\") x" 2>/dev/null)
+    echo "{{ t }}:$c"
+    {% endfor %}
+  args:
+    executable: /bin/bash
+  register: pm_src_sums
+  changed_when: false
+  when: inventory_hostname == pg_migrate_host and pg_migrate.verify_checksums | bool
+  tags: [pg-migrate]
+
+- name: "[verify] Collect checksums for critical tables on target"
+  ansible.builtin.shell: |
+    set -o pipefail
+    {% for t in pg_migrate.critical_tables %}
+    c=$(PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ pg_migrate.target_port }} \
+      -U {{ pg_migrate.role }} -d {{ pg_migrate.database }} -tAc \
+      "select md5(coalesce(string_agg(x::text, '|' order by x::text),'')) from (select * from \"{{ t }}\") x" 2>/dev/null)
+    echo "{{ t }}:$c"
+    {% endfor %}
+  args:
+    executable: /bin/bash
+  register: pm_dst_sums
+  changed_when: false
+  when: inventory_hostname == pg_migrate_host and pg_migrate.verify_checksums | bool
+  tags: [pg-migrate]
+
+- name: "[verify] Assert critical-table checksums match"
+  ansible.builtin.assert:
+    that: (pm_src_sums.stdout_lines | sort) == (pm_dst_sums.stdout_lines | sort)
+    fail_msg: "Critical-table checksums differ; Server remains stopped. source={{ pm_src_sums.stdout_lines }} target={{ pm_dst_sums.stdout_lines }}"
+    quiet: true
+  when: inventory_hostname == pg_migrate_host and pg_migrate.verify_checksums | bool
+  tags: [pg-migrate]
+
+# ---------------------------------------------------------------- switch traffic
+# Deterministic, not detection-based: after a verified migration BOTH URLs (business and
+# audit) must use the HA port. Reconstruct each line fully rather than a fragile in-line regex:
+# the previous port-only replace silently updated only DATABASE_URL.
+- name: "[switch] Point the business DB URL at the HA entry point"
+  ansible.builtin.lineinfile:
+    path: "{{ winter_server.env_file }}"
+    regexp: '^DATABASE_URL='
+    line: "DATABASE_URL=postgres://{{ postgresql.db_user | default('winter') }}:{{ vault_pg_password }}@127.0.0.1:{{ pg_migrate.target_port }}/{{ pg_migrate.database }}?sslmode=disable"
+    mode: "0640"
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+  no_log: true
+
+- name: "[switch] Point the audit DB URL at the HA entry point"
+  ansible.builtin.lineinfile:
+    path: "{{ winter_server.env_file }}"
+    regexp: '^AUDIT_DATABASE_URL='
+    line: "AUDIT_DATABASE_URL=postgres://{{ postgresql.db_user | default('winter') }}:{{ vault_pg_password }}@127.0.0.1:{{ pg_migrate.target_port }}/{{ pg_migrate.database }}?sslmode=disable"
+    mode: "0640"
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+  no_log: true
+
+- name: "[switch] Write migration marker on verified success"
+  ansible.builtin.file:
+    path: "{{ pg_migrate.marker_file }}"
+    state: touch
+    mode: "0600"
+  when: inventory_hostname == pg_migrate_host and not pm_marker.stat.exists
+  tags: [pg-migrate]
+
+- name: "[switch] Restart the Server against the HA entry point"
+  ansible.builtin.systemd:
+    name: "{{ pg_migrate.server_service }}"
+    state: restarted
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[switch] Wait for Server health via the HA-backed connection"
+  ansible.builtin.uri:
+    url: "http://{{ winter_server.listen_addr | default('127.0.0.1') }}:{{ winter_server.port }}/healthz"
+    status_code: 200
+  register: pm_health
+  until: pm_health.status is defined and pm_health.status == 200
+  retries: 20
+  delay: 3
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+- name: "[cleanup] Remove temporary dump after verified migration"
+  ansible.builtin.file:
+    path: "{{ pg_migrate.dump_dir }}/{{ pg_migrate.database }}.dump"
+    state: absent
+  when: inventory_hostname == pg_migrate_host
+  tags: [pg-migrate]
+
+
+# ---- migrated from playbook post_tasks ----
+- name: Report migration result and rollback path
+  ansible.builtin.debug:
+    msg:
+      - "Migration complete. Source PG ({{ pg_migrate.source_port }}) data directory preserved at {{ pg_cluster.data_dir | regex_replace('ha$','data') }}"
+      - "Rollback (if needed): stop {{ pg_migrate.server_service }}, set server_ha.database_endpoint=direct, restart; then restore source if required."
+      - "Do NOT delete the source data directory until the HA cluster has been backed up and accepted."
+  run_once: true
+  tags: [pg-migrate]

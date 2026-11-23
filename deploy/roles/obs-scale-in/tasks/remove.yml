@@ -1,0 +1,8 @@
+---
+# Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
+# Play 3: Remove monitoring components from scaled-in nodes (hosts: monitoring_scale_targets)
+
+# ---- tasks ----
+- name: Run the observability teardown
+  ansible.builtin.include_tasks: ../roles/observability/tasks/remove.yml
+  tags: [observability-scale-in]

@@ -2,6 +2,13 @@
 # Agent pre-install on a managed node (ADR-35). Private keys never leave the node (ADR-28).
 # The service only starts once a certificate has been issued; until then the CSR is staged for enrollment.
 
+- name: Confirm Agent scaling is enabled
+  ansible.builtin.assert:
+    that: agent.enabled | bool
+    fail_msg: "agent.enabled is false; set agent_overrides.enabled: true in group_vars/all.yml"
+    quiet: true
+  tags: [agent, scale-out]
+
 - name: Validate Agent configuration
   ansible.builtin.assert:
     that:

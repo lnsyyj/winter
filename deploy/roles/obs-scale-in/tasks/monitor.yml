@@ -1,0 +1,57 @@
+---
+# Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
+# Play 2: Rewire remaining monitor nodes and drop removed peers (hosts: observability)
+
+# ---- pre_tasks ----
+- name: Load deployment passwords (required by Grafana)
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [observability-scale-in]
+
+- name: Restore localhost binding when a single monitor node remains
+  ansible.builtin.set_fact:
+    monitoring_bind_addr: >-
+      {{ '0.0.0.0' if ((groups['observability'] | length - monitoring_scale.removed_nodes | default([]) | length) > 1)
+         else monitoring_listen_addr }}
+    monitoring_advertise_addr: >-
+      {{ (ansible_host | default(monitoring_listen_addr)) if ((groups['observability'] | length - monitoring_scale.removed_nodes | default([]) | length) > 1)
+         else monitoring_listen_addr }}
+  tags: [observability-scale-in]
+
+- name: Compute remaining monitor peer addresses
+  ansible.builtin.set_fact:
+    monitor_peers: >-
+      {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
+         | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
+  tags: [observability-scale-in]
+
+- name: Recompute metrics query endpoint
+  ansible.builtin.set_fact:
+    monitoring_metrics_url: >-
+      {{ monitoring_scale.metrics_query_url if (monitoring_scale.metrics_query_url | default('') | length > 0)
+         else (hostvars[(groups['observability'] | difference(monitoring_scale.removed_nodes | default([])) | first)]['ansible_host']
+               | default(monitoring_listen_addr)) }}
+  tags: [observability-scale-in]
+
+- name: Compute the Server endpoint used by the Alertmanager webhook
+  ansible.builtin.set_fact:
+    monitoring_server_url: >-
+      {{ hostvars[groups['management'] | first]['ansible_host'] | default(monitoring_listen_addr) }}
+  tags: [observability-scale-in]
+
+- name: Point vmalert only at remaining Alertmanager replicas
+  ansible.builtin.set_fact:
+    monitoring_vmalert_notifiers: >-
+      {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
+         | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
+  tags: [observability-scale-in]
+
+
+# ---- roles ----
+- name: Apply role observability
+  ansible.builtin.include_role:
+    name: observability
+  when: inventory_hostname not in (monitoring_scale.removed_nodes | default([]))
+  tags: [observability-scale-in]

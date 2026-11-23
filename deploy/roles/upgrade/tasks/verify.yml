@@ -1,0 +1,3 @@
+---
+# Version upgrade (migrated from upgrade.yml, ADR-43).
+# Play 3: Re-run acceptance checks (hosts: None)

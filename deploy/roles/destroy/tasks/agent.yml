@@ -1,0 +1,17 @@
+---
+# Platform uninstall (migrated from destroy.yml, ADR-43). Split per host group; data preserved by default.
+# Play 2: Remove Agents from managed nodes (hosts: agent)
+
+# ---- post_tasks ----
+- name: Summarize destroy
+  ansible.builtin.debug:
+    msg:
+      - "Platform and Agents removed; data volumes were preserved"
+  tags: [always]
+
+# ---- roles ----
+- name: Apply role agent
+  ansible.builtin.include_role:
+    name: agent
+    tasks_from: remove
+  tags: [destroy, scale-in]

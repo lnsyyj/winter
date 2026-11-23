@@ -1,0 +1,3 @@
+---
+# Version upgrade (migrated from upgrade.yml, ADR-43).
+# Play 2: Converge to the pinned versions (hosts: None)

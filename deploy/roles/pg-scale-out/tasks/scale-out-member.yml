@@ -1,0 +1,157 @@
+---
+# Converge ONE joining cluster member: etcd member add (learner when starting from a single member),
+# bring up PostgreSQL / etcd / Patroni on that node, then promote the learner to a voting member.
+# Included once per target by pg-scale-out.yml with pg_join_node as the loop variable.
+#
+# etcd v3.5 note: a learner is non-voting, so adding it does not change quorum. This is the only
+# safe way to grow a 1-member cluster — adding a voting member would raise the quorum to 2 while
+# only 1 member is started, wedging the cluster. Learners must be promoted one at a time and only
+# after their raft log has caught up.
+
+# Idempotency: a retry may find the node already registered (e.g. a previous run added it as a
+# learner then failed before promote). Skip member add in that case and reconstruct the membership
+# facts from the cluster instead.
+- name: Check whether {{ pg_join_node }} is already an etcd member
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ etcd_role.bin_dir }}/etcdctl \
+      --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
+      member list 2>/dev/null | grep -q '{{ pg_join_node }}'
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  run_once: true
+  register: pg_member_exists
+  changed_when: false
+  failed_when: false
+  tags: [pg-scale-out]
+
+- name: Add {{ pg_join_node }} to etcd (learner) and capture its cluster membership
+  ansible.builtin.command: >-
+    {{ etcd_role.bin_dir }}/etcdctl
+    --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }}
+    member add {{ pg_join_node }}
+    --peer-urls=http://{{ hostvars[pg_join_node]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
+    --learner
+  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  run_once: true
+  register: pg_etcd_add
+  changed_when: true
+  when: (pg_use_learner | bool) and pg_member_exists.rc != 0
+  tags: [pg-scale-out]
+
+- name: Add {{ pg_join_node }} to etcd (voting member)
+  ansible.builtin.command: >-
+    {{ etcd_role.bin_dir }}/etcdctl
+    --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }}
+    member add {{ pg_join_node }}
+    --peer-urls=http://{{ hostvars[pg_join_node]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
+  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  run_once: true
+  register: pg_etcd_add_voting
+  changed_when: true
+  when: (not (pg_use_learner | bool)) and pg_member_exists.rc != 0
+  tags: [pg-scale-out]
+
+- name: Refuse to re-add an already registered member without its add output
+  ansible.builtin.assert:
+    that: pg_member_exists.rc != 0
+    fail_msg: >-
+      {{ pg_join_node }} is already an etcd member. Remove the stale member (etcdctl member remove)
+      and wipe its data dir before re-running pg-scale-out; the join facts cannot be reconstructed
+      from an existing member.
+    quiet: true
+  run_once: true
+  tags: [pg-scale-out]
+
+# run_once register results are shared with every host; compute the local fact on each host so the
+# joining node can read the membership string returned by etcdctl.
+- name: Resolve the etcd add result for this node
+  ansible.builtin.set_fact:
+    pg_etcd_add_result: "{{ (pg_use_learner | bool) | ternary(pg_etcd_add, pg_etcd_add_voting | default({})) }}"
+  tags: [pg-scale-out]
+
+# Parse the member add output without regex backreferences: a Jinja/YAML backslash sequence was
+# rendered literally as "\1" into etcd.service.j2 (etcd then failed with "URL scheme must be http").
+# Split on '=' / whitespace and strip quotes instead.
+# run_once register results are shared with every host, so parse on all hosts: the joining node
+# needs the cluster string and the promote task (delegated to an existing member) needs the member id.
+- name: Extract the etcdctl member add fields on every host
+  ansible.builtin.set_fact:
+    pg_etcd_cluster_line: >-
+      {{ pg_etcd_add_result.stdout_lines | select('search', '^ETCD_INITIAL_CLUSTER=') | first | default('') }}
+    pg_etcd_member_line: >-
+      {{ pg_etcd_add_result.stdout_lines | select('search', '^Member .* added') | first | default('') }}
+    # "ETCD_INITIAL_CLUSTER=ctl=http://...,node-b=http://..." -> value after first '=', minus quotes
+    etcd_initial_cluster: "{{ (pg_etcd_add_result.stdout_lines | select('search', '^ETCD_INITIAL_CLUSTER=') | first | default('')).split('=', 1)[1] | trim | trim('\"') }}"
+    # "Member <id> added to cluster ..." -> second whitespace token
+    pg_join_member_id: "{{ (pg_etcd_add_result.stdout_lines | select('search', '^Member .* added') | first | default('')).split()[1] }}"
+  tags: [pg-scale-out]
+
+- name: Mark this node as joining with the etcd-provided member list
+  ansible.builtin.set_fact:
+    etcd_joining: true
+  when: inventory_hostname == pg_join_node
+  tags: [pg-scale-out]
+
+- name: Install PostgreSQL on the joining node
+  ansible.builtin.include_role:
+    name: postgresql
+  when: inventory_hostname == pg_join_node
+  tags: [pg-scale-out]
+
+- name: Install and start etcd on the joining node
+  ansible.builtin.include_role:
+    name: etcd
+  vars:
+    # Existing members plus this iteration's join (pg_join_index is 0-based) are healthy now.
+    pg_healthy_target: "{{ (pg_existing_members | int) + (pg_join_index | int) + 1 }}"
+  when: inventory_hostname == pg_join_node
+  tags: [pg-scale-out]
+
+- name: Install and start Patroni on the joining node
+  ansible.builtin.include_role:
+    name: patroni
+  when: inventory_hostname == pg_join_node
+  tags: [pg-scale-out]
+
+# Promote only in the single-member bootstrap path. Wait until the learner has caught up, then
+# promote; each promote restores a voting quorum (1 -> 2 -> 3) before the next node is added.
+- name: Promote the learner after it catches up
+  ansible.builtin.shell: |
+    set -o pipefail
+    for i in $(seq 1 60); do
+      {{ etcd_role.bin_dir }}/etcdctl \
+        --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
+        member promote {{ pg_join_member_id }} >/dev/null 2>&1 && exit 0
+      sleep 2
+    done
+    echo "learner {{ pg_join_node }} did not catch up within 120s" >&2
+    exit 1
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  run_once: true
+  changed_when: true
+  when: pg_use_learner | bool
+  tags: [pg-scale-out]
+
+# Check membership state via `member list` (works for learners); `endpoint health --cluster` would
+# query the learner directly and fail with "rpc not supported for learner".
+- name: Wait for this node to be a started etcd member
+  ansible.builtin.shell: |
+    set -o pipefail
+    for i in $(seq 1 60); do
+      {{ etcd_role.bin_dir }}/etcdctl \
+        --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
+        member list 2>/dev/null | grep -q '{{ pg_join_node }}' && exit 0
+      sleep 2
+    done
+    echo "member {{ pg_join_node }} did not join within 120s" >&2
+    exit 1
+  args:
+    executable: /bin/bash
+  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  run_once: true
+  changed_when: false
+  tags: [pg-scale-out]

@@ -1,0 +1,115 @@
+---
+# PostgreSQL HA scale-in (migrated from pg-scale-in.yml, ADR-43). NOTE: original play had serial:1 — site.yml play must keep serial:1.
+
+# ---- migrated from playbook pre_tasks ----
+- name: Load deployment passwords
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [pg-scale-in]
+
+- name: Validate scale-in plan
+  ansible.builtin.assert:
+    that:
+      - pg_scale.removed_nodes | length > 0
+      - pg_scale.removed_nodes | unique | length == pg_scale.removed_nodes | length
+      - pg_scale.removed_nodes | difference(groups['management']) | length == 0
+      - (groups['management'] | length - pg_scale.removed_nodes | length) % 2 == 1
+      - (groups['management'] | length - pg_scale.removed_nodes | length) >= 3
+      - not (pg_scale.purge_data | bool) or (pg_scale.data_dirs | default([]) | length > 0)
+    fail_msg: "Removed nodes must be in [management], leave an odd count >= 3, and purge_data requires an explicit data_dirs list"
+    quiet: true
+  run_once: true
+  tags: [pg-scale-in]
+
+- name: Record the expected member count after removal
+  ansible.builtin.set_fact:
+    pg_expected_members: "{{ groups['management'] | length - pg_scale.removed_nodes | length }}"
+  tags: [pg-scale-in]
+
+
+# ---- migrated from playbook tasks ----
+- name: Confirm removed nodes are replicas, never the leader
+  ansible.builtin.uri:
+    url: "http://{{ hostvars[item]['ansible_host'] }}:{{ pg_cluster.rest_port }}/replica"
+    status_code: 200
+  loop: "{{ pg_scale.removed_nodes }}"
+  delegate_to: "{{ groups['management'] | difference(pg_scale.removed_nodes) | first }}"
+  tags: [pg-scale-in]
+
+- name: Resolve etcd member IDs for removed nodes
+  ansible.builtin.shell: |
+    set -o pipefail
+    {{ etcd_role.bin_dir }}/etcdctl \
+      --endpoints=http://{{ hostvars[groups['management'] | difference(pg_scale.removed_nodes) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }} \
+      member list -w table \
+    | awk -F'|' -v n="{{ item }}" '$3 ~ n {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}'
+  args:
+    executable: /bin/bash
+  loop: "{{ pg_scale.removed_nodes }}"
+  delegate_to: "{{ groups['management'] | difference(pg_scale.removed_nodes) | first }}"
+  register: pg_etcd_member_ids
+  changed_when: false
+  tags: [pg-scale-in]
+
+- name: Remove etcd members
+  ansible.builtin.command: >-
+    {{ etcd_role.bin_dir }}/etcdctl
+    --endpoints=http://{{ hostvars[groups['management'] | difference(pg_scale.removed_nodes) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }}
+    member remove {{ item.stdout | trim }}
+  loop: "{{ pg_etcd_member_ids.results }}"
+  when: item.stdout | trim | length > 0
+  delegate_to: "{{ groups['management'] | difference(pg_scale.removed_nodes) | first }}"
+  run_once: true
+  changed_when: true
+  tags: [pg-scale-in]
+
+- name: Stop and disable cluster services on removed nodes
+  ansible.builtin.systemd:
+    name: "{{ item }}"
+    state: stopped
+    enabled: false
+  loop: [etcd, patroni]
+  when: inventory_hostname in pg_scale.removed_nodes
+  tags: [pg-scale-in]
+
+- name: Purge explicitly listed data directories (opt-in)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ pg_scale.data_dirs | default([]) }}"
+  when: inventory_hostname in pg_scale.removed_nodes and pg_scale.purge_data | bool
+  tags: [pg-scale-in]
+
+
+# ---- migrated from playbook post_tasks ----
+- name: Report scale-in result
+  ansible.builtin.debug:
+    msg:
+      - "Removed {{ pg_scale.removed_nodes | join(', ') }}; remaining etcd members: {{ pg_expected_members }}"
+      - "Data preserved: {{ not (pg_scale.purge_data | bool) }}. Remove the hosts from [management] in inventory when ready"
+  run_once: true
+  tags: [pg-scale-in]
+
+# ---- migrated from playbook roles ----
+- name: Apply role postgresql
+  ansible.builtin.include_role:
+    name: postgresql
+  when: inventory_hostname not in pg_scale.removed_nodes
+  tags: [pg-scale-in]
+- name: Apply role etcd
+  ansible.builtin.include_role:
+    name: etcd
+  when: inventory_hostname not in pg_scale.removed_nodes
+  tags: [pg-scale-in]
+- name: Apply role patroni
+  ansible.builtin.include_role:
+    name: patroni
+  when: inventory_hostname not in pg_scale.removed_nodes
+  tags: [pg-scale-in]
+- name: Apply role haproxy
+  ansible.builtin.include_role:
+    name: haproxy
+  when: inventory_hostname not in pg_scale.removed_nodes
+  tags: [pg-scale-in]
