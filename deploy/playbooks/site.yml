@@ -346,11 +346,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: app-ha
-      tasks_from: server
+  tasks:
+    - name: Apply app-ha slice server
+      ansible.builtin.include_role:
+        name: app-ha
+        tasks_from: server
       tags: [app-ha]
-
 - name: App HA - Harbor replicas
   hosts: harbor
   become: true
@@ -366,12 +367,13 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: app-ha
-      tasks_from: harbor
+  tasks:
+    - name: Apply app-ha slice harbor
+      ansible.builtin.include_role:
+        name: app-ha
+        tasks_from: harbor
       when: harbor.enabled | bool
       tags: [app-ha]
-
 - name: App HA - Nginx and LVS real servers
   hosts: nginx
   become: true
@@ -387,11 +389,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: app-ha
-      tasks_from: nginx
+  tasks:
+    - name: Apply app-ha slice nginx
+      ansible.builtin.include_role:
+        name: app-ha
+        tasks_from: nginx
       tags: [app-ha]
-
 - name: App HA - Keepalived Director
   hosts: keepalived
   become: true
@@ -407,12 +410,13 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: app-ha
-      tasks_from: keepalived
+  tasks:
+    - name: Apply app-ha slice keepalived
+      ansible.builtin.include_role:
+        name: app-ha
+        tasks_from: keepalived
       when: ha.enabled | bool
       tags: [app-ha]
-
 - name: Keepalived Director (standalone)
   hosts: keepalived
   become: true
@@ -428,12 +432,13 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: keepalived-ops
-      tasks_from: director
+  tasks:
+    - name: Apply keepalived-ops slice director
+      ansible.builtin.include_role:
+        name: keepalived-ops
+        tasks_from: director
       when: ha.enabled | bool
       tags: [keepalived-ops]
-
 - name: LVS real servers (standalone)
   hosts: nginx
   become: true
@@ -449,12 +454,13 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: keepalived-ops
-      tasks_from: realserver
+  tasks:
+    - name: Apply keepalived-ops slice realserver
+      ansible.builtin.include_role:
+        name: keepalived-ops
+        tasks_from: realserver
       when: ha.lvs.enabled | bool
       tags: [keepalived-ops]
-
 - name: Observability scale out - monitor nodes
   hosts: observability
   become: true
@@ -470,11 +476,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: obs-scale-out
-      tasks_from: monitor
+  tasks:
+    - name: Apply obs-scale-out slice monitor
+      ansible.builtin.include_role:
+        name: obs-scale-out
+        tasks_from: monitor
       tags: [observability-scale-out]
-
 - name: Observability scale out - nginx upstream
   hosts: management
   become: true
@@ -490,11 +497,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: obs-scale-out
-      tasks_from: nginx
+  tasks:
+    - name: Apply obs-scale-out slice nginx
+      ansible.builtin.include_role:
+        name: obs-scale-out
+        tasks_from: nginx
       tags: [observability-scale-out]
-
 - name: Observability scale in - register targets
   hosts: localhost
   become: true
@@ -510,11 +518,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: obs-scale-in
-      tasks_from: localhost
+  tasks:
+    - name: Apply obs-scale-in slice localhost
+      ansible.builtin.include_role:
+        name: obs-scale-in
+        tasks_from: localhost
       tags: [observability-scale-in]
-
 - name: Observability scale in - remaining nodes
   hosts: observability
   become: true
@@ -530,11 +539,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: obs-scale-in
-      tasks_from: monitor
+  tasks:
+    - name: Apply obs-scale-in slice monitor
+      ansible.builtin.include_role:
+        name: obs-scale-in
+        tasks_from: monitor
       tags: [observability-scale-in]
-
 - name: Observability scale in - remove targets
   hosts: monitoring_scale_targets
   become: true
@@ -550,11 +560,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: obs-scale-in
-      tasks_from: remove
+  tasks:
+    - name: Apply obs-scale-in slice remove
+      ansible.builtin.include_role:
+        name: obs-scale-in
+        tasks_from: remove
       tags: [observability-scale-in]
-
 - name: Observability scale in - nginx upstream
   hosts: management
   become: true
@@ -570,11 +581,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: obs-scale-in
-      tasks_from: nginx
+  tasks:
+    - name: Apply obs-scale-in slice nginx
+      ansible.builtin.include_role:
+        name: obs-scale-in
+        tasks_from: nginx
       tags: [observability-scale-in]
-
 - name: Uninstall platform from management nodes
   hosts: management
   become: true
@@ -590,14 +602,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: destroy
-      tasks_from: management
-      # No enabled gate: destroy is an explicit action. The uninstall role's own task file
-      # enforces its preconditions; gating here would need uninstall.defaults which this
-      # wrapper role does not load (ADR-43).
+  tasks:
+    - name: Apply destroy slice management
+      ansible.builtin.include_role:
+        name: destroy
+        tasks_from: management
       tags: [destroy]
-
 - name: Remove Agents from managed nodes
   hosts: agent
   become: true
@@ -606,11 +616,12 @@
   tags: [destroy]
   vars_files:
     - ../group_vars/all.yml
-  roles:
-    - role: destroy
-      tasks_from: agent
+  tasks:
+    - name: Apply destroy slice agent
+      ansible.builtin.include_role:
+        name: destroy
+        tasks_from: agent
       tags: [destroy]
-
 - name: Deployment acceptance checks
   hosts: management
   become: true
@@ -626,11 +637,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: verify
-      tasks_from: acceptance
+  tasks:
+    - name: Apply verify slice acceptance
+      ansible.builtin.include_role:
+        name: verify
+        tasks_from: acceptance
       tags: [verify]
-
 - name: Validate configuration
   hosts: management
   become: true
@@ -646,11 +658,12 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: reconfigure
-      tasks_from: validate
+  tasks:
+    - name: Apply reconfigure slice validate
+      ansible.builtin.include_role:
+        name: reconfigure
+        tasks_from: validate
       tags: [reconfigure]
-
 - name: Verify artifacts and version plan
   hosts: management
   become: true
@@ -666,13 +679,9 @@
       failed_when: false
       no_log: true
       tags: [always]
-  roles:
-    - role: upgrade
-      tasks_from: validate
+  tasks:
+    - name: Apply upgrade slice validate
+      ansible.builtin.include_role:
+        name: upgrade
+        tasks_from: validate
       tags: [upgrade]
-
-# Notes:
-# - reconfigure/upgrade also converge via the component plays above (select with -t); the old
-#   `import_playbook: deploy.yml` is expressed by tag combination, not a separate play.
-# - lifecycle actions (destroy/verify/reconfigure/upgrade) have dedicated tags so their tasks
-#   cannot leak into `-t <component>` runs.
