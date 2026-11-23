@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/observability-scale-in/tasks/nginx.yml.
 # Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
 # Play 4: Drop removed Grafana replicas from the Nginx upstream (hosts: management)
 

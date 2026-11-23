@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/postgresql-scale-out/tasks/scale-out-member.yml.
 # Converge ONE joining cluster member: etcd member add (learner when starting from a single member),
 # bring up PostgreSQL / etcd / Patroni on that node, then promote the learner to a voting member.
 # Included once per target by postgresql-scale-out.yml with pg_join_node as the loop variable.

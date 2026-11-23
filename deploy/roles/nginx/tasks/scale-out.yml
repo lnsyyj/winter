@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/observability-scale-out/tasks/nginx.yml.
 # Observability scale-out (migrated from observability-scale-out.yml, ADR-43).
 # Play 2: Update the Nginx Grafana upstream with all monitor nodes (hosts: management)
 

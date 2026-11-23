@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/postgresql-ha/tasks/deploy.yml.
 # PostgreSQL HA cluster bootstrap (migrated from postgresql-ha.yml, ADR-43). Odd-member assert + postgresql/etcd/patroni/haproxy convergence.
 
 # ---- migrated from playbook pre_tasks ----

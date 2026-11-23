@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/application-ha/tasks/harbor.yml.
 # Application HA convergence (migrated from application-ha.yml, ADR-43). Split per host group; site.yml attaches each slice via tasks_from.
 # Play 2: Deploy Harbor replicas (hosts: harbor)
 

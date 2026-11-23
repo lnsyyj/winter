@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/observability-scale-in/tasks/remove.yml.
 # Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
 # Play 3: Remove monitoring components from scaled-in nodes (hosts: monitoring_scale_targets)
 

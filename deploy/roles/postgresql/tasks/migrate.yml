@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/postgresql-migrate/tasks/deploy.yml.
 # Single-node PostgreSQL -> HA migration (migrated from postgresql-migrate.yml, ADR-43). NOTE: original play had serial:1 — site.yml play must keep serial:1.
 
 # ---- migrated from playbook pre_tasks ----

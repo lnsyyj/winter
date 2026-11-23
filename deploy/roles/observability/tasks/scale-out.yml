@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/observability-scale-out/tasks/monitor.yml.
 # Observability scale-out (migrated from observability-scale-out.yml, ADR-43).
 # Play 1: Scale out monitoring components and rewire cross-node references (hosts: observability)
 

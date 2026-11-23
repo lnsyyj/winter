@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/postgresql-scale-out/tasks/deploy.yml.
 # PostgreSQL HA scale-out (migrated from postgresql-scale-out.yml, ADR-43). Sequential etcd learner/promote; scale-out-member.yml must live in this tasks dir.
 
 # ---- migrated from playbook pre_tasks ----

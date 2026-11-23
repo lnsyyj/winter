@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/keepalived-operations/tasks/realserver.yml.
 # Keepalived Director + LVS real servers (migrated from keepalived.yml, ADR-43). Split per host group.
 # Play 2: Configure the LVS real servers (hosts: nginx)
 

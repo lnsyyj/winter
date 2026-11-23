@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/observability-scale-in/tasks/localhost.yml.
 # Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
 # Play 1: Register monitoring scale-in targets (hosts: localhost)
 

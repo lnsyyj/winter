@@ -1,4 +1,5 @@
 ---
+# ADR-44 (Plan X): migrated verbatim from roles/observability-scale-in/tasks/monitor.yml.
 # Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
 # Play 2: Rewire remaining monitor nodes and drop removed peers (hosts: observability)
 
