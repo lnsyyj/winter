@@ -4,5 +4,7 @@
 
 # ---- tasks ----
 - name: Run the observability teardown
-  ansible.builtin.include_tasks: ../roles/observability/tasks/remove.yml
+  ansible.builtin.include_role:
+    name: observability
+    tasks_from: remove
   tags: [observability-scale-in]
