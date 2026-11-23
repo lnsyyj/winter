@@ -7,7 +7,7 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 All deployment work enters through one command shape. `deploy.sh` maps the action to
 `winter_ops_action` and invokes `playbooks/site.yml`. **All task logic lives in software roles** —
 `site.yml` is thin `hosts + roles` orchestration only; `playbooks/` contains no other file
-(ADR-43). Per [ADR-44](./docs/02-研发线/04-架构师/ADR-44-编排逻辑归入软件role.md), orchestration
+(ADR-43). Per [ADR-44](../docs/02-研发线/04-架构师/ADR-44-编排逻辑归入软件role.md), orchestration
 logic (HA / scale / migrate / destroy) is folded into each software role's action files
 (e.g. `roles/postgresql/tasks/{ha,scale-out,migrate}.yml`), attached via `include_role tasks_from:`.
 Operation plays are named `Operate <action> - <software>`; CLI tags are unchanged.
