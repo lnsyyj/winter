@@ -2,10 +2,12 @@
 
 Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.md): the structure is aligned with kolla-ansible, but the code is independent — no fork and no dependency on its Python packages.
 
-## Single-entry interface (ADR-42, current)
+## Single-entry interface (ADR-43, current)
 
 All deployment work enters through one command shape. `deploy.sh` maps the action to
-`winter_ops_action` and invokes `playbooks/site.yml` (lifecycle actions route to their own playbooks).
+`winter_ops_action` and invokes `playbooks/site.yml`. **All task logic lives in `roles/`** — `site.yml`
+is thin `hosts + roles` orchestration only; `playbooks/` contains no other file (ADR-43 supersedes
+ADR-42's `import_playbook` approach).
 
 ```bash
 ./deploy.sh <action> -i <inventory> [-t tag,...] [-e @group_vars/operations/<op>.yml]
@@ -22,14 +24,16 @@ All deployment work enters through one command shape. `deploy.sh` maps the actio
 
 - Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`pg-ha`,
   `pg-scale-*`, `pg-migrate`, `app-ha`, `observability-scale-*`) must be selected explicitly with `-t`
-  and are also excluded by an automatic `--skip-tags` to prevent accidental execution.
+  to prevent accidental execution. Each operation has a dedicated tag so component runs cannot
+  trigger it.
 - Component tags: `prechecks system-init bootstrap local-repo postgresql nginx observability
   winter-server harbor keepalived named agent`.
-- Operation tags: `pg-ha pg-scale-out pg-scale-in pg-migrate app-ha observability-scale-out
-  observability-scale-in`.
+- Operation tags: `pg-ha pg-scale-out pg-scale-in pg-migrate app-ha keepalived-ops
+  observability-scale-out observability-scale-in destroy verify reconfigure upgrade`.
 - Per-operation variables live in `group_vars/operations/`; operation inventories in
-  `inventory/operations/`. Component roles dispatch on `winter_ops_action` to `tasks/deploy.yml`
-  or `tasks/precheck.yml` via `tasks/main.yml`.
+  `inventory/operations/`. Every role's `tasks/main.yml` dispatches on `winter_ops_action`;
+  multi-host operations (`app-ha`, `destroy`, `obs-scale-*`) are split into per-host task files
+  attached via `include_role tasks_from:` in `site.yml`.
 
 The stage table below documents the legacy per-stage command names from ADR-17/41; those direct
 stage commands were removed in ADR-42 — use the action + tag form above.
