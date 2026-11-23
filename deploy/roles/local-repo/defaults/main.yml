@@ -4,7 +4,7 @@
 # Location: deploy/artifacts/repo/ (checked in, carried to offline sites along with the code)
 # Service: Nginx over plaintext HTTP, accessible only from the internal subnet; port 443 is avoided so nodes need not trust a CA
 
-local-repo:
+local_repo:
   # Artifact source (directory on the control machine)
   src: "{{ playbook_dir }}/../artifacts/repo"
   # Publish directory (Nginx root)

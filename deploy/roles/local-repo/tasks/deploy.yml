@@ -28,7 +28,7 @@
   tags: [repo]
 
 - name: Check the current SELinux label of the repo port
-  ansible.builtin.shell: "semanage port -l | grep -E '[[:space:]]{{ local-repo.listen_port }}[[:space:]]' || true"
+  ansible.builtin.shell: "semanage port -l | grep -E '[[:space:]]{{ local_repo.listen_port }}[[:space:]]' || true"
   args:
     executable: /bin/bash
   register: repo_seport_before
@@ -41,10 +41,10 @@
   # default allowlist and may already be claimed by another type (e.g. us_cli_port_t).
   ansible.builtin.shell: |
     set -euo pipefail
-    if semanage port -l | grep -qE '[[:space:]]{{ local-repo.listen_port }}[[:space:]]'; then
-      semanage port -m -t http_port_t -p tcp {{ local-repo.listen_port }}
+    if semanage port -l | grep -qE '[[:space:]]{{ local_repo.listen_port }}[[:space:]]'; then
+      semanage port -m -t http_port_t -p tcp {{ local_repo.listen_port }}
     else
-      semanage port -a -t http_port_t -p tcp {{ local-repo.listen_port }}
+      semanage port -a -t http_port_t -p tcp {{ local_repo.listen_port }}
     fi
   args:
     executable: /bin/bash
@@ -79,15 +79,15 @@
 
 - name: Create publish directory
   ansible.builtin.file:
-    path: "{{ local-repo.root }}"
+    path: "{{ local_repo.root }}"
     state: directory
     mode: "0755"
   tags: [repo]
 
 - name: Sync artifacts (rpm / tarball / pip)
   ansible.builtin.copy:
-    src: "{{ local-repo.src }}/"
-    dest: "{{ local-repo.root }}/"
+    src: "{{ local_repo.src }}/"
+    dest: "{{ local_repo.root }}/"
     mode: preserve
     directory_mode: "0755"
   tags: [repo]
@@ -95,8 +95,8 @@
 - name: Gather publish statistics
   ansible.builtin.shell: |
     set -o pipefail
-    find {{ local-repo.root }} -type f | wc -l
-    du -sh {{ local-repo.root }} | awk '{print $1}'
+    find {{ local_repo.root }} -type f | wc -l
+    du -sh {{ local_repo.root }} | awk '{print $1}'
   args:
     executable: /bin/bash
   register: repo_stat
@@ -127,7 +127,7 @@
 - name: Allow firewall port (internal subnet only)
   ansible.builtin.shell: |
     set -euo pipefail
-    rule='rule family=ipv4 source address={{ local-repo.allow_cidr }} port port={{ local-repo.listen_port }} protocol=tcp accept'
+    rule='rule family=ipv4 source address={{ local_repo.allow_cidr }} port port={{ local_repo.listen_port }} protocol=tcp accept'
     # Use --query-rich-rule to decide, rather than treating the --reload success as a change:
     # the latter would report changed on every deploy (TC-26 requires changed=0 on the second run).
     if firewall-cmd --permanent --query-rich-rule="$rule" >/dev/null 2>&1; then
@@ -147,7 +147,7 @@
 - name: Self-check (local machine)
   ansible.builtin.shell: |
     set -o pipefail
-    curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:{{ local-repo.listen_port }}/"
+    curl -sS --max-time 5 -o /dev/null -w "%{http_code}" "http://127.0.0.1:{{ local_repo.listen_port }}/"
   args:
     executable: /bin/bash
   register: repo_selfcheck
@@ -158,7 +158,7 @@
 - name: Report result
   ansible.builtin.debug:
     msg:
-      - "Artifact repo: http://{{ ansible_facts.default_ipv4.address }}:{{ local-repo.listen_port }}/  (root {{ local-repo.root }})"
+      - "Artifact repo: http://{{ ansible_facts.default_ipv4.address }}:{{ local_repo.listen_port }}/  (root {{ local_repo.root }})"
       - "File count {{ repo_stat.stdout_lines[0] }}, size {{ repo_stat.stdout_lines[1] }}"
-      - "Only {{ local-repo.allow_cidr }} is allowed to access"
+      - "Only {{ local_repo.allow_cidr }} is allowed to access"
   tags: [repo]
