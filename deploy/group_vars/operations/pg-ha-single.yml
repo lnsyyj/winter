@@ -1,5 +1,0 @@
----
-# Operation variables: single-node HA bootstrap for the 1 -> 3 growth path (ADR-39 / ADR-43).
-# Usage: ./deploy.sh deploy -i inventory/site1 -t pg-ha -e @group_vars/operations/pg-ha-single.yml
-pg_cluster_overrides:
-  allow_single_node_bootstrap: true

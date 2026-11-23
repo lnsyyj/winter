@@ -16,24 +16,24 @@ ADR-42's `import_playbook` approach).
 ./deploy.sh deploy -i inventory/all-in-one                              # all components
 ./deploy.sh deploy -i inventory/multinode -t local-repo                 # one component
 ./deploy.sh prechecks -i inventory/pgha -t postgresql                   # one role's prechecks
-./deploy.sh deploy -i inventory/operations/scale-out-pg -t pg-scale-out \
-    -e @group_vars/operations/pg-scale-out.yml                          # transactional operation
-./deploy.sh deploy -i inventory/pgha -t pg-ha                          # PG HA bootstrap (defaults)
-./deploy.sh deploy -i inventory/site1 -t pg-ha \
-    -e @group_vars/operations/pg-ha-single.yml                         # single-node HA bootstrap
+./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
+    -e @group_vars/operations/postgresql-scale-out.yml                          # transactional operation
+./deploy.sh deploy -i inventory/pgha -t postgresql-ha                          # PG HA bootstrap (defaults)
+./deploy.sh deploy -i inventory/site1 -t postgresql-ha \
+    -e @group_vars/operations/postgresql-ha-single.yml                         # single-node HA bootstrap
 ```
 
-- Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`pg-ha`,
-  `pg-scale-*`, `pg-migrate`, `app-ha`, `observability-scale-*`) must be selected explicitly with `-t`
+- Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`postgresql-ha`,
+  `postgresql-scale-*`, `postgresql-migrate`, `application-ha`, `observability-scale-*`) must be selected explicitly with `-t`
   to prevent accidental execution. Each operation has a dedicated tag so component runs cannot
   trigger it.
 - Component tags: `prechecks system-init bootstrap local-repo postgresql nginx observability
   winter-server harbor keepalived named agent`.
-- Operation tags: `pg-ha pg-scale-out pg-scale-in pg-migrate app-ha keepalived-ops
+- Operation tags: `postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate application-ha keepalived-operations
   observability-scale-out observability-scale-in destroy verify reconfigure upgrade`.
 - Per-operation variables live in `group_vars/operations/`; operation inventories in
   `inventory/operations/`. Every role's `tasks/main.yml` dispatches on `winter_ops_action`;
-  multi-host operations (`app-ha`, `destroy`, `obs-scale-*`) are split into per-host task files
+  multi-host operations (`application-ha`, `destroy`, `observability-scale-*`) are split into per-host task files
   attached via `include_role tasks_from:` in `site.yml`.
 
 The stage table below documents the legacy per-stage command names from ADR-17/41; those direct
@@ -49,12 +49,12 @@ stage commands were removed in ADR-42 — use the action + tag form above.
 | Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|dns\|system-init> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
 | Converge observability stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
-| PG high availability | `./deploy.sh pg-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
-| PG HA scale out | `./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
-| PG HA scale in | `./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
+| PG high availability | `./deploy.sh postgresql-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
+| PG HA scale out | `./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
+| PG HA scale in | `./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
 | Monitoring scale out | `./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[observability]`) |
 | Monitoring scale in | `./deploy.sh observability-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
-| HA converged deployment | `./deploy.sh app-ha -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
+| HA converged deployment | `./deploy.sh application-ha -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
 | Scale out (install Agent) | `./deploy.sh agent-scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh agent-scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
 | Destroy (uninstall) | `./deploy.sh destroy -i inventory/multinode` | ✅ **Implemented** (data preserved by default; explicit purge required to delete) |
@@ -87,7 +87,7 @@ actual value and how to fix it.
 
 The groups default to `management` in all shipped inventories, so existing single-node behaviour is
 unchanged. Split them onto dedicated hosts to deploy any component independently. The full converge
-stage (`deploy`) and the HA stage (`app-ha`) remain available for one-shot delivery.
+stage (`deploy`) and the HA stage (`application-ha`) remain available for one-shot delivery.
 
 ## System Initialization (chrony and base tools)
 
@@ -208,10 +208,10 @@ Safety: the service account is non-root with an explicit sudoers whitelist (abso
 ## PostgreSQL High Availability (etcd + Patroni + HAProxy)
 
 ```bash
-./deploy.sh pg-ha -i inventory/pgha                  # full deployment
-./deploy.sh pg-ha -i inventory/pgha --tags etcd      # DCS only
-./deploy.sh pg-ha -i inventory/pgha --tags patroni   # PG cluster only
-./deploy.sh pg-ha -i inventory/pgha --tags haproxy   # entry point only
+./deploy.sh postgresql-ha -i inventory/pgha                  # full deployment
+./deploy.sh postgresql-ha -i inventory/pgha --tags etcd      # DCS only
+./deploy.sh postgresql-ha -i inventory/pgha --tags patroni   # PG cluster only
+./deploy.sh postgresql-ha -i inventory/pgha --tags haproxy   # entry point only
 ```
 
 | Component | Role | Port (`group_vars.pg_cluster`) |
@@ -246,17 +246,17 @@ Add the new hosts to `[management]` in `inventory/pgha` first; topology is alway
 
 ```bash
 # 3 -> 5: add two nodes at once so the etcd member count stays odd
-./deploy.sh pg-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'
+./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'
 
 # 5 -> 3: remove a replica (never the leader); PG and etcd data is preserved
-./deploy.sh pg-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'
+./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'
 ```
 
 Safety rules enforced by the playbooks:
 
 - etcd requires an **odd final member count >= 3**; the stage refuses an even or too-small result.
 - Scale-in verifies the target answers `/replica` (200) before touching it — the leader can never be removed.
-- New etcd members are registered with `etcdctl member add` and join with `initial-cluster-state=existing`; the templates are membership-aware, so a plain `pg-ha` rerun still renders the static bootstrap cluster.
+- New etcd members are registered with `etcdctl member add` and join with `initial-cluster-state=existing`; the templates are membership-aware, so a plain `postgresql-ha` rerun still renders the static bootstrap cluster.
 - `serial: 1` during scale-in prevents a simultaneous DCS restart.
 - Data is never deleted implicitly: `pg_scale.purge_data: true` requires an explicit `pg_scale.data_dirs` list.
 
@@ -299,7 +299,7 @@ DR mode. The VIP still moves with VRRP, but connections are scheduled across all
 backends and real servers answer directly with the VIP as source, bypassing the Director.
 
 ```bash
-./deploy.sh app-ha -i inventory/multinode
+./deploy.sh application-ha -i inventory/multinode
 ```
 
 Inventory groups: `[keepalived]` (LVS Director + Keepalived), `[nginx]` (real Nginx backends),
@@ -399,7 +399,7 @@ Base layer: `./deploy.sh deploy` ran through with `ok=25 changed=2 failed=0`; th
 Three issues exposed and fixed on real machines:
 
 1. `unarchive` requires the `dest` directory to **already exist**: Grafana had only created the parent `/opt/winter` → added creation of the install directory;
-2. `local_repo` treated the `success` output of every `firewall-cmd --reload` as a change → switched to `--query-rich-rule`, reporting changed only when a rule is actually added;
+2. `local-repo` treated the `success` output of every `firewall-cmd --reload` as a change → switched to `--query-rich-rule`, reporting changed only when a rule is actually added;
 3. `winter-server`'s `mv` consumed the downloaded source file, causing a fresh `get_url` on every rerun → changed to copying into the target directory + `mv` within the same directory for atomic replacement, preserving the source file.
 
 ### Five base-layer issues exposed and fixed on real machines (all invisible on paper, only blowing up at runtime):
@@ -425,7 +425,7 @@ deploy/
 ├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / pg-ha / pg-scale-out / pg-scale-in / observability-scale-out / observability-scale-in / app-ha / agent-scale-out / agent-scale-in / destroy / post-deploy / reconfigure / upgrade
+├── playbooks/                 # bootstrap-servers / prechecks / deploy / postgresql-ha / postgresql-scale-out / postgresql-scale-in / observability-scale-out / observability-scale-in / application-ha / agent-scale-out / agent-scale-in / destroy / post-deploy / reconfigure / upgrade
 │                              # plus single-component stages: repo / postgresql / nginx / monitoring / server / harbor / keepalived / dns / system-init
 └── roles/
     ├── bootstrap/             # optional kernel/data-disk settings (reuses system-init for base tools)
@@ -433,11 +433,11 @@ deploy/
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
     ├── uninstall/             # platform removal with data preserved by default
     ├── prechecks/             # read-only checks
-    ├── local_repo/            # publishes the internal artifact repo (8082)
+    ├── local-repo/            # publishes the internal artifact repo (8082)
     ├── postgresql/ nginx/     # database and access layer
     ├── etcd/ patroni/ haproxy/# PG high availability
     ├── observability/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
-    ├── winter-server/         # Go single binary + systemd (multi-replica via app-ha)
+    ├── winter-server/         # Go single binary + systemd (multi-replica via application-ha)
     ├── harbor/                # Harbor replicas (external DB/Redis/NFS + docker-compose)
     ├── keepalived/            # VRRP VIP + LVS/DR virtual_server (Director)
     ├── realserver/            # LVS/DR real servers (loopback VIP + ARP suppression)

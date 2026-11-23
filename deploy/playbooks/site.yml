@@ -11,8 +11,8 @@
 # Usage (deploy.sh wraps these):
 #   ./deploy.sh deploy    -i inventory/multinode -t local-repo
 #   ./deploy.sh prechecks -i inventory/pgha -t postgresql
-#   ./deploy.sh deploy    -i inventory/operations/scale-out-pg -t pg-scale-out \
-#       -e @group_vars/operations/pg-scale-out.yml
+#   ./deploy.sh deploy    -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
+#       -e @group_vars/operations/postgresql-scale-out.yml
 
 - name: Global pre-deployment checks
   hosts: all
@@ -89,7 +89,7 @@
       no_log: true
       tags: [always]
   roles:
-    - role: local_repo
+    - role: local-repo
       tags: [local-repo]
 
 - name: PostgreSQL single instance
@@ -226,7 +226,7 @@
       no_log: true
       tags: [always]
   roles:
-    - role: dns
+    - role: named
       when: dns.enabled | bool
       tags: [named]
 
@@ -254,7 +254,7 @@
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [pg-ha]
+  tags: [postgresql-ha]
   vars_files:
     - ../group_vars/all.yml
     # Patroni defaults carry lazy Jinja (app_db: postgresql.db_name); expose all PG-cluster
@@ -271,15 +271,15 @@
       no_log: true
       tags: [always]
   roles:
-    - role: pg-ha
-      tags: [pg-ha]
+    - role: postgresql-ha
+      tags: [postgresql-ha]
 
 - name: PostgreSQL HA scale out
   hosts: management
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [pg-scale-out]
+  tags: [postgresql-scale-out]
   vars_files:
     - ../group_vars/all.yml
     - ../roles/etcd/defaults/main.yml
@@ -294,15 +294,15 @@
       no_log: true
       tags: [always]
   roles:
-    - role: pg-scale-out
-      tags: [pg-scale-out]
+    - role: postgresql-scale-out
+      tags: [postgresql-scale-out]
 
 - name: PostgreSQL HA scale in
   hosts: management
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [pg-scale-in]
+  tags: [postgresql-scale-in]
   serial: 1
   vars_files:
     - ../group_vars/all.yml
@@ -314,15 +314,15 @@
       no_log: true
       tags: [always]
   roles:
-    - role: pg-scale-in
-      tags: [pg-scale-in]
+    - role: postgresql-scale-in
+      tags: [postgresql-scale-in]
 
 - name: PostgreSQL single-node to HA data migration
   hosts: management
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [pg-migrate]
+  tags: [postgresql-migrate]
   serial: 1
   vars_files:
     - ../group_vars/all.yml
@@ -334,15 +334,15 @@
       no_log: true
       tags: [always]
   roles:
-    - role: pg-migrate
-      tags: [pg-migrate]
+    - role: postgresql-migrate
+      tags: [postgresql-migrate]
 
 - name: App HA - Server replicas
   hosts: winter-server
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [app-ha]
+  tags: [application-ha]
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
@@ -353,17 +353,17 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply app-ha slice server
+    - name: Apply application-ha slice server
       ansible.builtin.include_role:
-        name: app-ha
+        name: application-ha
         tasks_from: server
-      tags: [app-ha]
+      tags: [application-ha]
 - name: App HA - Harbor replicas
   hosts: harbor
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [app-ha]
+  tags: [application-ha]
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
@@ -374,18 +374,18 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply app-ha slice harbor
+    - name: Apply application-ha slice harbor
       ansible.builtin.include_role:
-        name: app-ha
+        name: application-ha
         tasks_from: harbor
       when: harbor.enabled | bool
-      tags: [app-ha]
+      tags: [application-ha]
 - name: App HA - Nginx and LVS real servers
   hosts: nginx
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [app-ha]
+  tags: [application-ha]
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
@@ -396,17 +396,17 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply app-ha slice nginx
+    - name: Apply application-ha slice nginx
       ansible.builtin.include_role:
-        name: app-ha
+        name: application-ha
         tasks_from: nginx
-      tags: [app-ha]
+      tags: [application-ha]
 - name: App HA - Keepalived Director
   hosts: keepalived
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [app-ha]
+  tags: [application-ha]
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
@@ -417,18 +417,18 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply app-ha slice keepalived
+    - name: Apply application-ha slice keepalived
       ansible.builtin.include_role:
-        name: app-ha
+        name: application-ha
         tasks_from: keepalived
       when: ha.enabled | bool
-      tags: [app-ha]
+      tags: [application-ha]
 - name: Keepalived Director (standalone)
   hosts: keepalived
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [keepalived-ops]
+  tags: [keepalived-operations]
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
@@ -439,18 +439,18 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply keepalived-ops slice director
+    - name: Apply keepalived-operations slice director
       ansible.builtin.include_role:
-        name: keepalived-ops
+        name: keepalived-operations
         tasks_from: director
       when: ha.enabled | bool
-      tags: [keepalived-ops]
+      tags: [keepalived-operations]
 - name: LVS real servers (standalone)
   hosts: nginx
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [keepalived-ops]
+  tags: [keepalived-operations]
   vars_files:
     - ../group_vars/all.yml
   pre_tasks:
@@ -461,12 +461,12 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply keepalived-ops slice realserver
+    - name: Apply keepalived-operations slice realserver
       ansible.builtin.include_role:
-        name: keepalived-ops
+        name: keepalived-operations
         tasks_from: realserver
       when: ha.lvs.enabled | bool
-      tags: [keepalived-ops]
+      tags: [keepalived-operations]
 - name: Observability scale out - monitor nodes
   hosts: observability
   become: true
@@ -483,9 +483,9 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply obs-scale-out slice monitor
+    - name: Apply observability-scale-out slice monitor
       ansible.builtin.include_role:
-        name: obs-scale-out
+        name: observability-scale-out
         tasks_from: monitor
       tags: [observability-scale-out]
 - name: Observability scale out - nginx upstream
@@ -504,9 +504,9 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply obs-scale-out slice nginx
+    - name: Apply observability-scale-out slice nginx
       ansible.builtin.include_role:
-        name: obs-scale-out
+        name: observability-scale-out
         tasks_from: nginx
       tags: [observability-scale-out]
 - name: Observability scale in - register targets
@@ -525,9 +525,9 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply obs-scale-in slice localhost
+    - name: Apply observability-scale-in slice localhost
       ansible.builtin.include_role:
-        name: obs-scale-in
+        name: observability-scale-in
         tasks_from: localhost
       tags: [observability-scale-in]
 - name: Observability scale in - remaining nodes
@@ -546,9 +546,9 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply obs-scale-in slice monitor
+    - name: Apply observability-scale-in slice monitor
       ansible.builtin.include_role:
-        name: obs-scale-in
+        name: observability-scale-in
         tasks_from: monitor
       tags: [observability-scale-in]
 - name: Observability scale in - remove targets
@@ -567,9 +567,9 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply obs-scale-in slice remove
+    - name: Apply observability-scale-in slice remove
       ansible.builtin.include_role:
-        name: obs-scale-in
+        name: observability-scale-in
         tasks_from: remove
       tags: [observability-scale-in]
 - name: Observability scale in - nginx upstream
@@ -588,9 +588,9 @@
       no_log: true
       tags: [always]
   tasks:
-    - name: Apply obs-scale-in slice nginx
+    - name: Apply observability-scale-in slice nginx
       ansible.builtin.include_role:
-        name: obs-scale-in
+        name: observability-scale-in
         tasks_from: nginx
       tags: [observability-scale-in]
 - name: Uninstall platform from management nodes

@@ -6,11 +6,11 @@
 #   external (V1 HA): shared external PostgreSQL, Redis and an NFS volume; all replicas share data.
 # Docker and docker-compose are site prerequisites; this role fails explicitly when they are absent.
 
-# In HA mode each replica binds its own internal address (migrated from app-ha/harbor play pre_tasks).
+# In HA mode each replica binds its own internal address (migrated from application-ha/harbor play pre_tasks).
 - name: Bind this Harbor replica to its internal address
   ansible.builtin.set_fact:
     harbor: "{{ harbor | combine({'bind_addr': ansible_host | default(harbor.bind_addr)}) }}"
-  tags: [harbor, app-ha]
+  tags: [harbor, application-ha]
 
 - name: Validate Harbor prerequisites
   ansible.builtin.assert:

@@ -1,0 +1,59 @@
+---
+# Read-only prechecks for the internal artifact repository (ADR-15).
+- name: Precheck repo | Validate configuration
+  ansible.builtin.assert:
+    that:
+      - local-repo.src | default('') | length > 0
+      - local-repo.root | default('') | length > 0
+      - local-repo.listen_port | int > 0
+      - local-repo.allow_cidr | default('') | length > 0
+    fail_msg: >-
+      Invalid internal repo configuration: src={{ local-repo.src | default('') }},
+      root={{ local-repo.root | default('') }}, listen_port={{ local-repo.listen_port }},
+      allow_cidr={{ local-repo.allow_cidr | default('') }}. Set all four keys in group_vars/all.yml;
+      allow_cidr must be the real internal subnet, never 0.0.0.0/0.
+    success_msg: "Internal repo configuration is valid"
+    quiet: true
+
+- name: Precheck repo | Artifact source directory exists on the control machine
+  ansible.builtin.stat:
+    path: "{{ local-repo.src }}"
+  delegate_to: localhost
+  connection: local
+  register: repo_src_stat
+  changed_when: false
+
+- name: Precheck repo | Artifact source is a directory
+  ansible.builtin.assert:
+    that: repo_src_stat.stat.exists and repo_src_stat.stat.isdir
+    fail_msg: "Artifact source {{ local-repo.src }} is missing on the control machine. Run scripts/fetch-artifacts.sh first."
+    success_msg: "Artifact source found: {{ local-repo.src }}"
+    quiet: true
+
+- name: Precheck repo | Checksum manifest exists
+  ansible.builtin.stat:
+    path: "{{ local-repo.src }}/SHA256SUMS.txt"
+  delegate_to: localhost
+  connection: local
+  register: repo_manifest_stat
+  changed_when: false
+
+- name: Precheck repo | Checksum manifest is present
+  ansible.builtin.assert:
+    that: repo_manifest_stat.stat.exists
+    fail_msg: "SHA256SUMS.txt is missing in {{ local-repo.src }}. Regenerate it with scripts/fetch-artifacts.sh; on-site transfer verification depends on it (ADR-14)."
+    success_msg: "SHA256SUMS.txt is present"
+    quiet: true
+
+- name: Precheck repo | Inspect repo port usage
+  ansible.builtin.shell: "ss -H -lntup '( sport = :{{ local-repo.listen_port }} )' || true"
+  register: repo_port_usage
+  changed_when: false
+  failed_when: false
+
+- name: Precheck repo | Repo port is free or already owned by nginx
+  ansible.builtin.assert:
+    that: repo_port_usage.stdout == '' or ('nginx' in repo_port_usage.stdout)
+    fail_msg: "Port {{ local-repo.listen_port }} is occupied by another process: {{ repo_port_usage.stdout }}. Stop it or change local-repo.listen_port."
+    success_msg: "Repo port {{ local-repo.listen_port }} is available"
+    quiet: true

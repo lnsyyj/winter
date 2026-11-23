@@ -26,21 +26,21 @@ Actions (first argument, becomes winter_ops_action):
 Targets are selected by -t tags and inventory groups. All available tags:
   Components:  prechecks system-init bootstrap local-repo postgresql nginx observability
                winter-server harbor keepalived named agent
-  Operations:  pg-ha pg-scale-out pg-scale-in pg-migrate
-               observability-scale-out observability-scale-in app-ha destroy
+  Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
+               observability-scale-out observability-scale-in application-ha destroy
 
 Examples:
   ./deploy.sh deploy -i inventory/all-in-one
   ./deploy.sh deploy -i inventory/multinode -t local-repo
   ./deploy.sh prechecks -i inventory/pgha -t postgresql
-  ./deploy.sh deploy -i inventory/operations/scale-out-pg -t pg-scale-out \
-      -e @group_vars/operations/pg-scale-out.yml
-  ./deploy.sh deploy -i inventory/multinode -t app-ha -e @group_vars/operations/app-ha.yml
+  ./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
+      -e @group_vars/operations/postgresql-scale-out.yml
+  ./deploy.sh deploy -i inventory/multinode -t application-ha -e @group_vars/operations/application-ha.yml
 
 Notes:
   - Omit -t to run every play selected by the inventory (careful: operations are included).
   - -e @group_vars/operations/<op>.yml supplies per-operation variables; see those files.
-  - Old stage names (pg-ha, app-ha as actions, etc.) are gone — use 'deploy -t <tag>'.
+  - Old stage names (postgresql-ha, application-ha as actions, etc.) are gone — use 'deploy -t <tag>'.
 EOF
 }
 
@@ -79,7 +79,7 @@ ACTION_TAGS=""
 case "$ACTION" in
     deploy|prechecks)
         # Without explicit -t, converge/check components only. Transactional operations
-        # (pg-ha, pg-scale-*, pg-migrate, app-ha, observability-scale-*, destroy) MUST be
+        # (postgresql-ha, postgresql-scale-*, postgresql-migrate, application-ha, observability-scale-*, destroy) MUST be
         # opted into with -t — running them on a plain 'deploy' would be destructive.
         ACTION_TAGS="$COMPONENT_TAGS"
         ;;

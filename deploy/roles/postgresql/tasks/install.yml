@@ -3,7 +3,7 @@
 #
 # Why fetch RPMs manually: the official PGDG site is unreachable on site (verified on real machines in this environment — timeouts),
 # and base/EPEL do not provide PG17. The artifacts are checked in to deploy/artifacts/repo/rpm/pgdg17,
-# published by roles/local_repo via Nginx; fetched here with get_url.
+# published by roles/local-repo via Nginx; fetched here with get_url.
 #
 # This file is entered only when the machine has no PostgreSQL instance at all.
 

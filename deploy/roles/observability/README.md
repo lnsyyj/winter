@@ -1,6 +1,6 @@
 # role: observability
 
-Deploys the observability stack of ADR-18. All components are **static binaries**, fetched from the internal Nginx artifact repository (`local_repo`);
+Deploys the observability stack of ADR-18. All components are **static binaries**, fetched from the internal Nginx artifact repository (`local-repo`);
 the target machine does not compile or connect to the external network (ADR-14 / ADR-15).
 
 ## Components and default ports

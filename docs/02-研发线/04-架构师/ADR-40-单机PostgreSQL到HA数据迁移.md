@@ -15,9 +15,9 @@
 ADR-39 打通了「单节点 HA 引导态 → 3 节点」的在线扩容，但把 **MVP 单节点** 升级到 HA 仍有断点：
 
 - 单节点 `deploy` 用系统 PostgreSQL：端口 `5432`，数据目录 `/var/lib/pgsql/17/data`，库 `winter`。
-- HA `pg-ha` 用独立集群：Patroni `5433`、HAProxy 入口 `5434`，数据目录 `/var/lib/pgsql/17/ha`，库 `winter`。
+- HA `postgresql-ha` 用独立集群：Patroni `5433`、HAProxy 入口 `5434`，数据目录 `/var/lib/pgsql/17/ha`，库 `winter`。
 
-两者数据目录完全独立。直接跑 `pg-ha` 会在 5433 上建**空库**，Server 连接串切到 5434 后，原 5432 里已写入的业务与审计数据对应用不可见。需要一个**生产级、可回滚、可校验**的迁移 stage 把数据从源实例搬到 HA 集群。
+两者数据目录完全独立。直接跑 `postgresql-ha` 会在 5433 上建**空库**，Server 连接串切到 5434 后，原 5432 里已写入的业务与审计数据对应用不可见。需要一个**生产级、可回滚、可校验**的迁移 stage 把数据从源实例搬到 HA 集群。
 
 ## 2. 关键事实（决定了迁移范围）
 
@@ -29,7 +29,7 @@ ADR-39 打通了「单节点 HA 引导态 → 3 节点」的在线扩容，但�
 
 ## 3. 决策
 
-新增 `pg-migrate` stage，把 5432 源库的 `winter` 库迁移到 5433 HA 集群。按**允许停机窗口**设计（用户明确：迁移期间可以停服等待，但扩容控制面必须具备此能力），采用保守的停止世界方案换取强一致：
+新增 `postgresql-migrate` stage，把 5432 源库的 `winter` 库迁移到 5433 HA 集群。按**允许停机窗口**设计（用户明确：迁移期间可以停服等待，但扩容控制面必须具备此能力），采用保守的停止世界方案换取强一致：
 
 ### 3.1 流程（严格有序，任何一步失败即中止且不切换流量）
 
@@ -49,8 +49,8 @@ ADR-39 打通了「单节点 HA 引导态 → 3 节点」的在线扩容，但�
 
 ### 3.3 与其他 stage 的关系
 
-- 前置条件：`pg-ha` 已在目标节点建成 HA 集群（至少单节点 HA 引导态）；本 stage 不负责建集群。
-- 后续：`app-ha`（多副本 Server）、`pg-scale-out`（扩到 3 节点）在迁移完成后进行。
+- 前置条件：`postgresql-ha` 已在目标节点建成 HA 集群（至少单节点 HA 引导态）；本 stage 不负责建集群。
+- 后续：`application-ha`（多副本 Server）、`postgresql-scale-out`（扩到 3 节点）在迁移完成后进行。
 - 与 ADR-39 的分工：ADR-39 处理「HA 集群内部 1→3 的在线扩容」；本 ADR 处理「MVP 单机的存量数据进入 HA」。
 
 ## 4. 为什么这样设计
@@ -67,8 +67,8 @@ ADR-39 打通了「单节点 HA 引导态 → 3 节点」的在线扩容，但�
 
 | 对象 | 变化 |
 | --- | --- |
-| `playbooks/pg-migrate.yml`（新增） | 迁移 stage 编排与前置校验 |
-| `deploy.sh` | 新增 `pg-migrate` stage 入口 |
+| `playbooks/postgresql-migrate.yml`（新增） | 迁移 stage 编排与前置校验 |
+| `deploy.sh` | 新增 `postgresql-migrate` stage 入口 |
 | `group_vars/all.yml` | 新增 `pg_migrate` 配置块（源/目标端口、库名、校验开关、标记路径） |
 | Server env | 修复单节点 HA 引导态下连接串误连 5432 的推导 bug（见实现） |
 | 运维手册 / README | 补充升级流程与停机窗口说明 |

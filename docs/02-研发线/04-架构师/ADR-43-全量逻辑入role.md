@@ -17,16 +17,16 @@ role 里，而扩容/卸载/数据迁移/lifecycle 等编排仍在 25 个独立 
 
 1. **所有 task 逻辑迁入 role**。`deploy/playbooks/` 下只保留 `site.yml` 一个文件；其余 25 个
    playbook 全部删除。每个操作对应一个 role：
-   - 单主机组事务：`pg-ha`、`pg-scale-out`、`pg-scale-in`、`pg-migrate`
-   - 多主机组操作：`app-ha`（4 片）、`destroy`（2 片）、`keepalived-ops`（2 片）、
-     `obs-scale-out`（2 片）、`obs-scale-in`（4 片）
+   - 单主机组事务：`postgresql-ha`、`postgresql-scale-out`、`postgresql-scale-in`、`postgresql-migrate`
+   - 多主机组操作：`application-ha`（4 片）、`destroy`（2 片）、`keepalived-operations`（2 片）、
+     `observability-scale-out`（2 片）、`observability-scale-in`（4 片）
    - lifecycle：`verify`、`reconfigure`、`upgrade`
 2. **site.yml 只做薄编排**：每个 play 仅含 play 级关键字（`hosts`/`roles`/`tags`/`vars_files`/
    `serial`/`when`），零 `tasks:` 业务逻辑。多主机组操作用 `include_role tasks_from: <slice>`
    把同一 role 的不同 task 文件挂到不同 `hosts` 的 play。
 3. **role 内 `main.yml` 统一分发**：`include_tasks: "{{ winter_ops_action | default('deploy') }}.yml"`。
-4. **play 级关键字保留在 site.yml**：`vars_files`（如 pg-ha/pg-scale-out 需暴露 PG 角色 defaults
-   给 lazy Jinja 求值）、`serial: 1`（pg-scale-in/pg-migrate）、`when`（组件 enabled 门禁）。
+4. **play 级关键字保留在 site.yml**：`vars_files`（如 postgresql-ha/postgresql-scale-out 需暴露 PG 角色 defaults
+   给 lazy Jinja 求值）、`serial: 1`（postgresql-scale-in/postgresql-migrate）、`when`（组件 enabled 门禁）。
 5. **deploy.sh 所有 action 统一走 site.yml**，含 destroy/verify/reconfigure/upgrade；不再按
    action 分发到不同 playbook。
 
@@ -41,21 +41,21 @@ role 里，而扩容/卸载/数据迁移/lifecycle 等编排仍在 25 个独立 
 - **role defaults 在 `when` 求值时未加载**：`include_role X` 上的 `when: X.enabled` 不能用 X 自己的
   defaults，改用 `X_overrides.enabled | default(true)` 或无门禁。
 - **lazy Jinja 跨 role 求值**：`patroni.app_db: '{{ postgresql.db_name }}'` 在 patroni role 的
-  `when` 求值时需要 `postgresql` 已在 play 作用域，故 pg-ha play 的 `vars_files` 显式加载 4 个
+  `when` 求值时需要 `postgresql` 已在 play 作用域，故 postgresql-ha play 的 `vars_files` 显式加载 4 个
   PG 角色 defaults。
-- **`include_tasks` 相对路径**：`scale-out-member.yml` 随 pg-scale-out role 迁移，改用
-  `{{ role_path }}/tasks/scale-out-member.yml`；obs-scale-in 的 remove 改用
+- **`include_tasks` 相对路径**：`scale-out-member.yml` 随 postgresql-scale-out role 迁移，改用
+  `{{ role_path }}/tasks/scale-out-member.yml`；observability-scale-in 的 remove 改用
   `include_role observability tasks_from: remove`。
 - 机械迁移脚本保证 task 原样搬运（`pre_tasks`+`tasks`+`post_tasks` 顺次合并，`roles:` 转
-  `include_role`），避免手抄破坏已验证的 etcd learner/promote、pg-migrate stop-the-world 等状态机。
+  `include_role`），避免手抄破坏已验证的 etcd learner/promote、postgresql-migrate stop-the-world 等状态机。
 
 ## 结果
 
 - `deploy/playbooks/` 从 26 个文件降为 1 个（site.yml），逻辑 100% 在 role。
-- 真机全量回归通过：prechecks、组件 deploy×6、named、app-ha（role 分片 + LVS）、verify、
-  destroy 真卸载、单节点 deploy、pg-ha（单节点引导）、pg-migrate（数据迁移+幂等）、
-  pg-scale-out（1→3，3 个 voting 成员）、最终健康（3 节点服务 active、数据完整、LVS VIP 200）。
-- 顺带修复既有隐患：pg-migrate 健康探针在 HA 模式 Server 绑内网 IP 时用 127.0.0.1 探测失败，
+- 真机全量回归通过：prechecks、组件 deploy×6、named、application-ha（role 分片 + LVS）、verify、
+  destroy 真卸载、单节点 deploy、postgresql-ha（单节点引导）、postgresql-migrate（数据迁移+幂等）、
+  postgresql-scale-out（1→3，3 个 voting 成员）、最终健康（3 节点服务 active、数据完整、LVS VIP 200）。
+- 顺带修复既有隐患：postgresql-migrate 健康探针在 HA 模式 Server 绑内网 IP 时用 127.0.0.1 探测失败，
   改用 `ansible_host`。
 
 ## 回滚锚点

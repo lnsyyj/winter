@@ -1,0 +1,27 @@
+# Operation inventory: add PG replicas to the HA cluster (ADR-42).
+# List new nodes under [management]; keep existing members too (postgresql-scale-out needs an existing member).
+# Enable the PG plays via tags: ./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
+#   -e @group_vars/operations/postgresql-scale-out.yml
+[management]
+ctl       ansible_host=192.168.101.189
+node-b    ansible_host=192.168.101.197
+node-c    ansible_host=192.168.101.198
+
+[postgresql-ha:children]
+management
+
+[postgresql-scale-out:children]
+management
+
+[postgresql-scale-in:children]
+management
+
+[postgresql-migrate:children]
+management
+
+[postgresql:children]
+management
+
+[all:vars]
+ansible_user=root
+ansible_python_interpreter=/usr/bin/python3

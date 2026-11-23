@@ -35,7 +35,7 @@ postgresql_defaults:
   # Empty = postgresql-{{ major }}
   service_name: ""
 
-  # Offline install: fetch the following RPMs from the internal repo (roles/local_repo), versions pinned to avoid on-site drift
+  # Offline install: fetch the following RPMs from the internal repo (roles/local-repo), versions pinned to avoid on-site drift
   rpm_subdir: rpm/pgdg17
   # contrib is required: the Server migration creates the pgcrypto extension (0001_business.sql /
   # 0001_audit.sql) on both single-node and HA databases. Without it a clean HA cluster fails

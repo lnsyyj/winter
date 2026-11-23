@@ -1,0 +1,47 @@
+---
+# PostgreSQL HA cluster bootstrap (migrated from postgresql-ha.yml, ADR-43). Odd-member assert + postgresql/etcd/patroni/haproxy convergence.
+
+# ---- migrated from playbook pre_tasks ----
+- name: Load deployment passwords
+  ansible.builtin.include_vars:
+    file: "{{ playbook_dir }}/../passwords.yml"
+  failed_when: false
+  no_log: true
+  tags: [postgresql-ha]
+
+# A single-member etcd + single Patroni is a valid bootstrap state for the 1 -> 3 growth path,
+# but has no fault tolerance. Require an explicit opt-in so production never deploys it by
+# accident; the normal floor remains 3 nodes and an odd count.
+- name: Cluster membership must be odd (etcd requires a quorum)
+  ansible.builtin.assert:
+    that:
+      - groups['management'] | length % 2 == 1
+      - (groups['management'] | length >= 3) or
+        (pg_cluster.allow_single_node_bootstrap | default(false) | bool and groups['management'] | length == 1)
+    fail_msg: >-
+      etcd requires an odd count and at least 3 nodes; currently {{ groups['management'] | length }}.
+      To bootstrap a single-node HA cluster for a later 1 -> 3 growth, set
+      pg_cluster.allow_single_node_bootstrap=true explicitly (no fault tolerance in that state).
+    quiet: true
+  run_once: true
+  tags: [postgresql-ha]
+
+
+# ---- migrated from playbook roles ----
+# Order: binaries first → then leader election → then Patroni brings up PG → finally the unified entry point
+- name: Apply role postgresql
+  ansible.builtin.include_role:
+    name: postgresql
+  tags: [postgresql-ha]
+- name: Apply role etcd
+  ansible.builtin.include_role:
+    name: etcd
+  tags: [postgresql-ha]
+- name: Apply role patroni
+  ansible.builtin.include_role:
+    name: patroni
+  tags: [postgresql-ha]
+- name: Apply role haproxy
+  ansible.builtin.include_role:
+    name: haproxy
+  tags: [postgresql-ha]

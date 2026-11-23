@@ -109,7 +109,7 @@ docs/
 
 | 44 | [ADR-40-单机PostgreSQL到HA数据迁移.md](./02-研发线/04-架构师/ADR-40-单机PostgreSQL到HA数据迁移.md) | 架构师 ④ | **已确认** · 2026-11-19 | 5432 系统PG→5433 HA 存量数据迁移：停机窗口、pg_dump/restore、逐表校验、幂等与回滚 |
 
-| 45 | [ADR-41-stage命名对齐软件名.md](./02-研发线/04-架构师/ADR-41-stage命名对齐软件名.md) | 架构师 ④ | **已确认** · 2026-11-20 | stage 名对齐软件/role：ha-setup→app-ha、monitoring→observability、scale-out→agent-scale-out 等，旧名保留别名 |
+| 45 | [ADR-41-stage命名对齐软件名.md](./02-研发线/04-架构师/ADR-41-stage命名对齐软件名.md) | 架构师 ④ | **已确认** · 2026-11-20 | stage 名对齐软件/role：ha-setup→application-ha、monitoring→observability、scale-out→agent-scale-out 等，旧名保留别名 |
 
 | 46 | [ADR-42-单入口部署架构.md](./02-研发线/04-架构师/ADR-42-单入口部署架构.md) | 架构师 ④ | **已确认** · 2026-11-21 | 单一 site.yml 入口 + winter_ops_action 分发；role tasks 拆 precheck/deploy；事务编排以 import_playbook 收编并做 tag 隔离 |
 | 47 | [ADR-43-全量逻辑入role.md](./02-研发线/04-架构师/ADR-43-全量逻辑入role.md) | 架构师 ④ | **已确认** · 2026-11-23 | 对齐参考框架：删除全部独立 playbook，扩容/卸载/迁移/lifecycle 全迁入 role，site.yml 只做 hosts+roles 薄编排 |

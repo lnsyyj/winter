@@ -33,9 +33,9 @@
 
 | 编排 | 为什么不能压成单 role |
 |---|---|
-| `pg-ha` / `pg-scale-out` / `pg-scale-in` / `pg-migrate` | set_fact 链、`etcd_initial_cluster` 从 etcdctl 输出解析、run_once 共享 register、逐节点 learner/promote、serial:1 |
+| `postgresql-ha` / `postgresql-scale-out` / `postgresql-scale-in` / `postgresql-migrate` | set_fact 链、`etcd_initial_cluster` 从 etcdctl 输出解析、run_once 共享 register、逐节点 learner/promote、serial:1 |
 | `observability-scale-out/in` | localhost play 用 add_host 建动态组，后续 play 依赖；最后重写 nginx upstream |
-| `app-ha` | 4 个 play 分属 winter-server/harbor/nginx/keepalived 四个主机组，各自计算 upstream/DB 端点 |
+| `application-ha` | 4 个 play 分属 winter-server/harbor/nginx/keepalived 四个主机组，各自计算 upstream/DB 端点 |
 
 这些继续以**独立 playbook**存在，由 `site.yml` 用 `import_playbook` 按依赖顺序收编（CLI 仍只有 site.yml 一个入口），其 `deploy.sh` 命令形如 `deploy -t <编排tag> -e @group_vars/operations/<op>.yml`。
 
@@ -48,7 +48,7 @@
 action = deploy | prechecks | destroy | verify | reconfigure | upgrade
 ```
 - 不带 `-t`：`deploy`/`prechecks` 只跑组件；事务操作必须显式 `-t <编排tag>` 选中（防误执行 migrate/scale）。
-- 旧 stage 名（如直接 `./deploy.sh pg-ha`）全部移除。
+- 旧 stage 名（如直接 `./deploy.sh postgresql-ha`）全部移除。
 
 ## 3. 为什么这样设计
 

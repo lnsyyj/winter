@@ -19,7 +19,7 @@
 - `monitor-scale-out/in` —— 同上，且 "monitor" 与 role 名 "observability" 冲突。
 - `scale-out/in` —— 实际只装 winter-agent，看不出是 Agent。
 - `server` —— 实际是 winter-server role。
-- `repo` —— 实际是 local_repo role（Nginx 制品源）。
+- `repo` —— 实际是 local-repo role（Nginx 制品源）。
 
 ## 2. 决策
 
@@ -27,16 +27,16 @@ stage 名统一按**软件名/role 名**命名，并在 help 每一行标注所�
 
 | 旧 stage | 新 stage | 对应软件 / role |
 | --- | --- | --- |
-| `repo` | `local-repo` | local_repo（Nginx 制品源） |
+| `repo` | `local-repo` | local-repo（Nginx 制品源） |
 | `server` | `winter-server` | winter-server |
 | `monitoring` | `observability` | observability（VM/VL/vmalert/AM/Grafana） |
 | `monitor-scale-out` | `observability-scale-out` | observability + nginx |
 | `monitor-scale-in` | `observability-scale-in` | observability + nginx |
-| `ha-setup` | `app-ha` | winter-server + harbor + nginx + keepalived + realserver |
+| `ha-setup` | `application-ha` | winter-server + harbor + nginx + keepalived + realserver |
 | `scale-out` | `agent-scale-out` | agent（winter-agent） |
 | `scale-in` | `agent-scale-in` | agent（winter-agent） |
 
-未改动的 stage（本就对齐软件/语义）：`postgresql`、`nginx`、`harbor`、`keepalived`、`dns`、`pg-ha`、`pg-scale-out/in`、`pg-migrate`、`deploy`、`prechecks`、`bootstrap-servers`、`system-init`、`post-deploy`、`reconfigure`、`upgrade`、`destroy`。
+未改动的 stage（本就对齐软件/语义）：`postgresql`、`nginx`、`harbor`、`keepalived`、`dns`、`postgresql-ha`、`postgresql-scale-out/in`、`postgresql-migrate`、`deploy`、`prechecks`、`bootstrap-servers`、`system-init`、`post-deploy`、`reconfigure`、`upgrade`、`destroy`。
 
 ### 2.1 兼容性
 
@@ -57,7 +57,7 @@ role 内部的 tag（`server` / `monitoring` / `repo` 等）**未改**——它�
 
 - `sh -n deploy.sh` 通过；新 stage 名全部映射到存在的 playbook。
 - `verify-ansible.sh`：94 个 YAML 解析通过、全英文检查通过。
-- 真机：`app-ha` / `keepalived` / `dns`（控制面 HA）与 `harbor`（builtin）两条路径按新名执行验证。
+- 真机：`application-ha` / `keepalived` / `dns`（控制面 HA）与 `harbor`（builtin）两条路径按新名执行验证。
 
 ## 5. 风险
 

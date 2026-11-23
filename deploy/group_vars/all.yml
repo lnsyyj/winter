@@ -11,7 +11,7 @@ platform:
   # Management plane API listen port (the only externally open port, see deployment plan §2)
   https_port: 443
 
-  # Internal software repo (ADR-15): provided by Nginx on the management node (published by roles/local_repo)
+  # Internal software repo (ADR-15): provided by Nginx on the management node (published by roles/local-repo)
   # When the site has no internet access, all RPMs / wheels / binaries are fetched from here.
   # Derived from the first [local-repo] host so it follows the environment instead of a hardcoded site IP;
   # override platform.repo_base_url in a site-specific vars file if the repo is published elsewhere.
@@ -60,7 +60,7 @@ platform:
     audit_online_days: 180
     sessions_days: 7
 
-# Port used by the internal artifact repository Nginx site (roles/local_repo) and referenced by
+# Port used by the internal artifact repository Nginx site (roles/local-repo) and referenced by
 # reconfigure's port-uniqueness check. Single source of truth; adjust here if 8082 is unavailable.
 repo_listen_port: 8082
 
@@ -363,7 +363,7 @@ ha_defaults:
     health_interval: 6
     connect_timeout: 3
     real_server_port: "{{ platform.https_port }}"
-    real_servers: []                      # computed by app-ha from [nginx]
+    real_servers: []                      # computed by application-ha from [nginx]
 # ADR-42: operations set ha_overrides (partial dict); extra-vars @file replaces whole dicts, so
 # merging is required or ha.lvs / ha.virtual_router_id disappear during an operation run.
 ha: "{{ ha_defaults | combine(ha_overrides | default({}, true), recursive=True) }}"
