@@ -349,8 +349,11 @@
   tags: [pg-migrate]
 
 - name: "[switch] Wait for Server health via the HA-backed connection"
+  # The Server binds its internal address in HA mode (ansible_host), not necessarily 127.0.0.1.
+  # Probe the host we are running on; winter_server.listen_addr may still be the loopback default
+  # in group_vars because the HA set_fact lives in the winter-server role, not loaded here.
   ansible.builtin.uri:
-    url: "http://{{ winter_server.listen_addr | default('127.0.0.1') }}:{{ winter_server.port }}/healthz"
+    url: "http://{{ ansible_host }}:{{ winter_server.port }}/healthz"
     status_code: 200
   register: pm_health
   until: pm_health.status is defined and pm_health.status == 200
