@@ -15,5 +15,7 @@
 - name: Apply role uninstall
   ansible.builtin.include_role:
     name: uninstall
-  when: uninstall.enabled | bool
+  # `uninstall` defaults load only when the role runs, so cannot be used in this include's when.
+  # Default true matches uninstall_defaults.enabled; callers disable via uninstall_overrides.
+  when: uninstall_overrides.enabled | default(true) | bool
   tags: [destroy]
