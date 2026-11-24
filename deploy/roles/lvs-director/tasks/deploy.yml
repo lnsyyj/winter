@@ -32,9 +32,9 @@
   run_once: true
   tags: [lvs, lvs-director]
 
-- name: Inject discovered RealServers into the Keepalived LVS config
+- name: Force LVS mode and inject discovered RealServers
   ansible.builtin.set_fact:
-    ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': lvs_realservers})}) }}"
+    ha: "{{ ha | combine({'lvs': ha.lvs | combine({'enabled': true, 'real_servers': lvs_realservers})}) }}"
   run_once: true
   tags: [lvs, lvs-director]
 
@@ -98,13 +98,7 @@
     mode: "0755"
   tags: [ha, keepalived]
 
-- name: Install the Nginx health-check script
-  ansible.builtin.template:
-    src: check_nginx.sh.j2
-    dest: "{{ keepalived_check_script }}"
-    mode: "0755"
-  notify: restart keepalived
-  tags: [ha, keepalived]
+# lvs-director always runs in LVS mode; the non-LVS check_nginx.sh script is not needed here.
 
 - name: Install the LVS health-check script
   ansible.builtin.template:
