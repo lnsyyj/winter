@@ -12,18 +12,22 @@ logic (HA / scale / migrate / destroy) is folded into each software role's actio
 (e.g. `roles/postgresql/tasks/{ha,scale-out,migrate}.yml`), attached via `include_role tasks_from:`.
 Operation plays are named `Operate <action> - <software>`; CLI tags are unchanged.
 
+Inventory (ADR-46): one file `inventory/hosts.ini`; select a topology with `--limit`:
+`all-in-one` (default) | `multinode` | `pgha` | `lvs-dr` | `scale-out-agent`.
+LVS/DR roles are set in the inventory via host vars `lvs_role=director|realserver`.
+
 ```bash
-./deploy.sh <action> -i <inventory> [-t tag,...] [-e '{"<section>_overrides":{...}}']
+./deploy.sh <action> [-i inventory/hosts.ini --limit <topology>] [-t tag,...] [-e '{"<section>_overrides":{...}}']
 
 # actions: deploy | prechecks | destroy | verify | reconfigure | upgrade
-./deploy.sh deploy -i inventory/all-in-one                              # all components
-./deploy.sh deploy -i inventory/multinode -t local-repo                 # one component
-./deploy.sh prechecks -i inventory/pgha -t postgresql                   # one role's prechecks
-./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
+./deploy.sh deploy                                                      # default: all-in-one
+./deploy.sh deploy --limit multinode -t local-repo                      # one component
+./deploy.sh prechecks --limit pgha -t postgresql                        # one role's prechecks
+./deploy.sh deploy --limit pgha -t postgresql-scale-out \
     -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'          # transactional operation
-./deploy.sh deploy -i inventory/pgha -t postgresql-ha                   # PG HA bootstrap (defaults)
-./deploy.sh deploy -i inventory/site1 -t postgresql-ha \
-    -e '{"pg_cluster_overrides":{"allow_single_node_bootstrap":true}}'  # single-node HA bootstrap
+./deploy.sh deploy --limit pgha -t postgresql-ha                        # PG HA bootstrap (defaults)
+./deploy.sh deploy --limit lvs-dr -t lvs-director,lvs-realserver \
+    -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
 ```
 
 - Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`postgresql-ha`,
@@ -36,8 +40,9 @@ Operation plays are named `Operate <action> - <software>`; CLI tags are unchange
   observability-scale-out observability-scale-in destroy verify reconfigure upgrade`.
 - **Per-operation variables are passed on the command line with `-e`** (see `deploy.sh --help` for the
   full per-operation list). `group_vars/all.yml` holds only defaults; each `<section>_overrides`
-  dict passed via `-e` is merged onto `<section>_defaults` by Ansible. Operation inventories live in
-  `inventory/operations/`. Every role's `tasks/main.yml` dispatches on `winter_ops_action`;
+  dict passed via `-e` is merged onto `<section>_defaults` by Ansible. All inventories were merged
+  into `inventory/hosts.ini` (ADR-46); select a topology with `--limit`. Every role's `tasks/main.yml`
+  dispatches on `winter_ops_action`;
   multi-host operations (`application-ha`, `destroy`, `observability-scale-*`) are split into per-host task files
   attached via `include_role tasks_from:` in `site.yml`.
 
