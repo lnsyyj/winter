@@ -175,10 +175,6 @@
     - group_vars/all.yml
     # Patroni defaults carry lazy Jinja (app_db: postgresql.db_name); expose all PG-cluster
     # defaults at play scope so role `when:` conditions resolve before include_role loads them.
-    - roles/etcd/defaults/main.yml
-    - roles/postgresql/defaults/main.yml
-    - roles/patroni/defaults/main.yml
-    - roles/haproxy/defaults/main.yml
   tasks:
     - name: Apply postgresql role (ha slice)
       ansible.builtin.include_role:
@@ -194,10 +190,6 @@
   tags: [postgresql-scale-out]
   vars_files:
     - group_vars/all.yml
-    - roles/etcd/defaults/main.yml
-    - roles/postgresql/defaults/main.yml
-    - roles/patroni/defaults/main.yml
-    - roles/haproxy/defaults/main.yml
   tasks:
     - name: Apply postgresql role (scale-out slice)
       ansible.builtin.include_role:
