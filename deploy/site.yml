@@ -20,8 +20,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [prechecks]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: prechecks
       when: winter_ops_action | default('deploy') == 'precheck'
@@ -33,8 +31,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [system-init]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: system-init
       tags: [system-init]
@@ -45,8 +41,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [bootstrap]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: bootstrap
       when: bootstrap.enabled | default(true) | bool
@@ -58,8 +52,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [local-repo]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: local-repo
       tags: [local-repo]
@@ -70,8 +62,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [postgresql]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: postgresql
       tags: [postgresql]
@@ -82,8 +72,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [nginx]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: nginx
       tags: [nginx]
@@ -94,8 +82,6 @@
   gather_facts: false
   any_errors_fatal: true
   tags: [observability]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: observability
       when: observability.enabled | bool
@@ -107,8 +93,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [winter-server]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: winter-server
       when: winter_server.enabled | bool
@@ -120,8 +104,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [harbor]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: harbor
       when: harbor.enabled | bool
@@ -133,8 +115,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [keepalived]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: keepalived
       when: ha.enabled | bool
@@ -146,8 +126,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [named]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: named
       when: dns.enabled | bool
@@ -159,8 +137,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [agent]
-  vars_files:
-    - group_vars/all.yml
   roles:
     - role: agent
       tags: [agent]
@@ -171,8 +147,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [postgresql-ha]
-  vars_files:
-    - group_vars/all.yml
     # Patroni defaults carry lazy Jinja (app_db: postgresql.db_name); expose all PG-cluster
     # defaults at play scope so role `when:` conditions resolve before include_role loads them.
   tasks:
@@ -188,8 +162,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [postgresql-scale-out]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply postgresql role (scale-out slice)
       ansible.builtin.include_role:
@@ -204,8 +176,6 @@
   any_errors_fatal: true
   tags: [postgresql-scale-in]
   serial: 1
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply postgresql role (scale-in slice)
       ansible.builtin.include_role:
@@ -220,8 +190,6 @@
   any_errors_fatal: true
   tags: [postgresql-migrate]
   serial: 1
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply postgresql role (migrate slice)
       ansible.builtin.include_role:
@@ -235,8 +203,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [application-ha]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply winter-server role (ha slice)
       ansible.builtin.include_role:
@@ -250,8 +216,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [application-ha]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply harbor role (ha slice)
       ansible.builtin.include_role:
@@ -266,8 +230,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [application-ha]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply nginx role (ha slice)
       ansible.builtin.include_role:
@@ -281,8 +243,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [application-ha]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply keepalived role (ha slice)
       ansible.builtin.include_role:
@@ -297,8 +257,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [keepalived-operations]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply keepalived role (director slice)
       ansible.builtin.include_role:
@@ -313,8 +271,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [keepalived-operations]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply realserver role (director slice)
       ansible.builtin.include_role:
@@ -329,8 +285,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [observability-scale-out]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply observability role (scale-out slice)
       ansible.builtin.include_role:
@@ -344,8 +298,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [observability-scale-out]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply nginx role (scale-out slice)
       ansible.builtin.include_role:
@@ -359,8 +311,6 @@
   gather_facts: false
   any_errors_fatal: true
   tags: [observability-scale-in]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply observability role (scale-in-register slice)
       ansible.builtin.include_role:
@@ -374,8 +324,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [observability-scale-in]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply observability role (scale-in slice)
       ansible.builtin.include_role:
@@ -389,8 +337,6 @@
   gather_facts: false
   any_errors_fatal: true
   tags: [observability-scale-in]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply observability role (scale-in-remove slice)
       ansible.builtin.include_role:
@@ -404,8 +350,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [observability-scale-in]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply nginx role (scale-in slice)
       ansible.builtin.include_role:
@@ -419,8 +363,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [destroy]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply uninstall role (destroy slice)
       ansible.builtin.include_role:
@@ -434,8 +376,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [destroy]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply agent role (destroy slice)
       ansible.builtin.include_role:
@@ -449,8 +389,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [verify]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply verify slice acceptance
       ansible.builtin.include_role:
@@ -464,8 +402,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [reconfigure]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply reconfigure slice validate
       ansible.builtin.include_role:
@@ -479,8 +415,6 @@
   gather_facts: true
   any_errors_fatal: true
   tags: [upgrade]
-  vars_files:
-    - group_vars/all.yml
   tasks:
     - name: Apply upgrade slice validate
       ansible.builtin.include_role:
