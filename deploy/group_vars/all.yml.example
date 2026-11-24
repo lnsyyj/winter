@@ -431,7 +431,7 @@ dns_defaults:
   install_method: package
   packages: [bind, bind-utils]
   rpm_subdir: rpm/bind
-  rpm_dir: "{{ playbook_dir }}/../artifacts/repo/rpm/bind"
+  rpm_dir: "{{ playbook_dir }}/artifacts/repo/rpm/bind"
   rpm_files: []                        # required and non-empty when install_method=repo
   service: named
   config_file: /etc/named.conf
@@ -726,7 +726,7 @@ keepalived_service: keepalived
 # ---- consolidated from roles/local-repo/defaults/main.yml ----
 local_repo:
   # Artifact source (directory on the control machine)
-  src: "{{ playbook_dir }}/../artifacts/repo"
+  src: "{{ playbook_dir }}/artifacts/repo"
   # Publish directory (Nginx root)
   root: "{{ platform.data_dir }}/www/repo"
   listen_port: "{{ repo_listen_port }}"

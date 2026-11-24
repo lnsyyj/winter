@@ -54,7 +54,7 @@
 
 - name: Precheck Harbor | Offline installer exists on the control machine
   ansible.builtin.stat:
-    path: "{{ playbook_dir }}/../artifacts/repo/tarball/{{ harbor.tarball }}"
+    path: "{{ playbook_dir }}/artifacts/repo/tarball/{{ harbor.tarball }}"
   delegate_to: localhost
   connection: local
   register: harbor_tarball_stat

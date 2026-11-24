@@ -13,7 +13,7 @@
 - name: Verify offline artifact checksums on the control machine
   ansible.builtin.command: sha256sum -c SHA256SUMS.txt
   args:
-    chdir: "{{ playbook_dir }}/../artifacts/repo"
+    chdir: "{{ playbook_dir }}/artifacts/repo"
   delegate_to: localhost
   become: false
   register: upgrade_checksum

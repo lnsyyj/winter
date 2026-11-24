@@ -45,7 +45,7 @@
 
 - name: Precheck Server | Binary exists on the control machine
   ansible.builtin.stat:
-    path: "{{ playbook_dir }}/../artifacts/repo/bin/{{ winter_server.artifact }}"
+    path: "{{ playbook_dir }}/artifacts/repo/bin/{{ winter_server.artifact }}"
   delegate_to: localhost
   connection: local
   register: server_bin_stat

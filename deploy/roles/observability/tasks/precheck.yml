@@ -16,7 +16,7 @@
 
 - name: Precheck monitoring | Locate component tarballs on the control machine
   ansible.builtin.stat:
-    path: "{{ playbook_dir }}/../artifacts/repo/tarball/{{ item.value.tarball }}"
+    path: "{{ playbook_dir }}/artifacts/repo/tarball/{{ item.value.tarball }}"
   delegate_to: localhost
   connection: local
   loop: "{{ observability.components | dict2items }}"
