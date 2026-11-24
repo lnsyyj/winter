@@ -33,6 +33,7 @@
     - role: prechecks
       when: winter_ops_action | default('deploy') == 'precheck'
       tags: [prechecks]
+
 - name: System initialization
   hosts: system-init
   become: true
@@ -51,6 +52,7 @@
   roles:
     - role: system-init
       tags: [system-init]
+
 - name: Base dependencies and OS settings
   hosts: all
   become: true
@@ -70,6 +72,7 @@
     - role: bootstrap
       when: bootstrap.enabled | default(true) | bool
       tags: [bootstrap]
+
 - name: Internal artifact repository
   hosts: local-repo
   become: true
@@ -88,6 +91,7 @@
   roles:
     - role: local-repo
       tags: [local-repo]
+
 - name: PostgreSQL single instance
   hosts: postgresql
   become: true
@@ -106,6 +110,7 @@
   roles:
     - role: postgresql
       tags: [postgresql]
+
 - name: Nginx access layer
   hosts: nginx
   become: true
@@ -124,6 +129,7 @@
   roles:
     - role: nginx
       tags: [nginx]
+
 - name: Observability stack
   hosts: observability
   become: true
@@ -143,6 +149,7 @@
     - role: observability
       when: observability.enabled | bool
       tags: [observability]
+
 - name: Management Server
   hosts: winter-server
   become: true
@@ -162,6 +169,7 @@
     - role: winter-server
       when: winter_server.enabled | bool
       tags: [winter-server]
+
 - name: Harbor registry
   hosts: harbor
   become: true
@@ -181,6 +189,7 @@
     - role: harbor
       when: harbor.enabled | bool
       tags: [harbor]
+
 - name: Keepalived Director and LVS real servers
   hosts: keepalived
   become: true
@@ -200,6 +209,7 @@
     - role: keepalived
       when: ha.enabled | bool
       tags: [keepalived]
+
 - name: BIND 9 DNS
   hosts: named
   become: true
@@ -219,6 +229,7 @@
     - role: named
       when: dns.enabled | bool
       tags: [named]
+
 - name: Agent pre-install on managed nodes
   hosts: agent
   become: true
@@ -237,6 +248,7 @@
   roles:
     - role: agent
       tags: [agent]
+
 - name: Operate HA - PostgreSQL
   hosts: management
   become: true
@@ -264,6 +276,7 @@
         name: postgresql
         tasks_from: ha
       tags: [postgresql-ha]
+
 - name: Operate scale out - PostgreSQL
   hosts: management
   become: true
@@ -289,6 +302,7 @@
         name: postgresql
         tasks_from: scale-out
       tags: [postgresql-scale-out]
+
 - name: Operate scale in - PostgreSQL
   hosts: management
   become: true
@@ -311,6 +325,7 @@
         name: postgresql
         tasks_from: scale-in
       tags: [postgresql-scale-in]
+
 - name: Operate migrate - PostgreSQL
   hosts: management
   become: true
@@ -333,6 +348,7 @@
         name: postgresql
         tasks_from: migrate
       tags: [postgresql-migrate]
+
 - name: Operate HA - winter-server replicas
   hosts: winter-server
   become: true
@@ -354,6 +370,7 @@
         name: winter-server
         tasks_from: ha
       tags: [application-ha]
+
 - name: Operate HA - Harbor replicas
   hosts: harbor
   become: true
@@ -376,6 +393,7 @@
         tasks_from: ha
       when: harbor.enabled | bool
       tags: [application-ha]
+
 - name: Operate HA - Nginx and LVS real servers
   hosts: nginx
   become: true
@@ -397,6 +415,7 @@
         name: nginx
         tasks_from: ha
       tags: [application-ha]
+
 - name: Operate HA - Keepalived Director
   hosts: keepalived
   become: true
@@ -419,6 +438,7 @@
         tasks_from: ha
       when: ha.enabled | bool
       tags: [application-ha]
+
 - name: Operate director - Keepalived
   hosts: keepalived
   become: true
@@ -441,6 +461,7 @@
         tasks_from: director
       when: ha.enabled | bool
       tags: [keepalived-operations]
+
 - name: Operate director - LVS real servers
   hosts: nginx
   become: true
@@ -463,6 +484,7 @@
         tasks_from: director
       when: ha.lvs.enabled | bool
       tags: [keepalived-operations]
+
 - name: Operate scale out - Observability
   hosts: observability
   become: true
@@ -484,6 +506,7 @@
         name: observability
         tasks_from: scale-out
       tags: [observability-scale-out]
+
 - name: Operate scale out - Nginx upstream
   hosts: management
   become: true
@@ -505,6 +528,7 @@
         name: nginx
         tasks_from: scale-out
       tags: [observability-scale-out]
+
 - name: Operate scale in register - Observability
   hosts: localhost
   become: true
@@ -526,6 +550,7 @@
         name: observability
         tasks_from: scale-in-register
       tags: [observability-scale-in]
+
 - name: Operate scale in - Observability
   hosts: observability
   become: true
@@ -547,6 +572,7 @@
         name: observability
         tasks_from: scale-in
       tags: [observability-scale-in]
+
 - name: Operate scale in remove - Observability
   hosts: monitoring_scale_targets
   become: true
@@ -568,6 +594,7 @@
         name: observability
         tasks_from: scale-in-remove
       tags: [observability-scale-in]
+
 - name: Operate scale in - Nginx upstream
   hosts: management
   become: true
@@ -589,6 +616,7 @@
         name: nginx
         tasks_from: scale-in
       tags: [observability-scale-in]
+
 - name: Operate destroy - Platform
   hosts: management
   become: true
@@ -610,6 +638,7 @@
         name: uninstall
         tasks_from: destroy
       tags: [destroy]
+
 - name: Operate destroy - Agents
   hosts: agent
   become: true
@@ -624,6 +653,7 @@
         name: agent
         tasks_from: destroy
       tags: [destroy]
+
 - name: Deployment acceptance checks
   hosts: management
   become: true
@@ -645,6 +675,7 @@
         name: verify
         tasks_from: acceptance
       tags: [verify]
+
 - name: Validate configuration
   hosts: management
   become: true
@@ -666,6 +697,7 @@
         name: reconfigure
         tasks_from: validate
       tags: [reconfigure]
+
 - name: Verify artifacts and version plan
   hosts: management
   become: true
