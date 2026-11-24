@@ -5,7 +5,7 @@
 # runs is decided by tags (component/operation) and the inventory groups enabled. This mirrors the
 # reference ops framework: one playbook, actions passed as a variable, targets selected by inventory.
 #
-# Usage: ./deploy.sh <action> [-i inventory] [-t tag,...] [-e @vars.yml] [ansible arguments...]
+# Usage: ./deploy.sh <action> [-i inventory] [-t tag,...] [-e '{"key":value}'] [ansible arguments...]
 set -eu
 
 ROOT=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
@@ -13,7 +13,7 @@ ACTION=${1:-}
 
 usage() {
     cat <<'EOF'
-Usage: ./deploy.sh <action> [-i inventory] [-t tag,...] [-e @vars.yml] [ansible arguments...]
+Usage: ./deploy.sh <action> [-i inventory] [-t tag,...] [-e '{"key":value}'] [ansible arguments...]
 
 Actions (first argument, becomes winter_ops_action):
   deploy        Converge the selected components/operation to their target state
@@ -34,12 +34,24 @@ Examples:
   ./deploy.sh deploy -i inventory/multinode -t local-repo
   ./deploy.sh prechecks -i inventory/pgha -t postgresql
   ./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
-      -e @group_vars/operations/postgresql-scale-out.yml
-  ./deploy.sh deploy -i inventory/multinode -t application-ha -e @group_vars/operations/application-ha.yml
+      -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'
+  ./deploy.sh deploy -i inventory/multinode -t application-ha \
+      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
+
+Per-operation variables (pass via -e; all.yml holds only defaults):
+  named              -e '{"dns_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>"}}'
+  postgresql-ha      (single-node bootstrap) -e '{"pg_cluster_overrides":{"allow_single_node_bootstrap":true}}'
+  postgresql-scale-out  -e '{"pg_scale_overrides":{"nodes":["<new-node>",...]}}'
+  postgresql-scale-in  -e '{"pg_scale_overrides":{"removed_nodes":["<node>",...]}}'
+  postgresql-migrate (no extra vars; stop-the-world)
+  observability-scale-out -e '{"monitoring_scale_overrides":{"nodes":["<node>",...]}}'
+  observability-scale-in  -e '{"monitoring_scale_overrides":{"removed_nodes":["<node>",...]}}'
+  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>"},"server_ha_overrides":{"database_host":"<PG-HA-entry>"}}'
+  LVS/DR (app-ha)    add "lvs":{"enabled":true,"scheduler":"rr"} inside ha_overrides
 
 Notes:
   - Omit -t to run every play selected by the inventory (careful: operations are included).
-  - -e @group_vars/operations/<op>.yml supplies per-operation variables; see those files.
+  - Override keys are <section>_overrides; all.yml merges them onto <section>_defaults.
   - Old stage names (postgresql-ha, application-ha as actions, etc.) are gone — use 'deploy -t <tag>'.
 EOF
 }

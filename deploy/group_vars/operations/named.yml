@@ -1,9 +1,0 @@
----
-# Operation variables: enable the BIND 9 DNS role (ADR-42).
-# Usage: ./deploy.sh deploy -i inventory/site3 -t named -e @group_vars/operations/named.yml
-# Only overrides are listed; group_vars/all.yml merges them onto dns_defaults.
-dns_overrides:
-  enabled: true
-# Publish the platform VIP as an A record for the domain. Override with the site VIP.
-ha_overrides:
-  vip: 192.168.101.250

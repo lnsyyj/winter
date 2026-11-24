@@ -6,24 +6,24 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 
 All deployment work enters through one command shape. `deploy.sh` maps the action to
 `winter_ops_action` and invokes `site.yml`. **All task logic lives in software roles** —
-`site.yml` is thin `hosts + roles` orchestration only; `playbooks/` contains no other file
-(ADR-43). Per [ADR-44](../docs/02-研发线/04-架构师/ADR-44-编排逻辑归入软件role.md), orchestration
+`site.yml` is thin `hosts + roles` orchestration only; `site.yml` is the only playbook in
+`deploy/` (ADR-43). Per [ADR-44](../docs/02-研发线/04-架构师/ADR-44-编排逻辑归入软件role.md), orchestration
 logic (HA / scale / migrate / destroy) is folded into each software role's action files
 (e.g. `roles/postgresql/tasks/{ha,scale-out,migrate}.yml`), attached via `include_role tasks_from:`.
 Operation plays are named `Operate <action> - <software>`; CLI tags are unchanged.
 
 ```bash
-./deploy.sh <action> -i <inventory> [-t tag,...] [-e @group_vars/operations/<op>.yml]
+./deploy.sh <action> -i <inventory> [-t tag,...] [-e '{"<section>_overrides":{...}}']
 
 # actions: deploy | prechecks | destroy | verify | reconfigure | upgrade
 ./deploy.sh deploy -i inventory/all-in-one                              # all components
 ./deploy.sh deploy -i inventory/multinode -t local-repo                 # one component
 ./deploy.sh prechecks -i inventory/pgha -t postgresql                   # one role's prechecks
 ./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
-    -e @group_vars/operations/postgresql-scale-out.yml                          # transactional operation
-./deploy.sh deploy -i inventory/pgha -t postgresql-ha                          # PG HA bootstrap (defaults)
+    -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'          # transactional operation
+./deploy.sh deploy -i inventory/pgha -t postgresql-ha                   # PG HA bootstrap (defaults)
 ./deploy.sh deploy -i inventory/site1 -t postgresql-ha \
-    -e @group_vars/operations/postgresql-ha-single.yml                         # single-node HA bootstrap
+    -e '{"pg_cluster_overrides":{"allow_single_node_bootstrap":true}}'  # single-node HA bootstrap
 ```
 
 - Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`postgresql-ha`,
@@ -34,7 +34,9 @@ Operation plays are named `Operate <action> - <software>`; CLI tags are unchange
   winter-server harbor keepalived named agent`.
 - Operation tags: `postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate application-ha keepalived-operations
   observability-scale-out observability-scale-in destroy verify reconfigure upgrade`.
-- Per-operation variables live in `group_vars/operations/`; operation inventories in
+- **Per-operation variables are passed on the command line with `-e`** (see `deploy.sh --help` for the
+  full per-operation list). `group_vars/all.yml` holds only defaults; each `<section>_overrides`
+  dict passed via `-e` is merged onto `<section>_defaults` by Ansible. Operation inventories live in
   `inventory/operations/`. Every role's `tasks/main.yml` dispatches on `winter_ops_action`;
   multi-host operations (`application-ha`, `destroy`, `observability-scale-*`) are split into per-host task files
   attached via `include_role tasks_from:` in `site.yml`.

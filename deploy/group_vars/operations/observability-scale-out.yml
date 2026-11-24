@@ -1,4 +1,0 @@
----
-# Operation variables: add observability replicas (ADR-42 / ADR-18).
-monitoring_scale_overrides:
-  nodes: [node-b, node-c]

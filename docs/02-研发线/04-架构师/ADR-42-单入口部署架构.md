@@ -87,3 +87,12 @@ action = deploy | prechecks | destroy | verify | reconfigure | upgrade
 
 - Ansible 提供动态 `include_playbook` 且能保证跨 play 状态一致 → 可去掉 import_playbook 拆分。
 - 项目引入 kolla-ansible 式更完整的 action 框架 → 以新框架为准，本 ADR 标 Superseded。
+
+## 8. 后续变更（2026-11-24）
+
+本文第 3 节曾新增 `group_vars/operations/*.yml`（用 `-e @file` 注入操作参数）。该目录**已删除**：
+ADR-45 把全部配置默认值统一进 `group_vars/all.yml`，操作参数改为命令行 `-e
+'{"<section>_overrides":{...}}'` 直接传入（如 `-e '{"pg_scale_overrides":{"nodes":["node-b"]}}'`）。
+理由：操作参数（本次扩容哪些节点、是否启用 DNS/LVS）随每次操作变化，不能作为 all.yml 的常态
+默认值；命令行传参消除了一个与 all.yml 重复的配置源。本文第 3/4/6 节关于该目录的描述为历史记录，
+以 ADR-44/45 及 `deploy.sh --help` 为准。

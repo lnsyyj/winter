@@ -12,7 +12,7 @@
 #   ./deploy.sh deploy    -i inventory/multinode -t local-repo
 #   ./deploy.sh prechecks -i inventory/pgha -t postgresql
 #   ./deploy.sh deploy    -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
-#       -e @group_vars/operations/postgresql-scale-out.yml
+#       -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'
 
 - name: Global pre-deployment checks
   hosts: all

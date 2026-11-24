@@ -1,6 +1,0 @@
----
-# Operation variables: add PG replicas (ADR-42 / ADR-39).
-# Usage: ./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
-#          -e @group_vars/operations/postgresql-scale-out.yml
-pg_scale_overrides:
-  nodes: [node-b, node-c]              # must already be in [management]; final count must be odd
