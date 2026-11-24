@@ -5,7 +5,7 @@ Established per [ADR-17](../docs/02-研发线/04-架构师/ADR-17-部署框架.m
 ## Single-entry interface (ADR-43, current)
 
 All deployment work enters through one command shape. `deploy.sh` maps the action to
-`winter_ops_action` and invokes `playbooks/site.yml`. **All task logic lives in software roles** —
+`winter_ops_action` and invokes `site.yml`. **All task logic lives in software roles** —
 `site.yml` is thin `hosts + roles` orchestration only; `playbooks/` contains no other file
 (ADR-43). Per [ADR-44](../docs/02-研发线/04-架构师/ADR-44-编排逻辑归入软件role.md), orchestration
 logic (HA / scale / migrate / destroy) is folded into each software role's action files
@@ -429,7 +429,7 @@ deploy/
 │   └── all.yml.example        # committed template with CHANGE_ME_* placeholders; copy to all.yml
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/site.yml         # single entry point; thin hosts+roles orchestration (ADR-43/44)
+├── site.yml                   # single entry point; thin hosts+roles orchestration (ADR-43/44)
 ├── roles/                     # one role per component; all tunables in group_vars/all.yml (ADR-45)
 └── roles/
     ├── bootstrap/             # optional kernel/data-disk settings (reuses system-init for base tools)

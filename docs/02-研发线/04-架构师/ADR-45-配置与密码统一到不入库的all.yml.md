@@ -61,7 +61,7 @@ ADR-17 建立的双文件模型（配置在 `group_vars/all.yml`、密码在 `pa
 ## 5. 验证
 
 - 本地静态校验：120 个 YAML 解析通过、shell 语法通过。
-- 控制机 `ansible-playbook --syntax-check -i inventory/multinode playbooks/site.yml`：通过。
+- 控制机 `ansible-playbook --syntax-check -i inventory/multinode site.yml`：通过。
 - 控制机 debug playbook 变量求值：agent/postgresql/patroni/nginx/ha/dns/etcd_role/vault_* 全部正确。
 - **待补**：真机全量回归（deploy/component、app-ha、pg-ha、pg-migrate、pg-scale-out、destroy）
   尚未在本次变更上重跑；配置搬迁虽经变量求值验证，仍建议在真机环境完整回归后再上生产。

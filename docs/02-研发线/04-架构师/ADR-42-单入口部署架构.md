@@ -22,7 +22,7 @@
 
 ### 2.1 从参考框架照搬的部分
 
-1. **单一入口 `playbooks/site.yml`**：所有部署/预检动作从它进入。每个组件一个 play，`hosts` = 组件组，`tags` = role 名，`any_errors_fatal: true`。
+1. **单一入口 `site.yml`**：所有部署/预检动作从它进入。每个组件一个 play，`hosts` = 组件组，`tags` = role 名，`any_errors_fatal: true`。
 2. **role 内动作分发**：16 个组件 role 的 `tasks/main.yml` 改为一行 `include_tasks: "{{ winter_ops_action | default('deploy') }}.yml"`，部署逻辑迁 `deploy.yml`，预检迁 `precheck.yml`。命令 `prechecks` 映射为 `winter_ops_action=precheck`（与参考框架一致的单数命名）。
 3. **操作型 inventory / 变量**：新增 `inventory/operations/*`（一次操作一个主机清单）与 `group_vars/operations/*.yml`（操作特定变量，如 `pg_scale.nodes`、`server_ha.database_host`），用 `-e @file` 注入。
 4. **ansible.cfg**：`gathering=explicit` + fact caching + `force_valid_group_names=ignore`（带连字符的组名保持原样）。
@@ -63,7 +63,7 @@ action = deploy | prechecks | destroy | verify | reconfigure | upgrade
 
 | 对象 | 变化 |
 |---|---|
-| `playbooks/site.yml` | 新增唯一入口：12 个组件 play + 7 个 import_playbook 事务编排 |
+| `site.yml` | 新增唯一入口：12 个组件 play + 7 个 import_playbook 事务编排 |
 | `deploy.sh` | 改为动作入口；生命周期动作直连原 playbook；自动 skip-tags |
 | 16 个组件 role | `tasks/main.yml` 改分发器，新增 `deploy.yml` / `precheck.yml` |
 | `inventory/operations/` `group_vars/operations/` | 新增操作型清单与变量 |

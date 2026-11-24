@@ -1,7 +1,7 @@
 #!/usr/bin/env sh
 # winter · single-entry deployment dispatcher (ADR-42).
 #
-# Every command enters through playbooks/site.yml. The first argument is the ACTION; what actually
+# Every command enters through site.yml. The first argument is the ACTION; what actually
 # runs is decided by tags (component/operation) and the inventory groups enabled. This mirrors the
 # reference ops framework: one playbook, actions passed as a variable, targets selected by inventory.
 #
@@ -109,5 +109,5 @@ TASK_ACTION=$ACTION
 set -- "$@" -e "winter_ops_action=$TASK_ACTION"
 
 cd "$ROOT"
-echo "Running: ansible-playbook playbooks/site.yml -e winter_ops_action=$TASK_ACTION $*"
-exec ansible-playbook playbooks/site.yml "$@"
+echo "Running: ansible-playbook site.yml -e winter_ops_action=$TASK_ACTION $*"
+exec ansible-playbook site.yml "$@"
