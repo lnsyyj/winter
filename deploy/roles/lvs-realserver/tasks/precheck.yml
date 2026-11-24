@@ -1,0 +1,7 @@
+---
+- name: Assert this host is an LVS RealServer
+  ansible.builtin.assert:
+    that: lvs_role | default("") == "realserver"
+    fail_msg: "lvs-realserver must run on hosts with lvs_role=realserver"
+    quiet: true
+  tags: [lvs, lvs-realserver]

@@ -1,0 +1,23 @@
+#!/usr/bin/env bash
+# {{ ansible_managed | default('managed by ansible') }}
+# Idempotent helper for the LVS/DR loopback VIP.
+set -euo pipefail
+
+VIP="{{ realserver_vip }}"
+
+case "${1:-}" in
+    add)
+        if ! ip addr show dev lo | grep -q "${VIP}/32"; then
+            ip addr add "${VIP}/32" dev lo
+        fi
+        ;;
+    del)
+        if ip addr show dev lo | grep -q "${VIP}/32"; then
+            ip addr del "${VIP}/32" dev lo
+        fi
+        ;;
+    *)
+        echo "usage: $0 {add|del}" >&2
+        exit 2
+        ;;
+esac

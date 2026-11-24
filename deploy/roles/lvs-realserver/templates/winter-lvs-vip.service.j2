@@ -1,0 +1,14 @@
+# {{ ansible_managed | default('managed by ansible') }}
+[Unit]
+Description=Winter LVS/DR loopback VIP
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart={{ realserver_helper }} add
+ExecStop={{ realserver_helper }} del
+RemainAfterExit=yes
+
+[Install]
+WantedBy=multi-user.target

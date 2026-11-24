@@ -1,0 +1,7 @@
+---
+- name: Assert this host is an LVS Director
+  ansible.builtin.assert:
+    that: lvs_role | default("") == "director"
+    fail_msg: "lvs-director must run on hosts with lvs_role=director"
+    quiet: true
+  tags: [lvs, lvs-director]

@@ -250,33 +250,31 @@
       when: ha.enabled | bool
       tags: [application-ha]
 
-- name: Operate director - Keepalived
-  hosts: keepalived
+- name: LVS director (from inventory lvs_role=director)
+  hosts: management
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [keepalived-operations]
+  tags: [lvs-director]
   tasks:
-    - name: Apply keepalived role (director slice)
+    - name: Apply lvs-director role
       ansible.builtin.include_role:
-        name: keepalived
-        tasks_from: director
-      when: ha.enabled | bool
-      tags: [keepalived-operations]
+        name: lvs-director
+      when: lvs_role | default('') == 'director'
+      tags: [lvs-director]
 
-- name: Operate director - LVS real servers
-  hosts: nginx
+- name: LVS real servers (from inventory lvs_role=realserver)
+  hosts: management
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [keepalived-operations]
+  tags: [lvs-realserver]
   tasks:
-    - name: Apply realserver role (director slice)
+    - name: Apply lvs-realserver role
       ansible.builtin.include_role:
-        name: realserver
-        tasks_from: director
-      when: ha.lvs.enabled | bool
-      tags: [keepalived-operations]
+        name: lvs-realserver
+      when: lvs_role | default('') == 'realserver' and ha.lvs.enabled | default(false) | bool
+      tags: [lvs-realserver]
 
 - name: Operate scale out - Observability
   hosts: observability

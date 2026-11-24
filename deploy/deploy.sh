@@ -29,13 +29,19 @@ Targets are selected by -t tags and inventory groups. All available tags:
   Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
                observability-scale-out observability-scale-in application-ha destroy
 
+Inventory: one file inventory/hosts.ini; select a topology with --limit:
+  all-in-one | multinode | pgha | lvs-dr | scale-out-agent
+  LVS/DR roles are set in the inventory via host vars: lvs_role=director|realserver.
+
 Examples:
-  ./deploy.sh deploy -i inventory/all-in-one
-  ./deploy.sh deploy -i inventory/multinode -t local-repo
-  ./deploy.sh prechecks -i inventory/pgha -t postgresql
-  ./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
+  ./deploy.sh deploy                                               # default: all-in-one topology
+  ./deploy.sh deploy -i inventory/hosts.ini --limit multinode -t local-repo
+  ./deploy.sh prechecks -i inventory/hosts.ini --limit pgha -t postgresql
+  ./deploy.sh deploy -i inventory/hosts.ini --limit pgha -t postgresql-scale-out \
       -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'
-  ./deploy.sh deploy -i inventory/multinode -t application-ha \
+  ./deploy.sh deploy -i inventory/hosts.ini --limit lvs-dr -t lvs-director,lvs-realserver \
+      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
+  ./deploy.sh deploy -i inventory/hosts.ini --limit multinode -t application-ha \
       -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
 
 Per-operation variables (pass via -e; all.yml holds only defaults):
@@ -78,10 +84,11 @@ if ! command -v ansible-playbook >/dev/null 2>&1; then
     exit 3
 fi
 
-# Default to the all-in-one topology when no inventory was passed.
+# Default to the all-in-one topology (via --limit) when no inventory was passed.
+# All topologies live in one inventory file; --limit selects which hosts to target (ADR-46).
 case " $* " in
     *" -i "*|*" -i"*|*" --inventory "*) ;;
-    *) set -- "$@" -i "$ROOT/inventory/all-in-one" ;;
+    *) set -- "$@" -i "$ROOT/inventory/hosts.ini" --limit all-in-one ;;
 esac
 
 # Prechecks and destroy must not trigger the transactional operation playbooks. If the caller did
