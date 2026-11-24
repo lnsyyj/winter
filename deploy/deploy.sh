@@ -36,17 +36,17 @@ Examples:
   ./deploy.sh deploy -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
       -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'
   ./deploy.sh deploy -i inventory/multinode -t application-ha \
-      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
+      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
 
 Per-operation variables (pass via -e; all.yml holds only defaults):
-  named              -e '{"dns_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>"}}'
+  named              -e '{"dns_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
   postgresql-ha      (single-node bootstrap) -e '{"pg_cluster_overrides":{"allow_single_node_bootstrap":true}}'
   postgresql-scale-out  -e '{"pg_scale_overrides":{"nodes":["<new-node>",...]}}'
   postgresql-scale-in  -e '{"pg_scale_overrides":{"removed_nodes":["<node>",...]}}'
   postgresql-migrate (no extra vars; stop-the-world)
   observability-scale-out -e '{"monitoring_scale_overrides":{"nodes":["<node>",...]}}'
   observability-scale-in  -e '{"monitoring_scale_overrides":{"removed_nodes":["<node>",...]}}'
-  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>"},"server_ha_overrides":{"database_host":"<PG-HA-entry>"}}'
+  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"server_ha_overrides":{"database_host":"<PG-HA-entry>"}}'
   LVS/DR (app-ha)    add "lvs":{"enabled":true,"scheduler":"rr"} inside ha_overrides
 
 Notes:
