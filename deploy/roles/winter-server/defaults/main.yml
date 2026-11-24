@@ -1,5 +1,0 @@
----
-# Fallback values; winter_server configuration is governed by group_vars/all.yml (ADR-17 single configuration entry point)
-server_run_user: winter-server
-server_health_retries: 20
-server_health_delay: 2

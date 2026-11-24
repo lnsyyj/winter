@@ -1,6 +1,0 @@
----
-# Fallback values; ha.* and the VIP come from group_vars/all.yml (ADR-17 single configuration entry point).
-realserver_sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
-realserver_helper: /usr/local/bin/winter-lvs-vip.sh
-realserver_unit: winter-lvs-vip.service
-realserver_vip: "{{ ha.vip }}"

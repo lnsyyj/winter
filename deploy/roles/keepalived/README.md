@@ -19,7 +19,7 @@ health check fails, the VIP moves to a peer.
 | `ha.peer_addresses` | Optional unicast peers; the HA playbook computes them from `[keepalived]` |
 | `ha.nginx_check_interval` | Health-check interval in seconds |
 
-`vault_keepalived_auth_pass` comes from `deploy/passwords.yml` (never from `group_vars`). The
+`vault_keepalived_auth_pass` comes from `deploy/group_vars/all.yml` (never from `group_vars`). The
 VRRP state is `BACKUP` on every node by default; election is decided by priority, which avoids
 a split-brain at startup.
 

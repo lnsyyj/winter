@@ -1,9 +1,0 @@
----
-# HAProxy: a fixed entry point for applications, always pointing to the current primary
-#
-# Detecting the primary does not use TCP probing (both primary and replica listen on 5432/5433, so probing cannot tell them apart);
-# instead it queries Patroni's REST /primary: only a 200 response means primary.
-haproxy_role:
-  rpm: haproxy-2.8.14-4.el9.x86_64.rpm
-  rpm_subdir: rpm/base
-  config: /etc/haproxy/haproxy.cfg

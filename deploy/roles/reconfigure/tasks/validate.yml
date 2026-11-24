@@ -3,12 +3,6 @@
 # Play 1: Validate configuration before reconfigure (hosts: management)
 
 # ---- tasks ----
-- name: Load deployment passwords (deploy/passwords.yml, skip if absent)
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [always]
 
 - name: Confirm audit retention meets the hard floor (ADR-32)
   ansible.builtin.assert:

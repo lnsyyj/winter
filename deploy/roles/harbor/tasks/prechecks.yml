@@ -47,7 +47,7 @@
       - (harbor.mode | default('builtin')) == 'builtin' or (vault_harbor_db_password | default('') | length > 0 and vault_harbor_redis_password | default('') | length > 0)
     fail_msg: >-
       vault_harbor_admin_password is always required. In external mode, vault_harbor_db_password
-      and vault_harbor_redis_password are required too (deploy/passwords.yml). Builtin mode uses
+      and vault_harbor_redis_password are required too (deploy/group_vars/all.yml). Builtin mode uses
       Harbor's bundled PG/Redis and only needs the admin password.
     success_msg: "Harbor credentials are present"
     quiet: true

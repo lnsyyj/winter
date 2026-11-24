@@ -3,12 +3,6 @@
 # PostgreSQL HA scale-out (migrated from postgresql-scale-out.yml, ADR-43). Sequential etcd learner/promote; scale-out-member.yml must live in this tasks dir.
 
 # ---- migrated from playbook pre_tasks ----
-- name: Load deployment passwords
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [postgresql-scale-out]
 
 # Scale targets are already members of [management], so the final etcd member count is
 # groups['management'] | length — NOT management + nodes (the old expression double-counted).

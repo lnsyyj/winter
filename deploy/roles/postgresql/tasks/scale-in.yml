@@ -3,12 +3,6 @@
 # PostgreSQL HA scale-in (migrated from postgresql-scale-in.yml, ADR-43). NOTE: original play had serial:1 — site.yml play must keep serial:1.
 
 # ---- migrated from playbook pre_tasks ----
-- name: Load deployment passwords
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [postgresql-scale-in]
 
 - name: Validate scale-in plan
   ansible.builtin.assert:

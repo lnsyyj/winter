@@ -42,8 +42,8 @@
         (groups['dns_slaves'] | default([]) | length) == 0
         or (vault_dns_tsig_secret | default('') | length) > 0
     fail_msg: >-
-      DNS slaves are configured but vault_dns_tsig_secret is missing in deploy/passwords.yml.
-      Copy passwords.yml.example, generate a base64 HMAC-SHA256 key (for example
+      DNS slaves are configured but vault_dns_tsig_secret is missing in deploy/group_vars/all.yml.
+      Copy group_vars/all.yml.example, generate a base64 HMAC-SHA256 key (for example
       "openssl rand -base64 32") and set vault_dns_tsig_secret before deploying slaves.
     success_msg: "DNS master/slave prerequisites are satisfied"
     quiet: true

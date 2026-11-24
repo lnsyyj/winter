@@ -53,7 +53,9 @@ venv/
 credentials.local.*
 secrets/
 
-# 部署机密：secrets 只允许出现在 deploy/passwords.yml（ADR-17），该文件永不入库
+# 部署机密：配置与 secrets 统一在 deploy/group_vars/all.yml（ADR-45），该文件永不入库；
+# 入库模板是 all.yml.example（占位符）。旧 passwords.yml 规则保留以防历史残留。
+deploy/group_vars/all.yml
 deploy/passwords.yml
 passwords.yml
 *.vault

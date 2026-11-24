@@ -181,7 +181,7 @@ The component list, ports, versions and command-line arguments all live in `grou
 - Single alerting path: `vmalert → Alertmanager → webhook` (ADR-18); M0 uses placeholder rules, the Server's HMAC webhook endpoint is not implemented yet, and dropped alerts do not affect tasks.
 - Metrics/logs are retained for 30 days; **audits live in PG, not in the logging system** (ADR-06 / ADR-32).
 - `observability.enabled: false` or a single component's `enabled: false` trims the stack (ADR-18 packaging layers).
-- The Server's `DATABASE_URL` / `JWT_SECRET` / admin password all come from `deploy/passwords.yml` (see `passwords.yml.example` for the template); roles assert explicitly and do not generate default weak passwords.
+- The Server's `DATABASE_URL` / `JWT_SECRET` / admin password all come from `deploy/group_vars/all.yml` (see `group_vars/all.yml.example` for the template); roles assert explicitly and do not generate default weak passwords.
 - Overwriting a running binary triggers `ETXTBSY`, so the Server role does `cp` in the target directory + `mv` within the same directory to atomically replace the inode, keeping the downloaded source file for idempotency; no restart if content is unchanged.
 
 ## Agent Pre-install, Scale-out and Scale-in (ADR-35 / ADR-19 / ADR-28)
@@ -318,7 +318,7 @@ automatically, otherwise use an external DNS. A single `ha.vip` keeps the origin
 Configuration in `group_vars/all.yml`:
 
 - `ha.vip`, `ha.interface`, `ha.priority` — VRRP address and election; the shared
-  `vault_keepalived_auth_pass` comes from `passwords.yml`. Priority descends across `[keepalived]`.
+  `vault_keepalived_auth_pass` comes from `group_vars/all.yml`. Priority descends across `[keepalived]`.
 - `ha.lvs.enabled: true` and `ha.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`) — four-layer load
   balancing; requires at least two `[nginx]`. The `realserver` role puts the VIP on `lo`
   with ARP suppression on each backend, and persists it with a oneshot systemd unit.
@@ -357,13 +357,13 @@ and LVS/DR spreads them across Nginx backends.
 | `dns.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
 | `dns.rpm_files` / `dns.rpm_subdir` | BIND RPMs when `install_method=repo` |
 | `dns.manage_firewall` | Open `dns.listen_port`/tcp and /udp with firewalld; `false` for an external firewall |
-| `dns.tsig_key_name` | TSIG key name; the secret is `vault_dns_tsig_secret` in `passwords.yml` |
+| `dns.tsig_key_name` | TSIG key name; the secret is `vault_dns_tsig_secret` in `group_vars/all.yml` |
 
 Topology is in inventory: `[named]` (all servers), `[dns_masters]` (defaults to nodes minus
 slaves) and `[dns_slaves]` (optional). The master renders a full zone with a deterministic serial
 derived from the domain and VIP set; slaves pull a TSIG-signed copy. With no slave group the single
 node is the master. Generate the TSIG secret with `openssl rand -base64 32` and place it only in
-`deploy/passwords.yml`.
+`deploy/group_vars/all.yml`.
 
 ### Common Operations Commands
 
@@ -384,7 +384,7 @@ Base layer: `./deploy.sh deploy` ran through with `ok=25 changed=2 failed=0`; th
 | PostgreSQL | Reused the existing 17.11 instance, added the `winter` database and role; the application account connects, a wrong password is rejected |
 | Existing databases | `appdb`/`postgres`/`template*` left untouched |
 | Nginx overlay | `winter.local` site returns 200, `/healthz` returns ok; **the existing site on the same host (argus) still returns 200 on 80/443** |
-| Password source | `deploy/passwords.yml` (gitignored), not committed to the repo |
+| Password source | `deploy/group_vars/all.yml` (gitignored), not committed to the repo |
 
 ### Monitoring Stack and Server (added the same day)
 
@@ -407,7 +407,7 @@ Three issues exposed and fixed on real machines:
 
 ### Five base-layer issues exposed and fixed on real machines (all invisible on paper, only blowing up at runtime):
 
-1. `deploy/passwords.yml` is not on Ansible's automatic load path → switched to an explicit `include_vars` in pre_tasks;
+1. `deploy/group_vars/all.yml` is not on Ansible's automatic load path → switched to an explicit `include_vars` in pre_tasks;
 2. `deploy.sh` had no execute bit after clone → `git update-index --chmod=+x`;
 3. PGDG's `pg_isready` is not in the postgres user's PATH → switched to `psql -tAc "select 1"` for liveness checks;
 4. nginx being already installed still triggered `dnf`, which hung on an unreachable `pgdg-common` repo → stat first, then decide whether to install;
@@ -424,12 +424,13 @@ deploy/
 ├── deploy.sh                  # stage dispatcher (aligned with kolla-ansible's CLI shape)
 ├── ansible.cfg
 ├── inventory/                 # all-in-one / multinode / pgha
-├── group_vars/all.yml          # single configuration entry point (corresponds to kolla's globals.yml)
-├── passwords.yml.example      # template for sensitive values; the real passwords.yml is not committed
+├── group_vars/
+│   ├── all.yml                # single config + secret file (gitignored, never committed)
+│   └── all.yml.example        # committed template with CHANGE_ME_* placeholders; copy to all.yml
 ├── scripts/fetch-artifacts.sh # build packages with internet access (reproducible, pinned versions)
 ├── artifacts/repo/            # offline artifact repository (committed with the code)
-├── playbooks/                 # bootstrap-servers / prechecks / deploy / postgresql-ha / postgresql-scale-out / postgresql-scale-in / observability-scale-out / observability-scale-in / application-ha / agent-scale-out / agent-scale-in / destroy / post-deploy / reconfigure / upgrade
-│                              # plus single-component stages: repo / postgresql / nginx / monitoring / server / harbor / keepalived / dns / system-init
+├── playbooks/site.yml         # single entry point; thin hosts+roles orchestration (ADR-43/44)
+├── roles/                     # one role per component; all tunables in group_vars/all.yml (ADR-45)
 └── roles/
     ├── bootstrap/             # optional kernel/data-disk settings (reuses system-init for base tools)
     ├── system-init/           # base OS tools + chrony clock sync (standalone, reused by bootstrap)
@@ -455,8 +456,8 @@ Every role ships `tasks/prechecks.yml`; the single-component stages include it a
 # 1. The control machine needs ansible-core (version per the docs BOM convention)
 ansible-playbook --version
 
-# 2. Adapt inventory and group_vars/all.yml to the site, and prepare passwords.yml
-cp passwords.yml.example passwords.yml && vi passwords.yml
+# 2. Adapt inventory and group_vars/all.yml to the site, and prepare group_vars/all.yml
+cp group_vars/all.yml.example group_vars/all.yml && vi group_vars/all.yml
 
 # 3. Base dependencies (run once on every managed host)
 ./deploy.sh bootstrap-servers -i inventory/multinode
@@ -499,7 +500,7 @@ Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prec
 2. **Configuration only in `group_vars/all.yml`**: do not hardcode IPs, ports or paths in playbooks or roles.
 3. **No hostname conditionals**: express topology with inventory groups (`management` / `ceph_nodes`); do not use `when: inventory_hostname == ...`.
 4. **Failure messages must be actionable**: `fail_msg` must include expected value / actual value / how to fix.
-5. **No secrets in the repo**: passwords and secrets go only in `passwords.yml` (excluded by `.gitignore`).
+5. **No secrets in the repo**: passwords and secrets go only in `group_vars/all.yml` (excluded by `.gitignore`).
 6. **No compilation on target machines**: all Go components are cross-compiled into single binaries under `artifacts/repo/bin/` (ADR-14).
 
 ## Relationship to Documentation

@@ -8,7 +8,7 @@
       - ha.enabled | bool
       - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
       - vault_keepalived_auth_pass is defined and vault_keepalived_auth_pass | length > 0
-    fail_msg: "ha.enabled=true requires ha.vip or ha.vips, plus vault_keepalived_auth_pass (see passwords.yml.example)"
+    fail_msg: "ha.enabled=true requires ha.vip or ha.vips, plus vault_keepalived_auth_pass (see group_vars/all.yml.example)"
     quiet: true
   tags: [ha, keepalived]
 

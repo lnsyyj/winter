@@ -28,7 +28,7 @@
       - vault_pg_password | default('') | length > 0
       - vault_admin_password | default('') | length > 0
     fail_msg: >-
-      Missing or weak secrets in deploy/passwords.yml: vault_jwt_secret must be at least 32 characters,
+      Missing or weak secrets in deploy/group_vars/all.yml: vault_jwt_secret must be at least 32 characters,
       vault_pg_password and vault_admin_password must be set. Changing vault_jwt_secret invalidates
       all issued access tokens.
     success_msg: "Server secrets are present"

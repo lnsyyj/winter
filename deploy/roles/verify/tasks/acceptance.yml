@@ -3,12 +3,6 @@
 # Play 1: Verify deployment and record the release manifest (hosts: management)
 
 # ---- pre_tasks ----
-- name: Load deployment passwords (deploy/passwords.yml, skip if absent)
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [always]
 
 
 # ---- tasks ----

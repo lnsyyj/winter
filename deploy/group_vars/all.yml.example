@@ -1,8 +1,12 @@
-# Single configuration entry point (corresponds to kolla-ansible's globals.yml, ADR-17 §2.1)
+# Single configuration entry point (ADR-17 §2.1 / ADR-45).
+#
+# This is the ONLY config + secret file. It is gitignored: copy all.yml.example to all.yml
+# and fill in the vault_* values. Never commit this file.
 #
 # Rules:
-# - All variable configuration goes here; no hardcoding in playbooks/roles
-# - Passwords and secrets do not go in this file; later stages introduce passwords.yml (excluded by .gitignore)
+# - All variable configuration AND secrets go here; no hardcoding in playbooks/roles
+# - Roles carry no defaults/main.yml; every tunable is consolidated in this file
+# - group_vars/all.yml is auto-loaded by Ansible, so no play needs to include it twice
 # - After changing this file, rerun the relevant stage (reconfigure / deploy converge to the new state)
 
 platform:
@@ -39,7 +43,7 @@ platform:
       url: ""                          # e.g.: ldaps://dc01.corp.local:636
       starttls: false                  # must be true when url is ldap://
       tls_verify: true
-      bind_dn: ""                      # service account used for searches; password goes in passwords.yml (vault_ldap_bind_password)
+      bind_dn: ""                      # service account used for searches; password goes in group_vars/all.yml (vault_ldap_bind_password)
       base_dn: ""                      # e.g.: ou=people,dc=corp,dc=local
       # Placeholders {login} / {user_dn} are substituted by the platform at login time; they are **not Ansible variables** (do not write them as {{ }})
       user_filter: "(sAMAccountName={login})"
@@ -188,7 +192,7 @@ uninstall_overrides:
 # Database (role defaults are in roles/postgresql/defaults; only differences are written here)
 # Note: you must use postgresql_overrides — writing postgresql: directly replaces the role's default dict wholesale,
 #       causing uncovered keys (such as data_dir) to become undefined.
-# Passwords are not in this file: see vault_pg_password in deploy/passwords.yml (gitignored)
+# Passwords are not in this file: see vault_pg_password in deploy/group_vars/all.yml (gitignored)
 postgresql_overrides:
   # Prefer an already-running instance (leave empty = autodetect). A fresh machine will install PGDG 17 automatically
   major: ""
@@ -323,7 +327,7 @@ observability:
       port: "{{ monitoring_ports.grafana }}"
       health_path: /api/health
 
-# Server (Go single binary + systemd); passwords and secrets live only in passwords.yml, never here
+# Server (Go single binary + systemd); passwords and secrets live only in group_vars/all.yml, never here
 winter_server:
   enabled: true
   bin_dir: /usr/local/bin
@@ -443,7 +447,7 @@ dns_defaults:
   vips: []                             # empty falls back to ha.vips, then ha.vip
   master_addresses: []                 # empty derives from [dns_masters] or [named] minus [dns_slaves]
   slave_addresses: []                  # empty derives from [dns_slaves]
-  tsig_key_name: winter-dns            # secret is vault_dns_tsig_secret in passwords.yml
+  tsig_key_name: winter-dns            # secret is vault_dns_tsig_secret in group_vars/all.yml
   allow_query_cidrs: []                # empty = any
   allow_transfer_cidrs: []             # empty = TSIG key only on the master
   manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
@@ -488,3 +492,288 @@ pg_migrate: "{{ pg_migrate_defaults | combine(pg_migrate_overrides | default({},
 pg_scale: "{{ pg_scale_defaults | combine(pg_scale_overrides | default({}, true), recursive=True) }}"
 pg_cluster: "{{ pg_cluster_defaults | combine(pg_cluster_overrides | default({}, true), recursive=True) }}"
 monitoring_scale: "{{ monitoring_scale_defaults | combine(monitoring_scale_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/agent/defaults/main.yml ----
+agent_defaults:
+  enabled: true
+
+  # Node identity reported in HELLO; must match the CN/SPIFFE URI in the certificate.
+  node_id: "{{ inventory_hostname }}"
+
+  # Server gRPC endpoint. The deployment plan specifies outbound 443 on managed nodes.
+  # Nginx must add grpc_pass for the Agent service before this endpoint becomes usable.
+  server_address: "winter.local:443"
+
+  bin_dir: /usr/local/bin
+  config_dir: /etc/winter/agent
+  env_file: /etc/winter/agent/agent.env
+  log_dir: /var/log/winter/agent
+  run_user: winter-agent
+
+  artifact: winter-agent
+  bin_subdir: bin
+
+  # Protocol runtime parameters (Agent-Server communication protocol v1).
+  heartbeat_interval_s: 10
+  task_window: 4
+  max_message_bytes: 1048576
+
+  cert:
+    dir: /etc/winter/agent/certs
+    key: agent.key
+    cert: agent.crt
+    ca: ca.crt
+    csr: agent.csr
+    key_bits: 2048
+    # Path on the CONTROL machine of the CA that signs Agent certificates.
+    # Private keys are generated on the node and never leave it (ADR-28).
+    ca_source: ""
+    # local_csr: generate key + CSR on the node, leave enrollment to the Server API or an operator.
+    # preissued: copy an already-issued key/cert from the control machine (offline/test path).
+    enrollment_mode: local_csr
+    preissued_key_source: ""
+    preissued_cert_source: ""
+
+  sudo:
+    enabled: true
+    file: /etc/sudoers.d/winter-agent
+    # Explicit absolute paths only; no ALL, no interpreters (ADR-19).
+    # Default set is read-only; extend for managed capability after review.
+    rules:
+      - "winter-agent ALL=(root) NOPASSWD: /usr/bin/ceph -s, /usr/bin/ceph status, /usr/bin/ceph health"
+
+  # Scale-in safety: never remove platform data unless explicitly requested.
+  scale_in:
+    purge_data: false
+    data_dirs: []
+    remove_user: false
+    revoke_cert: false
+
+agent: "{{ agent_defaults | combine(agent_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/bootstrap/defaults/main.yml ----
+bootstrap_defaults:
+  enabled: true
+
+  # Base OS packages and clock synchronization were extracted into roles/system-init,
+  # which can run on its own. Configure them with system_init_overrides in group_vars/all.yml.
+
+  # Kernel parameters previously only reported by roles/prechecks.
+  # Off by default during M0 so bootstrap stays non-invasive; set bootstrap_overrides.enforce_kernel: true
+  # (together with prechecks.enforce_kernel) to actually write them.
+  enforce_kernel: false
+  sysctl_file: /etc/sysctl.d/99-winter.conf
+  sysctl:
+    vm.overcommit_memory: 1
+    vm.max_map_count: 262144
+    net.bridge.bridge-nf-call-iptables: 1
+    net.bridge.bridge-nf-call-ip6tables: 1
+
+  # Optional data disk. Both destructive steps are opt-in: nothing is formatted or mounted by default.
+  data_disk:
+    device: ""
+    mount_point: /data
+    filesystem: xfs
+    format_if_empty: false
+    mount: false
+
+bootstrap: "{{ bootstrap_defaults | combine(bootstrap_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/system-init/defaults/main.yml ----
+system_init_defaults:
+  enabled: true
+
+  # Base OS packages. In an offline site these come from the OS installation media,
+  # not from the platform's internal artifact repo (which carries platform artifacts only).
+  packages:
+    - podman
+    - python3
+    - python3-pip
+    - curl
+    - wget
+    - chrony
+
+  chrony:
+    enabled: true
+    service: chronyd
+    config_file: /etc/chrony.conf
+    include_dir: /etc/chrony.d
+    include_file: /etc/chrony.d/winter.conf
+    # Empty keeps the distribution's default time sources. Non-empty appends an include file with
+    # these servers; existing configuration is never overwritten or removed.
+    servers: []
+
+system_init: "{{ system_init_defaults | combine(system_init_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/uninstall/defaults/main.yml ----
+uninstall_defaults:
+  enabled: true
+
+  # Destructive options are off by default. purge_data requires an explicit non-empty data_dirs list.
+  purge_data: false
+  data_dirs: []
+  remove_users: false
+
+  services: []
+  unit_paths: []
+  file_paths: []
+  users: []
+
+  firewall:
+    remove_rule: false
+    cidr: ""
+    port: 0
+
+uninstall: "{{ uninstall_defaults | combine(uninstall_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/nginx/defaults/main.yml ----
+nginx_defaults:
+  # External domain (same as certificate CN); defaults to the platform domain
+  server_name: "{{ platform.domain }}"
+
+  http_port: 80
+  https_port: "{{ platform.https_port }}"
+
+  # Separate directory to avoid mixing with existing sites' (e.g. argus) /var/www
+  doc_root: "{{ platform.data_dir }}/www"
+  tls_dir: "{{ platform.data_dir }}/tls"
+  conf_path: /etc/nginx/conf.d/winter.conf
+
+  # Backend API (this platform's Server).
+  # Note: 8080 may already be occupied by other services on the same host; default to 8081, keep it consistent when deploying the Server.
+  api_upstream: "http://127.0.0.1:8081"
+
+  # Self-signed certificate validity (days)
+  tls_days: 825
+
+nginx: "{{ nginx_defaults | combine(nginx_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/postgresql/defaults/main.yml ----
+postgresql_defaults:
+  # Target major version. Empty = auto-detect (an already-running instance takes priority)
+  major: ""
+
+  # Empty = auto-detect (show data_directory)
+  data_dir: ""
+
+  # Connections and database
+  port: 5432
+  listen_addresses: "127.0.0.1"
+  db_name: winter
+  db_user: winter
+
+  # Whether to force-sync the password when the role already exists (default false: do not touch passwords others may have changed)
+  force_password: false
+
+  # Whether to tune memory parameters. Default false — tuning requires an instance restart, which interrupts other applications on the same machine (e.g. argus)
+  tune: false
+
+  # Effective when tune=true (rule of thumb for a 3GB single machine with co-located ceph; can be raised on a dedicated management node)
+  shared_buffers: 256MB
+  effective_cache_size: 1GB
+  work_mem: 4MB
+  maintenance_work_mem: 64MB
+  max_connections: 100
+
+  # Empty = postgresql-{{ major }}
+  service_name: ""
+
+  # Offline install: fetch the following RPMs from the internal repo (roles/local-repo), versions pinned to avoid on-site drift
+  rpm_subdir: rpm/pgdg17
+  # contrib is required: the Server migration creates the pgcrypto extension (0001_business.sql /
+  # 0001_audit.sql) on both single-node and HA databases. Without it a clean HA cluster fails
+  # to start the Server with 'extension pgcrypto is not available'.
+  rpm_packages:
+    - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
+  # contrib links against libperl.so.5.32, which the base OS already provides via perl-libs.
+  # Do NOT pin a perl-libs RPM here: the OS perl package requires an exact perl-libs version
+  # (e.g. 483), and installing a different one from the repo (e.g. 484) causes a dnf conflict.
+  # The local repo still carries perl-libs as a fallback for minimal hosts that lack it.
+  rpm_deps_subdir: rpm/base
+  rpm_deps: []
+  # Local staging directory
+  rpm_stage_dir: /var/tmp/winter-pg17
+
+postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/etcd/defaults/main.yml ----
+etcd_role:
+  # Binary source (official static package from the internal repo)
+  tarball: etcd-v3.5.17-linux-amd64.tar.gz
+  tarball_subdir: tarball
+  bin_dir: /usr/local/bin
+etcd_nodes: "{{ groups['management'] }}"
+
+# ---- consolidated from roles/haproxy/defaults/main.yml ----
+haproxy_role:
+  rpm: haproxy-2.8.14-4.el9.x86_64.rpm
+  rpm_subdir: rpm/base
+  config: /etc/haproxy/haproxy.cfg
+
+# ---- consolidated from roles/harbor/defaults/main.yml ----
+harbor_compose_command: docker-compose
+harbor_staging_dir: /var/tmp/winter-harbor
+
+# ---- consolidated from roles/keepalived/defaults/main.yml ----
+keepalived_config_path: /etc/keepalived/keepalived.conf
+keepalived_check_script: /etc/keepalived/check_nginx.sh
+keepalived_lvs_check_script: /etc/keepalived/check_lvs.sh
+keepalived_service: keepalived
+
+# ---- consolidated from roles/local-repo/defaults/main.yml ----
+local_repo:
+  # Artifact source (directory on the control machine)
+  src: "{{ playbook_dir }}/../artifacts/repo"
+  # Publish directory (Nginx root)
+  root: "{{ platform.data_dir }}/www/repo"
+  listen_port: "{{ repo_listen_port }}"
+  # Subnet allowed to access (change to the actual internal subnet on site)
+  allow_cidr: "192.168.101.0/24"
+
+# ---- consolidated from roles/observability/defaults/main.yml ----
+obs_health_retries: 30
+obs_health_delay: 2
+
+# ---- consolidated from roles/patroni/defaults/main.yml ----
+patroni:
+  # Target PG major version (must match the installed one)
+  pg_major: "17"
+  pg_bin: "/usr/pgsql-17/bin"
+  # Accounts (passwords come from group_vars/all.yml; see the vault_* variables in the templates)
+  superuser: postgres
+  repl_user: replicator
+  # Application database/account (keep consistent with the postgresql role)
+  app_db: "{{ postgresql.db_name }}"
+  app_user: "{{ postgresql.db_user }}"
+  # Whether to disable the system-provided postgresql-<ver> service
+  # - Standalone PG node: true (avoid competing with Patroni for the same instance)
+  # - Another service already uses the system instance (e.g. argus on .194): false
+  disable_standalone_pg: true
+  # Source of pip wheels (internal repo)
+  pip_subdir: pip
+
+# ---- consolidated from roles/realserver/defaults/main.yml ----
+realserver_sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
+realserver_helper: /usr/local/bin/winter-lvs-vip.sh
+realserver_unit: winter-lvs-vip.service
+realserver_vip: "{{ ha.vip }}"
+
+# ---- consolidated from roles/winter-server/defaults/main.yml ----
+server_run_user: winter-server
+server_health_retries: 20
+server_health_delay: 2
+
+# ---- Secrets (consolidated from group_vars/all.yml, ADR-45) ----
+# Fill real values on the control machine; this file is gitignored.
+vault_pg_password: "CHANGE_ME_PG_PASSWORD"
+vault_jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"
+vault_admin_password: "CHANGE_ME_ADMIN_PASSWORD"
+vault_grafana_admin_password: "CHANGE_ME_GRAFANA_PASSWORD"
+vault_keepalived_auth_pass: "VRRPPASS"
+vault_harbor_db_password: "CHANGE_ME_HARBOR_DB_PASSWORD"
+vault_harbor_redis_password: "CHANGE_ME_HARBOR_REDIS_PASSWORD"
+vault_harbor_admin_password: "CHANGE_ME_HARBOR_ADMIN_PASSWORD"
+vault_dns_tsig_secret: "CHANGE_ME_BASE64_TSIG_SECRET"

@@ -18,7 +18,7 @@
       Invalid PostgreSQL configuration: db_name={{ postgresql.db_name | default('') }},
       db_user={{ postgresql.db_user | default('') }}, port={{ postgresql.port }},
       listen_addresses={{ postgresql.listen_addresses | default('') }}; vault_pg_password must be
-      at least 12 characters in deploy/passwords.yml. Passwords are never stored in group_vars.
+      at least 12 characters in the gitignored deploy/group_vars/all.yml.
     success_msg: "PostgreSQL configuration is valid"
     quiet: true
 

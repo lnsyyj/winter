@@ -32,7 +32,7 @@ Additional prerequisites in `external` mode only:
 - `harbor.mode: builtin` — set `harbor.local_volume` (default `/var/lib/winter/harbor/data`).
 - `harbor.mode: external` — fill `harbor.database.*`, `harbor.redis.*`, `harbor.storage.nfs_*`.
 
-Credentials come only from `deploy/passwords.yml`: `vault_harbor_admin_password` (always),
+Credentials come only from `deploy/group_vars/all.yml`: `vault_harbor_admin_password` (always),
 plus `vault_harbor_db_password` and `vault_harbor_redis_password` in external mode.
 `harbor.yml` is rendered with mode 0640.
 

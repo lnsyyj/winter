@@ -3,12 +3,6 @@
 # PostgreSQL HA cluster bootstrap (migrated from postgresql-ha.yml, ADR-43). Odd-member assert + postgresql/etcd/patroni/haproxy convergence.
 
 # ---- migrated from playbook pre_tasks ----
-- name: Load deployment passwords
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [postgresql-ha]
 
 # A single-member etcd + single Patroni is a valid bootstrap state for the 1 -> 3 growth path,
 # but has no fault tolerance. Require an explicit opt-in so production never deploys it by

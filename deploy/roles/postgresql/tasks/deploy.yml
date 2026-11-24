@@ -5,14 +5,14 @@
 # Constraints:
 # - Never delete any existing database/role
 # - Do not change memory parameters by default (tuning requires a restart, which affects other services on the same machine)
-# - Password is read only from vault_pg_password, never written into group_vars
+# - Password is read only from vault_pg_password in gitignored group_vars/all.yml
 
 - name: Verify password is provided
   ansible.builtin.assert:
     that:
       - vault_pg_password is defined
       - vault_pg_password | length >= 12
-    fail_msg: "vault_pg_password is missing (≥12 characters). Define it in deploy/passwords.yml, which is not checked in."
+    fail_msg: "vault_pg_password is missing (≥12 characters). Define it in deploy/group_vars/all.yml, which is not checked in."
     quiet: true
   tags: [postgresql]
 

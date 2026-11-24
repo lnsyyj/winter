@@ -4,12 +4,6 @@
 # Play 2: Deploy Harbor replicas (hosts: harbor)
 
 # ---- pre_tasks ----
-- name: Load deployment passwords
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [application-ha]
 
 - name: Bind this Harbor replica to its internal address
   ansible.builtin.set_fact:

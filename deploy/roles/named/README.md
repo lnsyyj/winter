@@ -25,7 +25,7 @@ enterprise standard on RHEL, supports standard round-robin A records and master/
 | `dns.manage_systemd_resolved` | Disable the systemd-resolved stub listener to free `dns.listen_port`; `false` to manage the conflict yourself |
 | `dns.check_interval` | Local resolution retry window (seconds) |
 
-`vault_dns_tsig_secret` comes from `deploy/passwords.yml`. Generate one with
+`vault_dns_tsig_secret` comes from `deploy/group_vars/all.yml`. Generate one with
 `openssl rand -base64 32` on a trusted machine; the secret never goes into `group_vars`.
 
 ### Port 53 and systemd-resolved

@@ -4,12 +4,6 @@
 # Play 4: Configure the Keepalived Director with LVS load balancing (hosts: keepalived)
 
 # ---- pre_tasks ----
-- name: Load deployment passwords
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [application-ha]
 
 - name: Reject overlapping Director and real server roles
   ansible.builtin.assert:

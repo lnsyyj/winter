@@ -11,7 +11,7 @@
   ansible.builtin.assert:
     that:
       - vault_grafana_admin_password is defined and vault_grafana_admin_password | length > 0
-    fail_msg: "deploy/passwords.yml is missing vault_grafana_admin_password, see passwords.yml.example"
+    fail_msg: "deploy/group_vars/all.yml is missing vault_grafana_admin_password, see group_vars/all.yml.example"
     quiet: true
   when: observability.components.grafana.enabled | bool
   tags: [observability]

@@ -1,4 +1,0 @@
----
-# Fallback values only; harbor.* is governed by group_vars/all.yml (ADR-17 single configuration entry point).
-harbor_compose_command: docker-compose
-harbor_staging_dir: /var/tmp/winter-harbor

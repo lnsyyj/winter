@@ -24,7 +24,7 @@ stages override the bind address with `0.0.0.0` and advertise each node's intern
 - `observability.enabled: false` skips the whole stack (playbook-level `when`).
 - Setting a single component's `enabled: false` trims it, corresponding to ADR-18's "packaging layers".
 - `monitoring_retention_days` applies to both metrics and logs; audit retention is a separate setting (ADR-32).
-- `vault_grafana_admin_password` must come from `deploy/passwords.yml`; the role asserts this explicitly
+- `vault_grafana_admin_password` must come from `deploy/group_vars/all.yml`; the role asserts this explicitly
   and will not generate a default weak password.
 - vmalert's `rules/platform.yml` is an M0 placeholder rule (never true); after collection is connected, add
   the "VictoriaLogs disk watermark" alert per ADR-18 and the "queue depth / oldest task age" alert per ADR-36.

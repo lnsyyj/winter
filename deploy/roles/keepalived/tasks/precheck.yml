@@ -22,7 +22,7 @@
       - vault_keepalived_auth_pass | default('') | length > 0
       - vault_keepalived_auth_pass | default('') | length <= 8
     fail_msg: >-
-      vault_keepalived_auth_pass must be set in deploy/passwords.yml and at most 8 characters for
+      vault_keepalived_auth_pass must be set in deploy/group_vars/all.yml and at most 8 characters for
       VRRP PASS authentication. All [keepalived] nodes must share the same value.
     success_msg: "VRRP authentication password is valid"
     quiet: true

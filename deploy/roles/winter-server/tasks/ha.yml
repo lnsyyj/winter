@@ -4,12 +4,6 @@
 # Play 1: Deploy stateless Server replicas (hosts: winter-server)
 
 # ---- pre_tasks ----
-- name: Load deployment passwords
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [application-ha]
 
 - name: Confirm this is a supported distribution
   ansible.builtin.assert:

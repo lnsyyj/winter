@@ -4,12 +4,6 @@
 # Play 2: Rewire remaining monitor nodes and drop removed peers (hosts: observability)
 
 # ---- pre_tasks ----
-- name: Load deployment passwords (required by Grafana)
-  ansible.builtin.include_vars:
-    file: "{{ playbook_dir }}/../passwords.yml"
-  failed_when: false
-  no_log: true
-  tags: [observability-scale-in]
 
 - name: Restore localhost binding when a single monitor node remains
   ansible.builtin.set_fact:

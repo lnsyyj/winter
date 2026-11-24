@@ -13,7 +13,7 @@ Corresponds to deployment phase `deploy`. The goal is not "install a PostgreSQL"
 
 - **Never delete any existing database or role**; only add the `winter` database and `winter` role.
 - **Do not change memory parameters by default**: `ALTER SYSTEM` requires a restart, which would interrupt other services on the same machine (e.g. argus). To tune, explicitly set `postgresql.tune: true`.
-- The password is read only from `vault_pg_password` in `deploy/passwords.yml` (excluded by `.gitignore`), **never written into group_vars**.
+- The password is read only from `vault_pg_password` in `deploy/group_vars/all.yml` (excluded by `.gitignore`), which is gitignored.
 - If the role already exists, its password is not changed by default (`force_password: false`), to avoid overwriting a password someone changed manually.
 
 ## Variables (`group_vars/all.yml`)
@@ -32,7 +32,7 @@ Corresponds to deployment phase `deploy`. The goal is not "install a PostgreSQL"
 sudo -u postgres psql -tAc "select datname from pg_database where datname='winter'"
 sudo -u postgres psql -tAc "select rolname from pg_roles where rolname='winter'"
 
-# Connect once with the application account (password from passwords.yml)
+# Connect once with the application account (password from group_vars/all.yml)
 PGPASSWORD=... psql -h 127.0.0.1 -U winter -d winter -c 'select 1'
 ```
 

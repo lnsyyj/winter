@@ -17,7 +17,7 @@
       - vault_pg_password is defined and vault_pg_password | length > 0
       - vault_jwt_secret is defined and vault_jwt_secret | length >= 32
       - vault_admin_password is defined and vault_admin_password | length > 0
-    fail_msg: "deploy/passwords.yml is missing vault_pg_password / vault_jwt_secret(>=32) / vault_admin_password"
+    fail_msg: "deploy/group_vars/all.yml is missing vault_pg_password / vault_jwt_secret(>=32) / vault_admin_password"
     quiet: true
   tags: [server]
 

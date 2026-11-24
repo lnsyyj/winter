@@ -10,7 +10,7 @@
 - name: Precheck monitoring | Grafana administrator password is set
   ansible.builtin.assert:
     that: vault_grafana_admin_password | default('') | length > 0
-    fail_msg: "vault_grafana_admin_password is missing in deploy/passwords.yml. Copy passwords.yml.example and set a real password; the role never creates a default one."
+    fail_msg: "vault_grafana_admin_password is missing in deploy/group_vars/all.yml. Copy group_vars/all.yml.example and set a real password; the role never creates a default one."
     success_msg: "Grafana administrator password is configured"
     quiet: true
 

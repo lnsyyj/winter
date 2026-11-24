@@ -1,6 +1,0 @@
----
-# Only fallback values unrelated to business configuration go here.
-# Component lists, ports and versions are all governed by observability in group_vars/all.yml (ADR-17 single configuration entry point);
-# this file deliberately does not define a dictionary with the same name, to avoid the old problem of "role defaults being replaced wholesale".
-obs_health_retries: 30
-obs_health_delay: 2
