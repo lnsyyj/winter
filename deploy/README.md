@@ -438,7 +438,7 @@ deploy/
     ├── system-init/           # base OS tools + chrony clock sync (standalone, reused by bootstrap)
     ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
     ├── uninstall/             # platform removal with data preserved by default
-    ├── prechecks/             # read-only checks
+    ├── system-checks/         # read-only system checks (precheck action)
     ├── local-repo/            # publishes the internal artifact repo (8082)
     ├── postgresql/ nginx/     # database and access layer
     ├── etcd/ patroni/ haproxy/# PG high availability

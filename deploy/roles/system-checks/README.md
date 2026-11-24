@@ -1,4 +1,4 @@
-# prechecks · Pre-deployment checks (read-only)
+# system-checks · Pre-deployment checks (read-only)
 
 Corresponds to installation/deployment manual phase C3 and test case TC-26. **This role must not modify the system**: no package installation, no sysctl writes, no firewall changes.
 
@@ -10,7 +10,7 @@ Corresponds to installation/deployment manual phase C3 and test case TC-26. **Th
 
 | File | What it checks | On failure |
 | --- | --- | --- |
-| `tasks/main.yml` | Group validity (cannot be in both management and ceph_nodes) | Fail immediately, indicating which group the host should belong to |
+| `tasks/precheck.yml` | Group validity (main.yml is the action dispatcher) (cannot be in both management and ceph_nodes) | Fail immediately, indicating which group the host should belong to |
 | `tasks/os.yml` | CentOS Stream 9, podman present | Fail and indicate the baseline is locked (ADR-11) |
 | `tasks/resources.yml` | Management plane min vCPU / RAM / free root GB (all configurable); managed node ≥N data disks | Fail in strict mode, warn only in report-only mode; both thresholds and strictness are configurable |
 | `tasks/time.yml` | chronyd running, offset ≤1s | Fail; clock drift causes cephadm to fail immediately |
@@ -34,7 +34,7 @@ Corresponds to installation/deployment manual phase C3 and test case TC-26. **Th
 
 ## Variables
 
-All are under `prechecks:` in `deploy/group_vars/all.yml`, not hardcoded in this role. The role's `defaults/main.yml` only provides fallback values.
+All are under `prechecks:` in `deploy/group_vars/all.yml`, not hardcoded in this role. ADR-45 removed role defaults; all.yml is the single config source.
 
 Resource thresholds are fully tunable:
 

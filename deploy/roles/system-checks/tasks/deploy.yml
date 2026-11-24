@@ -1,0 +1,7 @@
+---
+# No-op: system checks run only under the `precheck` action (see precheck.yml).
+# A debug task keeps this file a valid task list when included by the dispatcher.
+- name: System checks skipped (action is not precheck)
+  ansible.builtin.debug:
+    msg: "System checks are read-only and run only with the `prechecks` action"
+  when: winter_ops_action | default('deploy') != 'precheck'

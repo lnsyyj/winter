@@ -14,15 +14,14 @@
 #   ./deploy.sh deploy    -i inventory/operations/scale-out-postgresql -t postgresql-scale-out \
 #       -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'
 
-- name: Global pre-deployment checks
+- name: System checks
   hosts: all
   become: true
   gather_facts: true
   any_errors_fatal: true
   tags: [prechecks]
   roles:
-    - role: prechecks
-      when: winter_ops_action | default('deploy') == 'precheck'
+    - role: system-checks
       tags: [prechecks]
 
 - name: System initialization

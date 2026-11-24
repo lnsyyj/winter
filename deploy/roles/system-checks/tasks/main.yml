@@ -1,0 +1,5 @@
+---
+# ADR-42 action dispatcher: only the `precheck` action runs checks; other actions are no-ops.
+# This keeps the system-checks play unconditional in site.yml (no when gate) without slowing
+# down ordinary deploys with a full read-only check pass.
+- ansible.builtin.include_tasks: "{{ winter_ops_action | default('deploy') }}.yml"

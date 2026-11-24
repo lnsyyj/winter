@@ -558,7 +558,7 @@ bootstrap_defaults:
   # Base OS packages and clock synchronization were extracted into roles/system-init,
   # which can run on its own. Configure them with system_init_overrides in group_vars/all.yml.
 
-  # Kernel parameters previously only reported by roles/prechecks.
+  # Kernel parameters previously only reported by roles/system-checks.
   # Off by default during M0 so bootstrap stays non-invasive; set bootstrap_overrides.enforce_kernel: true
   # (together with prechecks.enforce_kernel) to actually write them.
   enforce_kernel: false
