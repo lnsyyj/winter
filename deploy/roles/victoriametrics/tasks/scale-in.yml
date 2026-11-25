@@ -26,14 +26,14 @@
   ansible.builtin.set_fact:
     victoriametrics_metrics_url: >-
       {{ victoriametrics_scale.metrics_query_url if (victoriametrics_scale.metrics_query_url | default('') | length > 0)
-         else (hostvars[(groups['victoriametrics'] | difference(victoriametrics_scale.removed_nodes | default([])) | first)]['ansible_host']
+         else (hostvars[(groups['victoriametrics'] | difference(victoriametrics_scale.removed_nodes | default([])) | first)]['inventory_hostname']
                | default(victoriametrics_listen_addr)) }}
   tags: [observability-scale-in]
 
 - name: Compute the Server endpoint used by the Alertmanager webhook
   ansible.builtin.set_fact:
     victoriametrics_server_url: >-
-      {{ hostvars[groups['etcd'] | first]['ansible_host'] | default(victoriametrics_listen_addr) }}
+      {{ hostvars[groups['etcd'] | first]['inventory_hostname'] | default(victoriametrics_listen_addr) }}
   tags: [observability-scale-in]
 
 - name: Point vmalert only at remaining Alertmanager replicas

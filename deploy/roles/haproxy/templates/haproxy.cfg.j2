@@ -25,7 +25,7 @@ backend winter_pg_primary
     http-check expect status 200
     default-server inter {{ pg_cluster.haproxy.check_interval }} fall {{ pg_cluster.haproxy.check_fall }} rise {{ pg_cluster.haproxy.check_rise }}
 {% for h in groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) %}
-    server {{ h }} {{ hostvars[h]['ansible_host'] }}:{{ pg_cluster.port }} check port {{ pg_cluster.rest_port }}
+    server {{ h }} {{ hostvars[h]['inventory_hostname'] }}:{{ pg_cluster.port }} check port {{ pg_cluster.rest_port }}
 {% endfor %}
 
 # Optional: read-only entry point (pointing to replicas), not currently used, kept for future expansion

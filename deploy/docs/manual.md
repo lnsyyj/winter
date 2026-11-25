@@ -140,6 +140,9 @@ curl -sk -o /dev/null -w 'https443=%{http_code}\n' https://192.168.101.189/
 ## 3. PostgreSQL HA（3 节点 etcd + Patroni + HAProxy）
 
 > inventory 里 `[etcd]` 已是 3 台，直接 bootstrap，不需要 `allow_single_node_bootstrap`。
+> 想**只部署 etcd**（DCS 层）而不带 Patroni/HAProxy，用独立 tag：
+> `./deploy.sh deploy -t etcd`，详见 [etcd 单独部署手册](./etcd.md)。
+> 下面的一步到位会连带部署 etcd，无需先单独跑。
 
 ```bash
 ./deploy.sh deploy -t postgresql-ha
@@ -313,6 +316,7 @@ cd /root/github/winter/deploy
 ./deploy.sh deploy -t os-init
 ./deploy.sh deploy -t bootstrap
 ./deploy.sh deploy -t repo-nginx
+./deploy.sh deploy -t etcd                       # 可选：只部署 DCS 层；postgresql-ha 会连带部署
 ./deploy.sh deploy -t postgresql
 ./deploy.sh deploy -t nginx
 ./deploy.sh deploy -t victoriametrics

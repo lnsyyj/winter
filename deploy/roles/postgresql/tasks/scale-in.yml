@@ -27,7 +27,7 @@
 # ---- migrated from playbook tasks ----
 - name: Confirm removed nodes are replicas, never the leader
   ansible.builtin.uri:
-    url: "http://{{ hostvars[item]['ansible_host'] }}:{{ pg_cluster.rest_port }}/replica"
+    url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ pg_cluster.rest_port }}/replica"
     status_code: 200
   loop: "{{ pg_scale.removed_nodes }}"
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.removed_nodes) | first }}"
@@ -37,7 +37,7 @@
   ansible.builtin.shell: |
     set -o pipefail
     {{ etcd_role.bin_dir }}/etcdctl \
-      --endpoints=http://{{ hostvars[groups['etcd'] | difference(pg_scale.removed_nodes) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }} \
+      --endpoints=http://{{ hostvars[groups['etcd'] | difference(pg_scale.removed_nodes) | first]['inventory_hostname'] }}:{{ pg_cluster.etcd.client_port }} \
       member list -w table \
     | awk -F'|' -v n="{{ item }}" '$3 ~ n {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}'
   args:
@@ -51,7 +51,7 @@
 - name: Remove etcd members
   ansible.builtin.command: >-
     {{ etcd_role.bin_dir }}/etcdctl
-    --endpoints=http://{{ hostvars[groups['etcd'] | difference(pg_scale.removed_nodes) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }}
+    --endpoints=http://{{ hostvars[groups['etcd'] | difference(pg_scale.removed_nodes) | first]['inventory_hostname'] }}:{{ pg_cluster.etcd.client_port }}
     member remove {{ item.stdout | trim }}
   loop: "{{ pg_etcd_member_ids.results }}"
   when: item.stdout | trim | length > 0

@@ -26,7 +26,7 @@
   ansible.builtin.set_fact:
     pg_existing_members: "{{ groups['etcd'] | difference(pg_scale.nodes) | length }}"
     pg_expected_members: "{{ groups['etcd'] | length }}"
-    pg_existing_endpoint: "{{ hostvars[groups['etcd'] | difference(pg_scale.nodes) | first]['ansible_host'] }}"
+    pg_existing_endpoint: "{{ hostvars[groups['etcd'] | difference(pg_scale.nodes) | first]['inventory_hostname'] }}"
     # Learner mode is required only when bootstrapping from a single-member cluster.
     pg_use_learner: "{{ (groups['etcd'] | difference(pg_scale.nodes) | length) == 1 }}"
   tags: [postgresql-scale-out]
@@ -54,7 +54,7 @@
 # ---- migrated from playbook post_tasks ----
 - name: Verify the new nodes are streaming replicas
   ansible.builtin.uri:
-    url: "http://{{ hostvars[item]['ansible_host'] }}:{{ pg_cluster.rest_port }}/replica"
+    url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ pg_cluster.rest_port }}/replica"
     status_code: 200
   loop: "{{ pg_scale.nodes }}"
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"

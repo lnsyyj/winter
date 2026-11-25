@@ -7,8 +7,8 @@
 
 - name: Compute LVS backends and VRRP peers
   ansible.builtin.set_fact:
-    nginx_lvs_backends: "{{ groups['nginx'] | default([]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-    ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+    nginx_lvs_backends: "{{ groups['nginx'] | default([]) | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}"
+    ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}"
   tags: [always]
 
 - name: Inject LVS real servers into the Keepalived configuration

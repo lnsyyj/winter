@@ -78,7 +78,7 @@
     target="{{ pg_healthy_target | default(pg_expected_members | default(groups['etcd'] | length)) }}"
     for i in $(seq 1 60); do
       started=$({{ etcd_role.bin_dir }}/etcdctl \
-        --endpoints=http://{{ hostvars[groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) | first]['ansible_host'] }}:{{ pg_cluster.etcd.client_port }} \
+        --endpoints=http://{{ hostvars[groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) | first]['inventory_hostname'] }}:{{ pg_cluster.etcd.client_port }} \
         member list 2>/dev/null | grep -c 'started')
       [ "$started" -eq "$target" ] && exit 0
       sleep 2

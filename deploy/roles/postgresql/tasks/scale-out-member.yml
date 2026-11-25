@@ -32,7 +32,7 @@
     {{ etcd_role.bin_dir }}/etcdctl
     --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }}
     member add {{ pg_join_node }}
-    --peer-urls=http://{{ hostvars[pg_join_node]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
+    --peer-urls=http://{{ hostvars[pg_join_node]['inventory_hostname'] }}:{{ pg_cluster.etcd.peer_port }}
     --learner
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
@@ -46,7 +46,7 @@
     {{ etcd_role.bin_dir }}/etcdctl
     --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }}
     member add {{ pg_join_node }}
-    --peer-urls=http://{{ hostvars[pg_join_node]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
+    --peer-urls=http://{{ hostvars[pg_join_node]['inventory_hostname'] }}:{{ pg_cluster.etcd.peer_port }}
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   register: pg_etcd_add_voting

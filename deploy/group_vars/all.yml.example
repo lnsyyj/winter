@@ -158,7 +158,7 @@ winter_agent_overrides:
     remove_user: false
     revoke_cert: false
 
-# PostgreSQL HA membership changes (ADR-17 / ADR-37). Nodes must already be in [management] in inventory/pgha.
+# PostgreSQL HA membership changes (ADR-17 / ADR-37). Nodes must already be in [etcd] in inventory/hosts.ini.
 # The final etcd member count must stay odd and >= 3. Data is preserved unless purge_data is set.
 pg_scale_defaults:
   nodes: []            # scale-out targets, e.g. [pg-d, pg-e]
@@ -248,7 +248,7 @@ pg_cluster_defaults:
   scope: winter-pg
   # Single-node HA bootstrap (1-member etcd + single Patroni + HAProxy) is technically valid but
   # offers no fault tolerance. Opt in explicitly for a 1 -> 3 online growth path; keep false for
-  # production so an undersized [management] is never deployed by accident.
+  # production so an undersized [etcd] is never deployed by accident.
   allow_single_node_bootstrap: false
   port: 5433                # PG instance port (same on every node)
   rest_port: 8008           # Patroni REST API
@@ -369,7 +369,7 @@ winter_server:
 
 # High availability (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas sit behind
 # Nginx, with Keepalived providing a floating VIP on the [keepalived] nodes. Single-node inventories keep
-# everything on management and leave ha.enabled=false.
+# everything on etcd and leave ha.enabled=false.
 ha_defaults:
   enabled: false
   interface: eth0                         # NIC that carries the VIP

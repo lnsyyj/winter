@@ -55,6 +55,16 @@
     - role: repo-nginx
       tags: [repo-nginx]
 
+- name: etcd cluster (DCS for Patroni)
+  hosts: etcd
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [etcd]
+  roles:
+    - role: etcd
+      tags: [etcd]
+
 - name: PostgreSQL single instance
   hosts: postgresql
   become: true
