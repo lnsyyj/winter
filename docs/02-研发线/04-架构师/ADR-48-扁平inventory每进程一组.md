@@ -53,8 +53,20 @@ ADR-47 把 inventory 做成"每拓扑 × 每软件一个组"（`pgha-etcd`、`lv
 - ADR-47 的"一个拓扑一眼看清软件分布"——换来极简结构（~60 行、13 个组）。
 - 别名主机名（`ctl`/`pg-a`）的可读性——日志/节点标识里将出现 IP。
 
-## 5. 验证（2026-11-25）
+## 5. 连接用户与 Python 解释器的归属
+
+inventory 不再写 `[all:vars] ansible_user / ansible_python_interpreter`（原是历史遗留）：
+
+- **连接用户**：跟控制机当前用户（本项目为 root）；如需普通用户 + sudo，在 `ansible.cfg`
+  用 `remote_user` + `become`，或按 inventory 分组单独设——不在全局写死。
+- **Python 解释器**：由 `ansible.cfg` 的 `interpreter_python = auto_silent` 自动发现，
+  不硬编码 `/usr/bin/python3`（硬编码会失去自动发现的灵活性）。
+
+实测：去掉 `[all:vars]` 后 `ansible -m ping` 仍返回 pong、Python 自动发现正常。
+
+## 6. 验证（2026-11-25）
 
 - inventory 解析 RC=0；`[management]`=3 台、`[lvs-dr-director]`=1 台。
 - site.yml syntax-check 通过。
 - deploy.sh 去掉默认 `--limit all-in-one`（扁平 inventory 无该组）。
+- 去掉 `[all:vars]` 后 ping/Python 发现正常（见第 5 节）。
