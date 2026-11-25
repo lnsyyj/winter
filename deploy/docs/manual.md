@@ -158,7 +158,14 @@ for ip in 189 197 198; do echo -n "node$ip: "; ssh root@192.168.101.$ip \
   'printf "etcd=%s patroni=%s haproxy=%s " $(systemctl is-active etcd) $(systemctl is-active patroni) $(systemctl is-active haproxy); echo'; done
 ```
 
-端口说明：`5432` = 系统库；`5433` = Patroni HA 实例；`5434` = HAProxy 入口（应用应连这里）。
+端口说明：`5432` = 系统库（HA 部署后会被停用，由 Patroni 接管）；`5433` = Patroni HA 实例；`5434` = HAProxy 入口（应用应连这里）。
+
+> **必做：HA 之后重部署 Server。** Patroni 会停掉系统 PG 5432，而之前单节点部署的
+> `winter-server` 还连着 5432 → healthz 变 503。必须重跑一次让它切到 5434：
+> ```bash
+> ./deploy.sh deploy -t winter-server
+> # 验证 env 里 DATABASE_URL 端口是 5434，healthz=200
+> ```
 
 ---
 
@@ -197,10 +204,10 @@ cat /etc/winter/pg-migrated   # marker 存在 = 迁移已完成（幂等）
 ```bash
 ./deploy.sh deploy -t application-ha \
   -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},
-       "winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
+       "winter_server_ha_overrides":{"database_host":"192.168.101.198","database_endpoint":"haproxy"}}'
 ```
 
-> `interface` 按实际网卡名调整；`database_host` 填 HAProxy 入口所在节点。
+> `interface` 按实际网卡名调整；`database_host` 填 PG HA 入口所在节点；`database_endpoint: haproxy` 是 application-ha 断言的必要条件。
 > 此步会把 Server 的连接从 5432 切到 5434。
 
 **验证**：
@@ -217,16 +224,21 @@ ssh root@192.168.101.197 'curl -sk -o /dev/null -w "VIP:443=%{http_code}\n" --ma
 ```bash
 ./deploy.sh deploy -t lvs-director,lvs-realserver \
   -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34","lvs":{"enabled":true,"scheduler":"rr"}},
-       "winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
+       "winter_server_ha_overrides":{"database_host":"192.168.101.198","database_endpoint":"haproxy"}}'
 ```
 
 **验证**：
 
 ```bash
-ssh root@192.168.101.189 'cat /proc/net/ip_vs'            # 有 ipvs 规则
+ssh root@192.168.101.189 'cat /proc/net/ip_vs'            # 有 ipvs 规则（含两台 RealServer）
 for h in 197 198; do echo -n "node$h lo-vip="; ssh root@192.168.101.$h 'ip addr show lo | grep -c 192.168.101.250'; done
-curl -sk -o /dev/null -w 'VIP:443=%{http_code}\n' https://192.168.101.250/
+curl -sk -o /dev/null -w 'VIP:443=%{http_code}\n' https://192.168.101.250/   # 从外部客户端执行
 ```
+
+> **LVS/DR 陷阱**：`interface` 必须填实际网卡名（本环境是 `ens34`，默认 `eth0` 会导致
+> Keepalived 启动失败）；RealServer 的 sysctl 已含 `rp_filter=0`（否则 SYN_RECV 卡住）。
+> **不要在 Director 本机 curl VIP**——LVS/DR 下 Director 本机访问自己持有的 VIP 会走
+> loopback 被 ipvs 拦截，连接卡在 SYN_RECV 超时；必须从外部客户端测（期望 200）。
 
 ---
 
@@ -323,7 +335,7 @@ cd /root/github/winter/deploy
 ./deploy.sh deploy -t winter-server
 ./deploy.sh deploy -t postgresql-ha
 ./deploy.sh deploy -t postgresql-migrate         # 需先造源数据
-./deploy.sh deploy -t application-ha -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
-./deploy.sh deploy -t lvs-director,lvs-realserver -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34","lvs":{"enabled":true,"scheduler":"rr"}},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
+./deploy.sh deploy -t application-ha -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.198","database_endpoint":"haproxy"}}'
+./deploy.sh deploy -t lvs-director,lvs-realserver -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34","lvs":{"enabled":true,"scheduler":"rr"}},"winter_server_ha_overrides":{"database_host":"192.168.101.198","database_endpoint":"haproxy"}}'
 ./deploy.sh verify
 ```

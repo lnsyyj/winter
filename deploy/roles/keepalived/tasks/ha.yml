@@ -14,10 +14,10 @@
 
 - name: Compute replica addresses for upstreams, LVS backends and VRRP peers
   ansible.builtin.set_fact:
-    server_upstreams: "{{ groups['winter-server'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-    harbor_upstreams: "{{ groups['harbor'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-    nginx_lvs_backends: "{{ groups['nginx'] | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
-    ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'ansible_host') | select('defined') | list }}"
+    server_upstreams: "{{ groups['winter-server'] | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}"
+    harbor_upstreams: "{{ groups['harbor'] | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}"
+    nginx_lvs_backends: "{{ groups['nginx'] | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}"
+    ha_peer_addresses: "{{ groups['keepalived'] | difference([inventory_hostname]) | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}"
   tags: [application-ha]
 
 - name: Inject LVS real servers into the Keepalived configuration

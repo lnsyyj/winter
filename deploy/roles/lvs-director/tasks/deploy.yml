@@ -4,14 +4,14 @@
 # membership defines the topology, so one unified inventory needs no static group split.
 - name: Discover LVS RealServer addresses from [lvs-backend]
   ansible.builtin.set_fact:
-    lvs_realservers: "{{ groups['lvs-backend'] | default([]) | map('extract', hostvars, 'ansible_host') | list }}"
+    lvs_realservers: "{{ groups['lvs-backend'] | default([]) | map('extract', hostvars, 'inventory_hostname') | list }}"
   run_once: true
   tags: [lvs, lvs-director]
 
 - name: Discover LVS Directors and VRRP peers from [keepalived-director]
   ansible.builtin.set_fact:
-    lvs_directors: "{{ groups['keepalived-director'] | default([]) | map('extract', hostvars, 'ansible_host') | list }}"
-    ha_peer_addresses: "{{ groups['keepalived-director'] | default([]) | map('extract', hostvars, 'ansible_host') | reject('equalto', ansible_host) | list }}"
+    lvs_directors: "{{ groups['keepalived-director'] | default([]) | map('extract', hostvars, 'inventory_hostname') | list }}"
+    ha_peer_addresses: "{{ groups['keepalived-director'] | default([]) | map('extract', hostvars, 'inventory_hostname') | reject('equalto', inventory_hostname) | list }}"
   run_once: true
   tags: [lvs, lvs-director]
 

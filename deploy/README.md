@@ -31,7 +31,7 @@ IPs if HA is rebuilt — back up PG data before any such rebuild.
     -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'  # transactional op
 ./deploy.sh deploy -t postgresql-ha                                     # PG HA bootstrap
 ./deploy.sh deploy -t lvs-director,lvs-realserver \
-    -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
+    -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189","database_endpoint":"haproxy"}}'
 ```
 
 - Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`postgresql-ha`,

@@ -8,7 +8,7 @@
   ansible.builtin.set_fact:
     monitor_grafana_upstreams: >-
       {{ groups['victoriametrics'] | difference(victoriametrics_scale.removed_nodes | default([]))
-         | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
+         | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}
   tags: [observability-scale-in]
 
 

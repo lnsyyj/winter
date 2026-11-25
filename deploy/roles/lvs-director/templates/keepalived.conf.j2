@@ -11,7 +11,7 @@
 {% endif %}
 {% set lb_nodes = lvs_directors | default([inventory_hostname]) %}
 {% set lb_count = lb_nodes | length if lb_nodes | length > 0 else 1 %}
-{% set node_index = lb_nodes.index(ansible_host) if ansible_host in lb_nodes else 0 %}
+{% set node_index = lb_nodes.index(inventory_hostname) if inventory_hostname in lb_nodes else 0 %}
 {% set lvs_on = ha.lvs.enabled | default(false) | bool %}
 
 global_defs {

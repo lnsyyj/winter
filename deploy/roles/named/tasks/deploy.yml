@@ -22,7 +22,7 @@
       {{ named.master_addresses | default([]) if (named.master_addresses | default([]) | length > 0)
          else ((groups['dns_masters'] | default(groups['named'] | default([])))
          | difference(groups['dns_slaves'] | default([]))
-         | map('extract', hostvars, 'ansible_host') | select('defined') | list) }}
+         | map('extract', hostvars, 'inventory_hostname') | select('defined') | list) }}
   tags: [named]
 
 - name: Derive DNS slave addresses
@@ -30,7 +30,7 @@
     dns_slave_addresses: >-
       {{ named.slave_addresses | default([]) if (named.slave_addresses | default([]) | length > 0)
          else (groups['dns_slaves'] | default([])
-         | map('extract', hostvars, 'ansible_host') | select('defined') | list) }}
+         | map('extract', hostvars, 'inventory_hostname') | select('defined') | list) }}
   tags: [named]
 
 - name: Derive VIP A records

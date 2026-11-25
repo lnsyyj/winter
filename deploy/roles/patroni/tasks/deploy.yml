@@ -123,7 +123,9 @@
 - name: Check cluster status
   ansible.builtin.shell: |
     set -o pipefail
-    patronictl -c /etc/patroni/patroni.yml list 2>&1 | head -8
+    # Absolute path: Ansible `become` resets PATH to /sbin:/bin:/usr/sbin:/usr/bin,
+    # which excludes /usr/local/bin where pip3 installs patronictl.
+    /usr/local/bin/patronictl -c /etc/patroni/patroni.yml list 2>&1 | head -8
   args:
     executable: /bin/bash
   register: patroni_list

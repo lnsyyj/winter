@@ -7,3 +7,9 @@ net.ipv4.conf.default.arp_ignore = 1
 net.ipv4.conf.default.arp_announce = 2
 net.ipv4.conf.lo.arp_ignore = 1
 net.ipv4.conf.lo.arp_announce = 2
+# LVS/DR: the Director forwards packets with the VIP as destination IP but the
+# RealServer's own MAC. Replies leave via lo with the VIP as source address, so
+# strict reverse-path filtering drops them (connections stall in SYN_RECV).
+net.ipv4.conf.all.rp_filter = 0
+net.ipv4.conf.default.rp_filter = 0
+net.ipv4.conf.lo.rp_filter = 0

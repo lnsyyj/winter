@@ -19,7 +19,7 @@
   ansible.builtin.set_fact:
     monitor_peers: >-
       {{ groups['victoriametrics'] | difference(victoriametrics_scale.removed_nodes | default([]))
-         | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
+         | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}
   tags: [observability-scale-in]
 
 - name: Recompute metrics query endpoint
@@ -40,7 +40,7 @@
   ansible.builtin.set_fact:
     victoriametrics_vmalert_notifiers: >-
       {{ groups['victoriametrics'] | difference(victoriametrics_scale.removed_nodes | default([]))
-         | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
+         | map('extract', hostvars, 'inventory_hostname') | select('defined') | list }}
   tags: [observability-scale-in]
 
 

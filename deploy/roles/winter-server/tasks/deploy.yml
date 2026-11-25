@@ -44,11 +44,13 @@
 # key cannot reference server_use_haproxy defined in the same task.
 - name: Decide whether this Server uses the HAProxy DB entry point
   ansible.builtin.set_fact:
-    # explicit override wins; otherwise HAProxy config presence decides; multi-node always uses HA
+    # explicit override wins; otherwise the ACTIVE HAProxy service decides.
+    # Node count is deliberately NOT used: a 3-node inventory without HAProxy deployed (e.g.
+    # during staged rollout) must still reach the system PG on 5432, not a dead 5434.
     server_use_haproxy: >-
       {{ (winter_server_ha.database_endpoint | default('auto') == 'haproxy') or
          (winter_server_ha.database_endpoint | default('auto') == 'auto' and
-          (winter_server_haproxy_active.rc == 0 or (groups['etcd'] | default([]) | length) > 1)) }}
+          winter_server_haproxy_active.rc == 0) }}
   tags: [server]
 
 - name: Derive the database endpoint for this Server

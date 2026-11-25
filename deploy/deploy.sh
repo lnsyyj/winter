@@ -43,9 +43,9 @@ Examples:
   ./deploy.sh deploy -t postgresql-scale-out \
       -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
   ./deploy.sh deploy -t lvs-director,lvs-realserver \
-      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
+      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189","database_endpoint":"haproxy"}}'
   ./deploy.sh deploy -t application-ha \
-      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
+      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189","database_endpoint":"haproxy"}}'
 
 Per-operation variables (pass via -e; all.yml holds only defaults):
   named              -e '{"named_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
@@ -55,7 +55,7 @@ Per-operation variables (pass via -e; all.yml holds only defaults):
   postgresql-migrate (no extra vars; stop-the-world)
   victoriametrics-scale-out -e '{"victoriametrics_scale_overrides":{"nodes":["<node>",...]}}'
   victoriametrics-scale-in  -e '{"victoriametrics_scale_overrides":{"removed_nodes":["<node>",...]}}'
-  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"winter_server_ha_overrides":{"database_host":"<PG-HA-entry>"}}'
+  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"winter_server_ha_overrides":{"database_host":"<PG-HA-entry>","database_endpoint":"haproxy"}}'
   LVS/DR (app-ha)    add "lvs":{"enabled":true,"scheduler":"rr"} inside ha_overrides
 
 Notes:
