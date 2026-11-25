@@ -24,20 +24,21 @@ Actions (first argument, becomes winter_ops_action):
   upgrade       Verify artifacts, converge to pinned versions, re-run acceptance
 
 Targets are selected by -t tags and inventory groups. All available tags:
-  Components:  prechecks system-init bootstrap local-repo postgresql nginx observability
+  Components:  prechecks os-init bootstrap repo-nginx postgresql nginx victoriametrics
                winter-server harbor keepalived named agent
   Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
-               observability-scale-out observability-scale-in application-ha destroy
+               victoriametrics-scale-out victoriametrics-scale-in application-ha destroy
 
-Inventory: one file inventory/hosts.ini. One group per process, IPs listed directly:
-  [management] [system-init] [postgresql] [nginx] [winter-server] [harbor] [keepalived]
-  [named] [observability] [local-repo] [agent] [lvs-dr-director] [lvs-dr-realserver]
-  Group name = what runs there. Use -t to select components; use ansible --limit for a subset.
-  See ADR-48. NOTE: hosts are raw IPs, so Patroni/etcd node names become IPs on HA rebuild.
+Inventory: one file inventory/hosts.ini. One group per SOFTWARE NAME, IPs listed directly:
+  [etcd] [os-init] [postgresql] [nginx] [winter-server] [harbor] [keepalived]
+  [named] [victoriametrics] [vmalert] [victorialogs] [alertmanager] [grafana] [repo-nginx]
+  [winter-agent] [keepalived-director] [lvs-backend]
+  Group name = software running there. Use -t to select components. See ADR-48/49.
+  NOTE: hosts are raw IPs, so Patroni/etcd node names become IPs on HA rebuild.
 
 Examples:
   ./deploy.sh deploy                                               # default inventory
-  ./deploy.sh deploy -t local-repo
+  ./deploy.sh deploy -t repo-nginx
   ./deploy.sh prechecks -t postgresql
   ./deploy.sh deploy -t postgresql-scale-out \
       -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
@@ -52,8 +53,8 @@ Per-operation variables (pass via -e; all.yml holds only defaults):
   postgresql-scale-out  -e '{"pg_scale_overrides":{"nodes":["<new-node>",...]}}'
   postgresql-scale-in  -e '{"pg_scale_overrides":{"removed_nodes":["<node>",...]}}'
   postgresql-migrate (no extra vars; stop-the-world)
-  observability-scale-out -e '{"monitoring_scale_overrides":{"nodes":["<node>",...]}}'
-  observability-scale-in  -e '{"monitoring_scale_overrides":{"removed_nodes":["<node>",...]}}'
+  victoriametrics-scale-out -e '{"monitoring_scale_overrides":{"nodes":["<node>",...]}}'
+  victoriametrics-scale-in  -e '{"monitoring_scale_overrides":{"removed_nodes":["<node>",...]}}'
   application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"server_ha_overrides":{"database_host":"<PG-HA-entry>"}}'
   LVS/DR (app-ha)    add "lvs":{"enabled":true,"scheduler":"rr"} inside ha_overrides
 
@@ -94,12 +95,12 @@ esac
 
 # Prechecks and destroy must not trigger the transactional operation playbooks. If the caller did
 # not pass an explicit -t, restrict to the component tags for those actions.
-COMPONENT_TAGS="prechecks,system-init,bootstrap,local-repo,postgresql,nginx,observability,winter-server,harbor,keepalived,named,agent"
+COMPONENT_TAGS="prechecks,os-init,bootstrap,repo-nginx,postgresql,nginx,victoriametrics,winter-server,harbor,keepalived,named,winter-agent"
 ACTION_TAGS=""
 case "$ACTION" in
     deploy|prechecks)
         # Without explicit -t, converge/check components only. Transactional operations
-        # (postgresql-ha, postgresql-scale-*, postgresql-migrate, application-ha, observability-scale-*, destroy) MUST be
+        # (postgresql-ha, postgresql-scale-*, postgresql-migrate, application-ha, victoriametrics-scale-*, destroy) MUST be
         # opted into with -t — running them on a plain 'deploy' would be destructive.
         ACTION_TAGS="$COMPONENT_TAGS"
         ;;

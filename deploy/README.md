@@ -13,8 +13,10 @@ logic (HA / scale / migrate / destroy) is folded into each software role's actio
 Operation plays are named `Operate <action> - <software>`; CLI tags are unchanged.
 
 Inventory (ADR-48): one file `inventory/hosts.ini`, **one group per process, IPs listed directly**.
-Group name = what runs there (`[postgresql]`, `[nginx]`, `[winter-server]`, `[lvs-dr-director]`,
-`[lvs-dr-realserver]`, ...). No topology groups, no parent/child layering. Select components with `-t`,
+Group name = software running there, all named after the binary (ADR-49): `[postgresql]`, `[nginx]`,
+`[winter-server]`, `[etcd]` (PG HA nodes), `[victoriametrics]`/`[vmalert]`/`[victorialogs]`/
+`[alertmanager]`/`[grafana]` (monitoring stack), `[keepalived-director]`/`[lvs-backend]` (LVS), etc.
+No topology groups, no parent/child layering. Select components with `-t`,
 or narrow hosts with Ansible's `--limit`. Note: hosts are raw IPs, so Patroni/etcd node names become
 IPs if HA is rebuilt — back up PG data before any such rebuild.
 
@@ -36,10 +38,10 @@ IPs if HA is rebuilt — back up PG data before any such rebuild.
   `postgresql-scale-*`, `postgresql-migrate`, `application-ha`, `observability-scale-*`) must be selected explicitly with `-t`
   to prevent accidental execution. Each operation has a dedicated tag so component runs cannot
   trigger it.
-- Component tags: `prechecks system-init bootstrap local-repo postgresql nginx observability
+- Component tags: `prechecks os-init bootstrap repo-nginx postgresql nginx victoriametrics
   winter-server harbor keepalived named agent`.
 - Operation tags: `postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate application-ha keepalived-operations
-  observability-scale-out observability-scale-in destroy verify reconfigure upgrade`.
+  victoriametrics-scale-out victoriametrics-scale-in destroy verify reconfigure upgrade`.
 - **Per-operation variables are passed on the command line with `-e`** (see `deploy.sh --help` for the
   full per-operation list). `group_vars/all.yml` holds only defaults; each `<section>_overrides`
   dict passed via `-e` is merged onto `<section>_defaults` by Ansible. All inventories were merged
@@ -57,15 +59,15 @@ stage commands were removed in ADR-42 — use the action + tag form above.
 | --- | --- | --- |
 | Bootstrap servers | `./deploy.sh bootstrap-servers -i inventory/multinode` | ✅ **Implemented** (runs system-init + optional kernel/data-disk settings) |
 | Prechecks | `./deploy.sh prechecks -i inventory/multinode` | ✅ **Implemented** (read-only, for the provisioning phase) |
-| System initialization | `./deploy.sh system-init -i inventory/multinode` | ✅ **Implemented** (base OS tools + chrony; standalone stage, also reused by bootstrap) |
+| OS initialization | `./deploy.sh system-init -i inventory/multinode` | ✅ **Implemented** (base OS tools + chrony; standalone stage, also reused by bootstrap) |
 | Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|dns\|system-init> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
 | Converge observability stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh postgresql-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
 | PG HA scale out | `./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
 | PG HA scale in | `./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
-| Monitoring scale out | `./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[observability]`) |
-| Monitoring scale in | `./deploy.sh observability-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
+| Monitoring scale out | `./deploy.sh victoriametrics-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[observability]`) |
+| Monitoring scale in | `./deploy.sh victoriametrics-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
 | HA converged deployment | `./deploy.sh application-ha -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
 | Scale out (install Agent) | `./deploy.sh agent-scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh agent-scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
@@ -87,7 +89,7 @@ actual value and how to fix it.
 
 | Component | Stage | Inventory group | Precheck tag | Checks |
 | --- | --- | --- | --- | --- |
-| System initialization | `./deploy.sh system-init -i inventory/multinode` | `[system-init]` | `precheck.system-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
+| OS initialization | `./deploy.sh system-init -i inventory/multinode` | `[system-init]` | `precheck.system-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
 | Internal repo | `./deploy.sh local-repo -i inventory/multinode` | `[local-repo]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
 | PostgreSQL | `./deploy.sh postgresql -i inventory/multinode` | `[postgresql]` | `precheck.postgresql` | OS, password, offline RPMs, database port |
 | Nginx | `./deploy.sh nginx -i inventory/multinode` | `[nginx]` | `precheck.nginx` | domain, upstream, web ports, parent paths |
@@ -281,10 +283,10 @@ Add the new hosts to `[observability]` in the inventory first; topology is alway
 
 ```bash
 # Add a monitor node: gossip peer + Grafana replica + vmalert notifier
-./deploy.sh observability-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
+./deploy.sh victoriametrics-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
 
 # Remove a monitor node: rewire references first, then tear down services
-./deploy.sh observability-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'
+./deploy.sh victoriametrics-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'
 ```
 
 Scope and boundaries:

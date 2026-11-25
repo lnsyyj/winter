@@ -9,7 +9,7 @@
 # Any failure stops the run (any_errors_fatal) — partial convergence is not a valid state.
 #
 # Usage: one flat inventory (inventory/hosts.ini); one group per process, IPs listed directly.
-#   ./deploy.sh deploy    -t local-repo
+#   ./deploy.sh deploy    -t repo-nginx
 #   ./deploy.sh prechecks -t postgresql
 #   ./deploy.sh deploy    -t postgresql-scale-out \
 #       -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
@@ -24,7 +24,7 @@
     - role: system-checks
       tags: [prechecks]
 
-- name: System initialization
+- name: OS initialization
   hosts: os-init
   become: true
   gather_facts: true
@@ -45,7 +45,7 @@
       when: bootstrap.enabled | default(true) | bool
       tags: [bootstrap]
 
-- name: Internal artifact repository
+- name: Nginx artifact repository
   hosts: repo-nginx
   become: true
   gather_facts: true
@@ -75,7 +75,7 @@
     - role: nginx
       tags: [nginx]
 
-- name: Observability stack
+- name: VictoriaMetrics stack
   hosts: victoriametrics
   become: true
   gather_facts: false
@@ -130,7 +130,7 @@
       when: dns.enabled | bool
       tags: [named]
 
-- name: Agent pre-install on managed nodes
+- name: winter-agent pre-install on managed nodes
   hosts: winter-agent
   become: true
   gather_facts: true
@@ -270,83 +270,83 @@
     - role: lvs-realserver
       tags: [lvs-realserver]
 
-- name: Operate scale out - Observability
+- name: Operate scale out - VictoriaMetrics
   hosts: victoriametrics
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [observability-scale-out]
+  tags: [victoriametrics-scale-out]
   tasks:
     - name: Apply observability role (scale-out slice)
       ansible.builtin.include_role:
         name: observability
         tasks_from: scale-out
-      tags: [observability-scale-out]
+      tags: [victoriametrics-scale-out]
 
 - name: Operate scale out - Nginx upstream
   hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [observability-scale-out]
+  tags: [victoriametrics-scale-out]
   tasks:
     - name: Apply nginx role (scale-out slice)
       ansible.builtin.include_role:
         name: nginx
         tasks_from: scale-out
-      tags: [observability-scale-out]
+      tags: [victoriametrics-scale-out]
 
-- name: Operate scale in register - Observability
+- name: Operate scale in register - VictoriaMetrics
   hosts: localhost
   become: true
   gather_facts: false
   any_errors_fatal: true
-  tags: [observability-scale-in]
+  tags: [victoriametrics-scale-in]
   tasks:
     - name: Apply observability role (scale-in-register slice)
       ansible.builtin.include_role:
         name: observability
         tasks_from: scale-in-register
-      tags: [observability-scale-in]
+      tags: [victoriametrics-scale-in]
 
-- name: Operate scale in - Observability
+- name: Operate scale in - VictoriaMetrics
   hosts: victoriametrics
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [observability-scale-in]
+  tags: [victoriametrics-scale-in]
   tasks:
     - name: Apply observability role (scale-in slice)
       ansible.builtin.include_role:
         name: observability
         tasks_from: scale-in
-      tags: [observability-scale-in]
+      tags: [victoriametrics-scale-in]
 
-- name: Operate scale in remove - Observability
+- name: Operate scale in remove - VictoriaMetrics
   hosts: monitoring_scale_targets
   become: true
   gather_facts: false
   any_errors_fatal: true
-  tags: [observability-scale-in]
+  tags: [victoriametrics-scale-in]
   tasks:
     - name: Apply observability role (scale-in-remove slice)
       ansible.builtin.include_role:
         name: observability
         tasks_from: scale-in-remove
-      tags: [observability-scale-in]
+      tags: [victoriametrics-scale-in]
 
 - name: Operate scale in - Nginx upstream
   hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [observability-scale-in]
+  tags: [victoriametrics-scale-in]
   tasks:
     - name: Apply nginx role (scale-in slice)
       ansible.builtin.include_role:
         name: nginx
         tasks_from: scale-in
-      tags: [observability-scale-in]
+      tags: [victoriametrics-scale-in]
 
 - name: Operate destroy - Platform
   hosts: etcd
@@ -361,7 +361,7 @@
         tasks_from: destroy
       tags: [destroy]
 
-- name: Operate destroy - Agents
+- name: Operate destroy - winter-agents
   hosts: winter-agent
   become: true
   gather_facts: true
