@@ -121,6 +121,7 @@ docs/
 | 53 | [ADR-49-组名统一为软件名.md](./02-研发线/04-架构师/ADR-49-组名统一为软件名.md) | 架构师 ④ | **已确认** · 2026-11-25 | inventory组名全部改软件名(management→etcd/observability→5个监控软件组等)，不留概念名，28个代码文件同步 |
 | 54 | [ADR-50-配置项命名统一为软件名.md](./02-研发线/04-架构师/ADR-50-配置项命名统一为软件名.md) | 架构师 ④ | **已确认** · 2026-11-25 | 取代ADR-49遗留的配置/role目录概念名：all.yml全部键以软件名为前缀+归属索引，5个role目录改名，删重复realserver，§4.9增配置项同名原则 |
 | 55 | [ADR-51-etcd独立入口与hostvars修复.md](./02-研发线/04-架构师/ADR-51-etcd独立入口与hostvars修复.md) | 架构师 ④ | **已确认** · 2026-11-25 | etcd 新增独立 tag/play；修复扁平 inventory 下跨主机 ansible_host 未定义（统一用 inventory_hostname）；deploy/docs/ 部署文档独立目录 |
+| 56 | [ADR-52-etcd配置独立于pg_cluster.md](./02-研发线/04-架构师/ADR-52-etcd配置独立于pg_cluster.md) | 架构师 ④ | **已确认** · 2026-11-25 | etcd 端口/目录/二进制/防火墙配置从 pg_cluster.etcd.* 迁到独立 etcd.* 字典，etcd role 不再依赖 PG 配置 |
 
 **推荐阅读顺序**：想理解全貌 → `36 → 37 → 3 → 4`；准备拍板 → `4 §8 待决策清单` + `1 §11 待确认问题`；准备动手 → `36 → 3 → 5 → 7 → 8`。
 

@@ -15,8 +15,8 @@
 - name: Check whether {{ pg_join_node }} is already an etcd member
   ansible.builtin.shell: |
     set -o pipefail
-    {{ etcd_role.bin_dir }}/etcdctl \
-      --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
+    {{ etcd.bin_dir }}/etcdctl \
+      --endpoints=http://{{ pg_existing_endpoint }}:{{ etcd.client_port }} \
       member list 2>/dev/null | grep -q '{{ pg_join_node }}'
   args:
     executable: /bin/bash
@@ -29,10 +29,10 @@
 
 - name: Add {{ pg_join_node }} to etcd (learner) and capture its cluster membership
   ansible.builtin.command: >-
-    {{ etcd_role.bin_dir }}/etcdctl
-    --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }}
+    {{ etcd.bin_dir }}/etcdctl
+    --endpoints=http://{{ pg_existing_endpoint }}:{{ etcd.client_port }}
     member add {{ pg_join_node }}
-    --peer-urls=http://{{ hostvars[pg_join_node]['inventory_hostname'] }}:{{ pg_cluster.etcd.peer_port }}
+    --peer-urls=http://{{ hostvars[pg_join_node]['inventory_hostname'] }}:{{ etcd.peer_port }}
     --learner
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
@@ -43,10 +43,10 @@
 
 - name: Add {{ pg_join_node }} to etcd (voting member)
   ansible.builtin.command: >-
-    {{ etcd_role.bin_dir }}/etcdctl
-    --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }}
+    {{ etcd.bin_dir }}/etcdctl
+    --endpoints=http://{{ pg_existing_endpoint }}:{{ etcd.client_port }}
     member add {{ pg_join_node }}
-    --peer-urls=http://{{ hostvars[pg_join_node]['inventory_hostname'] }}:{{ pg_cluster.etcd.peer_port }}
+    --peer-urls=http://{{ hostvars[pg_join_node]['inventory_hostname'] }}:{{ etcd.peer_port }}
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   register: pg_etcd_add_voting
@@ -122,8 +122,8 @@
   ansible.builtin.shell: |
     set -o pipefail
     for i in $(seq 1 60); do
-      {{ etcd_role.bin_dir }}/etcdctl \
-        --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
+      {{ etcd.bin_dir }}/etcdctl \
+        --endpoints=http://{{ pg_existing_endpoint }}:{{ etcd.client_port }} \
         member promote {{ pg_join_member_id }} >/dev/null 2>&1 && exit 0
       sleep 2
     done
@@ -143,8 +143,8 @@
   ansible.builtin.shell: |
     set -o pipefail
     for i in $(seq 1 60); do
-      {{ etcd_role.bin_dir }}/etcdctl \
-        --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }} \
+      {{ etcd.bin_dir }}/etcdctl \
+        --endpoints=http://{{ pg_existing_endpoint }}:{{ etcd.client_port }} \
         member list 2>/dev/null | grep -q '{{ pg_join_node }}' && exit 0
       sleep 2
     done

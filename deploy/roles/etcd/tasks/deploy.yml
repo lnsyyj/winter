@@ -11,15 +11,15 @@
 
 - name: Fetch etcd static package from internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ etcd_role.tarball_subdir }}/{{ etcd_role.tarball }}"
-    dest: /var/tmp/winter-etcd/{{ etcd_role.tarball }}
+    url: "{{ platform.repo_base_url }}/{{ etcd.tarball_subdir }}/{{ etcd.tarball }}"
+    dest: /var/tmp/winter-etcd/{{ etcd.tarball }}
     mode: "0644"
     timeout: 60
   tags: [etcd]
 
 - name: Install binary
   ansible.builtin.unarchive:
-    src: /var/tmp/winter-etcd/{{ etcd_role.tarball }}
+    src: /var/tmp/winter-etcd/{{ etcd.tarball }}
     dest: /var/tmp/winter-etcd/
     remote_src: true
   tags: [etcd]
@@ -27,7 +27,7 @@
 - name: Copy etcd / etcdctl
   ansible.builtin.copy:
     src: "/var/tmp/winter-etcd/etcd-v3.5.17-linux-amd64/{{ item }}"
-    dest: "{{ etcd_role.bin_dir }}/{{ item }}"
+    dest: "{{ etcd.bin_dir }}/{{ item }}"
     mode: "0755"
     remote_src: true
   loop: [etcd, etcdctl]
@@ -35,7 +35,7 @@
 
 - name: Create data directory
   ansible.builtin.file:
-    path: "{{ pg_cluster.etcd.data_dir }}"
+    path: "{{ etcd.data_dir }}"
     state: directory
     owner: root
     mode: "0700"
@@ -59,8 +59,8 @@
 
 - name: Allow etcd ports through firewall (cluster subnet only)
   ansible.builtin.shell: |
-    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.etcd.client_port }} protocol=tcp accept' >/dev/null 2>&1
-    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.etcd.peer_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ etcd.firewall_cidr }} port port={{ etcd.client_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ etcd.firewall_cidr }} port port={{ etcd.peer_port }} protocol=tcp accept' >/dev/null 2>&1
     firewall-cmd --reload >/dev/null 2>&1
     echo done
   register: etcd_fw
@@ -77,8 +77,8 @@
     set -o pipefail
     target="{{ pg_healthy_target | default(pg_expected_members | default(groups['etcd'] | length)) }}"
     for i in $(seq 1 60); do
-      started=$({{ etcd_role.bin_dir }}/etcdctl \
-        --endpoints=http://{{ hostvars[groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) | first]['inventory_hostname'] }}:{{ pg_cluster.etcd.client_port }} \
+      started=$({{ etcd.bin_dir }}/etcdctl \
+        --endpoints=http://{{ hostvars[groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) | first]['inventory_hostname'] }}:{{ etcd.client_port }} \
         member list 2>/dev/null | grep -c 'started')
       [ "$started" -eq "$target" ] && exit 0
       sleep 2
@@ -97,8 +97,8 @@
 - name: List members
   ansible.builtin.shell: |
     set -o pipefail
-    {{ etcd_role.bin_dir }}/etcdctl \
-      --endpoints=http://{{ pg_existing_endpoint | default(ansible_host) }}:{{ pg_cluster.etcd.client_port }} \
+    {{ etcd.bin_dir }}/etcdctl \
+      --endpoints=http://{{ pg_existing_endpoint | default(ansible_host) }}:{{ etcd.client_port }} \
       member list -w table
   args:
     executable: /bin/bash

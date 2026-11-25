@@ -28,21 +28,31 @@ etcd 是 Patroni 的分布式协调服务（DCS），保存 PG 集群的 leader 
 
 ## 1. 配置检查（通常无需改）
 
-etcd 相关配置在 `group_vars/all.yml`，前缀是 `etcd_` / `pg_cluster.etcd.*`：
+etcd 的所有配置集中在 `group_vars/all.yml` 的 `etcd_defaults` / `etcd` 块中，
+**不寄生在 `pg_cluster` 下**（ADR-52：etcd 是独立 role，端口/目录/二进制都围绕 etcd 自己配置）：
 
 ```bash
-grep -A5 '^etcd_role:' group_vars/all.yml
-grep -A5 '^  etcd:' group_vars/all.yml
+grep -A12 '^etcd_defaults:' group_vars/all.yml
 ```
 
-| 配置项 | 默认值 | 说明 |
-| --- | --- | --- |
-| `etcd_role.tarball` | `etcd-v3.5.17-linux-amd64.tar.gz` | 内部 repo 中的静态包 |
-| `etcd_role.bin_dir` | `/usr/local/bin` | etcd / etcdctl 安装目录 |
-| `pg_cluster.etcd.client_port` | `2379` | 客户端读写端口 |
-| `pg_cluster.etcd.peer_port` | `2380` | 节点间 Raft 通信端口 |
-| `pg_cluster.etcd.data_dir` | `/var/lib/etcd` | 数据目录（mode 0700）|
-| `pg_cluster.vip_iface_cidr` | `192.168.101.0/24` | 防火墙放行网段 |
+| 配置项                | 默认值                            | 说明                        |
+| --------------------- | --------------------------------- | --------------------------- |
+| `etcd.client_port`    | `2379`                            | 客户端读写端口              |
+| `etcd.peer_port`      | `2380`                            | 节点间 Raft 通信端口        |
+| `etcd.data_dir`       | `/var/lib/etcd`                   | 数据目录（mode 0700）       |
+| `etcd.bin_dir`        | `/usr/local/bin`                  | etcd / etcdctl 安装目录     |
+| `etcd.tarball`        | `etcd-v3.5.17-linux-amd64.tar.gz` | 内部 repo 中的静态包        |
+| `etcd.tarball_subdir` | `tarball`                         | repo 下的子目录             |
+| `etcd.firewall_cidr`  | `192.168.101.0/24`                | 防火墙放行 2379/2380 的网段 |
+
+覆盖示例（无需改文件）：
+
+```bash
+./deploy.sh deploy -t etcd -e '{"etcd_overrides":{"client_port":2379,"data_dir":"/data/etcd"}}'
+```
+
+> `pg_cluster.vip_iface_cidr` 仍存在，但只服务 PG / Patroni / HAProxy / Nginx；
+> etcd role 已改用自己独立的 `etcd.firewall_cidr`。
 
 > **注意**：节点名 = `inventory_hostname`。扁平 inventory 里主机是裸 IP，
 > 所以 etcd 成员名就是 IP（见下方验证输出）。这与旧版按主机名命名不同，重建 cluster 时数据目录需清空。

@@ -14,7 +14,7 @@ restapi:
 etcd3:
   hosts:
 {% for h in groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) %}
-    - {{ hostvars[h]['inventory_hostname'] }}:{{ pg_cluster.etcd.client_port }}
+    - {{ hostvars[h]['inventory_hostname'] }}:{{ etcd.client_port }}
 {% endfor %}
 
 bootstrap:

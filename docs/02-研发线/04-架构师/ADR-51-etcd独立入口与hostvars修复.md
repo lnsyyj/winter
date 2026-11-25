@@ -65,6 +65,10 @@
 - **etcd 重建需清数据**：`initial-cluster-state=new` 配已有数据目录时，若成员集合变化会冲突；
   扩容必须走 scale-out 流程（`existing` 状态），不能改 inventory 后直接重跑。
 
+> **后续变更（ADR-52）**：etcd 的端口/目录/二进制配置已从 `pg_cluster.etcd.*` 迁到独立的
+> `etcd.*` 块，防火墙网段也从 `pg_cluster.vip_iface_cidr` 改为 `etcd.firewall_cidr`。
+> 上文 §3 的描述保留当时实现，以 ADR-52 为准。
+
 ## 5. 验证（2026-11-25 真机）
 
 - `./deploy.sh deploy -t etcd`：3 台 `failed=0`，二进制从 repo 拉取成功，

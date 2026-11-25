@@ -21,7 +21,7 @@
 #   bootstrap*, bootstrap.*       bootstrap role          (tags: bootstrap)
 #   postgresql*, pg_cluster*,     postgresql role         (tags: postgresql / postgresql-ha /
 #   pg_scale*, pg_migrate*        postgresql-scale-* / postgresql-migrate)
-#   etcd_role, etcd_nodes         etcd role               (via postgresql-ha)
+#   etcd*, etcd.*                 etcd role              (tags: etcd / via postgresql-ha)
 #   patroni                       patroni role            (via postgresql-ha)
 #   haproxy_role                  haproxy role            (via postgresql-ha)
 #   nginx*, nginx.*               nginx role              (tags: nginx / application-ha)
@@ -253,11 +253,7 @@ pg_cluster_defaults:
   port: 5433                # PG instance port (same on every node)
   rest_port: 8008           # Patroni REST API
   data_dir: /var/lib/pgsql/17/ha   # separate from the system's /data so they do not affect each other
-  vip_iface_cidr: "192.168.101.0/24"   # cluster subnet (used by both pg_hba and the firewall)
-  etcd:
-    client_port: 2379
-    peer_port: 2380
-    data_dir: /var/lib/etcd
+  vip_iface_cidr: "192.168.101.0/24"   # cluster subnet (used by pg_hba and the PG/Patroni/HAProxy firewalls)
   haproxy:
     listen_port: 5434       # applications connect to this port; always points to the current primary
     check_interval: 2s
@@ -726,13 +722,18 @@ postgresql_defaults:
 
 postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"
 
-# ---- consolidated from roles/etcd/defaults/main.yml ----
-etcd_role:
-  # Binary source (official static package from the internal repo)
+# ---- etcd role (DCS for Patroni); all etcd settings live here, not under pg_cluster ----
+# ADR-52: etcd is a standalone role (tag `etcd`), so its ports/dirs/binary are configured here.
+# Override with -e '{"etcd_overrides":{"client_port":...}}' without touching PG settings.
+etcd_defaults:
+  client_port: 2379              # client read/write port
+  peer_port: 2380                # Raft peer communication between members
+  data_dir: /var/lib/etcd        # etcd data (mode 0700)
+  bin_dir: /usr/local/bin        # etcd / etcdctl install directory
   tarball: etcd-v3.5.17-linux-amd64.tar.gz
-  tarball_subdir: tarball
-  bin_dir: /usr/local/bin
-etcd_nodes: "{{ groups['etcd'] }}"
+  tarball_subdir: tarball        # subdir under platform.repo_base_url
+  firewall_cidr: "192.168.101.0/24"   # subnet allowed to reach 2379/2380
+etcd: "{{ etcd_defaults | combine(etcd_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/haproxy/defaults/main.yml ----
 haproxy_role:
