@@ -8,11 +8,11 @@
 # Play-level keywords that roles cannot express (vars_files, serial, when) stay here.
 # Any failure stops the run (any_errors_fatal) — partial convergence is not a valid state.
 #
-# Usage: one inventory (inventory/hosts.ini) + --limit <topology>.
-#   ./deploy.sh deploy    --limit multinode -t local-repo
-#   ./deploy.sh prechecks --limit pgha -t postgresql
-#   ./deploy.sh deploy    --limit pgha -t postgresql-scale-out \
-#       -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'
+# Usage: one flat inventory (inventory/hosts.ini); one group per process, IPs listed directly.
+#   ./deploy.sh deploy    -t local-repo
+#   ./deploy.sh prechecks -t postgresql
+#   ./deploy.sh deploy    -t postgresql-scale-out \
+#       -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
 
 - name: System checks
   hosts: all

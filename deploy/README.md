@@ -12,24 +12,23 @@ logic (HA / scale / migrate / destroy) is folded into each software role's actio
 (e.g. `roles/postgresql/tasks/{ha,scale-out,migrate}.yml`), attached via `include_role tasks_from:`.
 Operation plays are named `Operate <action> - <software>`; CLI tags are unchanged.
 
-Inventory (ADR-46/47): one file `inventory/hosts.ini`; select a topology with `--limit`:
-`all-in-one` (default) | `multinode` | `pgha` | `lvs-dr` | `scale-out-agent`.
-Software placement is expressed by group names `<topology>-<software>` (e.g. `pgha-etcd`,
-`lvs-dr-nginx`) — group name = role, readable at a glance. LVS roles use `[lvs-dr-director]` /
-`[lvs-dr-realserver]`. Generic groups (`postgresql`, `nginx`, ...) are parents; `--limit` narrows
-them to the selected topology.
+Inventory (ADR-48): one file `inventory/hosts.ini`, **one group per process, IPs listed directly**.
+Group name = what runs there (`[postgresql]`, `[nginx]`, `[winter-server]`, `[lvs-dr-director]`,
+`[lvs-dr-realserver]`, ...). No topology groups, no parent/child layering. Select components with `-t`,
+or narrow hosts with Ansible's `--limit`. Note: hosts are raw IPs, so Patroni/etcd node names become
+IPs if HA is rebuilt — back up PG data before any such rebuild.
 
 ```bash
-./deploy.sh <action> [-i inventory/hosts.ini --limit <topology>] [-t tag,...] [-e '{"<section>_overrides":{...}}']
+./deploy.sh <action> [-i inventory/hosts.ini] [-t tag,...] [-e '{"<section>_overrides":{...}}']
 
 # actions: deploy | prechecks | destroy | verify | reconfigure | upgrade
-./deploy.sh deploy                                                      # default: all-in-one
-./deploy.sh deploy --limit multinode -t local-repo                      # one component
-./deploy.sh prechecks --limit pgha -t postgresql                        # one role's prechecks
-./deploy.sh deploy --limit pgha -t postgresql-scale-out \
-    -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'          # transactional operation
-./deploy.sh deploy --limit pgha -t postgresql-ha                        # PG HA bootstrap (defaults)
-./deploy.sh deploy --limit lvs-dr -t lvs-director,lvs-realserver \
+./deploy.sh deploy                                                      # default inventory
+./deploy.sh deploy -t local-repo                                        # one component
+./deploy.sh prechecks -t postgresql                                     # one role's prechecks
+./deploy.sh deploy -t postgresql-scale-out \
+    -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'  # transactional op
+./deploy.sh deploy -t postgresql-ha                                     # PG HA bootstrap
+./deploy.sh deploy -t lvs-director,lvs-realserver \
     -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
 ```
 

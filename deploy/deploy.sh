@@ -29,20 +29,21 @@ Targets are selected by -t tags and inventory groups. All available tags:
   Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
                observability-scale-out observability-scale-in application-ha destroy
 
-Inventory: one file inventory/hosts.ini; select a topology with --limit:
-  all-in-one | multinode | pgha | lvs-dr | scale-out-agent
-  Software placement is expressed by group names: <topology>-<software> (e.g. pgha-etcd,
-  lvs-dr-nginx); LVS roles by [lvs-dr-director] / [lvs-dr-realserver]. See ADR-47.
+Inventory: one file inventory/hosts.ini. One group per process, IPs listed directly:
+  [management] [system-init] [postgresql] [nginx] [winter-server] [harbor] [keepalived]
+  [named] [observability] [local-repo] [agent] [lvs-dr-director] [lvs-dr-realserver]
+  Group name = what runs there. Use -t to select components; use ansible --limit for a subset.
+  See ADR-48. NOTE: hosts are raw IPs, so Patroni/etcd node names become IPs on HA rebuild.
 
 Examples:
-  ./deploy.sh deploy                                               # default: all-in-one topology
-  ./deploy.sh deploy -i inventory/hosts.ini --limit multinode -t local-repo
-  ./deploy.sh prechecks -i inventory/hosts.ini --limit pgha -t postgresql
-  ./deploy.sh deploy -i inventory/hosts.ini --limit pgha -t postgresql-scale-out \
-      -e '{"pg_scale_overrides":{"nodes":["node-b","node-c"]}}'
-  ./deploy.sh deploy -i inventory/hosts.ini --limit lvs-dr -t lvs-director,lvs-realserver \
+  ./deploy.sh deploy                                               # default inventory
+  ./deploy.sh deploy -t local-repo
+  ./deploy.sh prechecks -t postgresql
+  ./deploy.sh deploy -t postgresql-scale-out \
+      -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
+  ./deploy.sh deploy -t lvs-director,lvs-realserver \
       -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
-  ./deploy.sh deploy -i inventory/hosts.ini --limit multinode -t application-ha \
+  ./deploy.sh deploy -t application-ha \
       -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
 
 Per-operation variables (pass via -e; all.yml holds only defaults):
@@ -85,11 +86,10 @@ if ! command -v ansible-playbook >/dev/null 2>&1; then
     exit 3
 fi
 
-# Default to the all-in-one topology (via --limit) when no inventory was passed.
-# All topologies live in one inventory file; --limit selects which hosts to target (ADR-46).
+# Default to the single inventory file when no -i was passed (ADR-48: flat groups, no topologies).
 case " $* " in
     *" -i "*|*" -i"*|*" --inventory "*) ;;
-    *) set -- "$@" -i "$ROOT/inventory/hosts.ini" --limit all-in-one ;;
+    *) set -- "$@" -i "$ROOT/inventory/hosts.ini" ;;
 esac
 
 # Prechecks and destroy must not trigger the transactional operation playbooks. If the caller did

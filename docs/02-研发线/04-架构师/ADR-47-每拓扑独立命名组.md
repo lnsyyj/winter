@@ -54,3 +54,9 @@ keepalived/named/observability/local-repo/system-init/agent）仍全是 `:childr
 - `--limit pgha` 时 `hosts: postgresql` → 仅 pg-a/b/c；`--limit lvs-dr` 时 `hosts: nginx` → 仅 node-b/c（交集生效）。
 - `./deploy.sh prechecks -i inventory/hosts.ini --limit lvs-dr -t system-init,nginx` RC=0，3 节点 failed=0。
 - site.yml syntax-check 通过。
+
+## 6. 已被 ADR-48 取代（2026-11-25）
+
+本 ADR 的"每拓扑独立命名组 + 父组 + --limit 交集"结构过于复杂（251 行、~40 组），
+用户要求极简。[ADR-48 扁平 inventory](./ADR-48-扁平inventory每进程一组.md) 将其取代：
+一个进程一个组、组内直接写 IP，无拓扑组/父组。本 ADR 保留为历史决策记录。
