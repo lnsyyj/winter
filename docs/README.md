@@ -115,7 +115,8 @@ docs/
 | 47 | [ADR-43-全量逻辑入role.md](./02-研发线/04-架构师/ADR-43-全量逻辑入role.md) | 架构师 ④ | **已确认** · 2026-11-23 | 对齐参考框架：删除全部独立 playbook，扩容/卸载/迁移/lifecycle 全迁入 role，site.yml 只做 hosts+roles 薄编排 |
 | 48 | [ADR-44-编排逻辑归入软件role.md](./02-研发线/04-架构师/ADR-44-编排逻辑归入软件role.md) | 架构师 ④ | **已确认** · 2026-11-23 | 方案X：彻底拆散编排role，19个slice归入各软件role的action文件，site.yml play改Operate命名，tag不变 |
 | 49 | [ADR-45-配置与密码统一到不入库的all.yml.md](./02-研发线/04-架构师/ADR-45-配置与密码统一到不入库的all.yml.md) | 架构师 ④ | **已确认** · 2026-11-24 | 配置+密码统一到不入库的 all.yml，删17个role defaults与47处密码include，all.yml.example作入库模板 |
-| 50 | [ADR-46-统一inventory与LVS角色拆分.md](./02-研发线/04-架构师/ADR-46-统一inventory与LVS角色拆分.md) | 架构师 ④ | **已确认** · 2026-11-24 | 7个inventory合并为hosts.ini用--limit选拓扑，LVS分工改host变量lvs_role，拆出lvs-director/lvs-realserver role |
+| 50 | [ADR-46-统一inventory与LVS角色拆分.md](./02-研发线/04-架构师/ADR-46-统一inventory与LVS角色拆分.md) | 架构师 ④ | **已确认** · 2026-11-24 | 7个inventory合并为hosts.ini用--limit选拓扑，LVS拆出lvs-director/lvs-realserver role，分工用组名表达 |
+| 51 | [ADR-47-每拓扑独立命名组.md](./02-研发线/04-架构师/ADR-47-每拓扑独立命名组.md) | 架构师 ④ | **已确认** · 2026-11-25 | 每拓扑×每软件一个明确命名组(pgha-etcd等)，组名即角色；通用父组+--limit交集让site.yml的hosts不变 |
 
 **推荐阅读顺序**：想理解全貌 → `36 → 37 → 3 → 4`；准备拍板 → `4 §8 待决策清单` + `1 §11 待确认问题`；准备动手 → `36 → 3 → 5 → 7 → 8`。
 

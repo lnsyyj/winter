@@ -31,7 +31,8 @@ Targets are selected by -t tags and inventory groups. All available tags:
 
 Inventory: one file inventory/hosts.ini; select a topology with --limit:
   all-in-one | multinode | pgha | lvs-dr | scale-out-agent
-  LVS/DR roles are set in the inventory via host vars: lvs_role=director|realserver.
+  Software placement is expressed by group names: <topology>-<software> (e.g. pgha-etcd,
+  lvs-dr-nginx); LVS roles by [lvs-dr-director] / [lvs-dr-realserver]. See ADR-47.
 
 Examples:
   ./deploy.sh deploy                                               # default: all-in-one topology

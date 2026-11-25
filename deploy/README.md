@@ -12,9 +12,12 @@ logic (HA / scale / migrate / destroy) is folded into each software role's actio
 (e.g. `roles/postgresql/tasks/{ha,scale-out,migrate}.yml`), attached via `include_role tasks_from:`.
 Operation plays are named `Operate <action> - <software>`; CLI tags are unchanged.
 
-Inventory (ADR-46): one file `inventory/hosts.ini`; select a topology with `--limit`:
+Inventory (ADR-46/47): one file `inventory/hosts.ini`; select a topology with `--limit`:
 `all-in-one` (default) | `multinode` | `pgha` | `lvs-dr` | `scale-out-agent`.
-LVS/DR roles are set in the inventory via host vars `lvs_role=director|realserver`.
+Software placement is expressed by group names `<topology>-<software>` (e.g. `pgha-etcd`,
+`lvs-dr-nginx`) — group name = role, readable at a glance. LVS roles use `[lvs-dr-director]` /
+`[lvs-dr-realserver]`. Generic groups (`postgresql`, `nginx`, ...) are parents; `--limit` narrows
+them to the selected topology.
 
 ```bash
 ./deploy.sh <action> [-i inventory/hosts.ini --limit <topology>] [-t tag,...] [-e '{"<section>_overrides":{...}}']
