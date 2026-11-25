@@ -1,0 +1,215 @@
+---
+# Agent pre-install on a managed node (ADR-35). Private keys never leave the node (ADR-28).
+# The service only starts once a certificate has been issued; until then the CSR is staged for enrollment.
+
+- name: Confirm Agent scaling is enabled
+  ansible.builtin.assert:
+    that: winter_agent.enabled | bool
+    fail_msg: "winter_agent.enabled is false; set winter_agent_overrides.enabled: true in group_vars/all.yml"
+    quiet: true
+  tags: [winter_agent, scale-out]
+
+- name: Validate Agent configuration
+  ansible.builtin.assert:
+    that:
+      - winter_agent.server_address | length > 0
+      - winter_agent.cert.ca_source | length > 0
+      - winter_agent.cert.enrollment_mode in ['local_csr', 'preissued']
+      - winter_agent.cert.enrollment_mode != 'preissued' or (winter_agent.cert.preissued_key_source | length > 0 and winter_agent.cert.preissued_cert_source | length > 0)
+    fail_msg: "Agent needs server_address, cert.ca_source and a valid enrollment_mode; preissued mode also needs preissued_key_source/preissued_cert_source"
+    quiet: true
+  tags: [winter_agent, scale-out]
+
+- name: Verify CA certificate exists on the control machine
+  ansible.builtin.stat:
+    path: "{{ winter_agent.cert.ca_source }}"
+  delegate_to: localhost
+  become: false
+  register: agent_ca_local
+  tags: [winter_agent, scale-out]
+
+- name: Fail with an actionable message when the CA is missing
+  ansible.builtin.assert:
+    that: agent_ca_local.stat.exists
+    fail_msg: "CA certificate not found at '{{ winter_agent.cert.ca_source }}' on the control machine; configure winter_agent_overrides.cert.ca_source with the CA that signs Agent certificates"
+    quiet: true
+  tags: [winter_agent, scale-out]
+
+- name: Verify Agent artifact is published in the internal repo
+  ansible.builtin.uri:
+    url: "{{ platform.repo_base_url }}/{{ winter_agent.bin_subdir }}/{{ winter_agent.artifact }}"
+    method: HEAD
+    status_code: 200
+  delegate_to: localhost
+  become: false
+  register: agent_artifact_probe
+  until: agent_artifact_probe.status is defined and agent_artifact_probe.status == 200
+  retries: 3
+  delay: 2
+  tags: [winter_agent, scale-out]
+
+- name: Create Agent service account
+  ansible.builtin.user:
+    name: "{{ winter_agent.run_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  tags: [winter_agent, scale-out]
+
+- name: Create Agent directories
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: directory
+    owner: "{{ winter_agent.run_user }}"
+    group: "{{ winter_agent.run_user }}"
+    mode: "{{ item.mode }}"
+  loop:
+    - { path: "{{ winter_agent.config_dir }}", mode: "0750" }
+    - { path: "{{ winter_agent.cert.dir }}", mode: "0700" }
+    - { path: "{{ winter_agent.log_dir }}", mode: "0750" }
+    - { path: /var/tmp/winter-agent, mode: "0755" }
+  tags: [winter_agent, scale-out]
+
+- name: Install CA certificate on the node
+  ansible.builtin.copy:
+    src: "{{ winter_agent.cert.ca_source }}"
+    dest: "{{ winter_agent.cert.dir }}/{{ winter_agent.cert.ca }}"
+    owner: "{{ winter_agent.run_user }}"
+    group: "{{ winter_agent.run_user }}"
+    mode: "0644"
+  tags: [winter_agent, scale-out]
+
+- name: Install pre-issued private key
+  ansible.builtin.copy:
+    src: "{{ winter_agent.cert.preissued_key_source }}"
+    dest: "{{ winter_agent.cert.dir }}/{{ winter_agent.cert.key }}"
+    owner: "{{ winter_agent.run_user }}"
+    group: "{{ winter_agent.run_user }}"
+    mode: "0600"
+  when: winter_agent.cert.enrollment_mode == 'preissued'
+  tags: [winter_agent, scale-out]
+
+- name: Install pre-issued certificate
+  ansible.builtin.copy:
+    src: "{{ winter_agent.cert.preissued_cert_source }}"
+    dest: "{{ winter_agent.cert.dir }}/{{ winter_agent.cert.cert }}"
+    owner: "{{ winter_agent.run_user }}"
+    group: "{{ winter_agent.run_user }}"
+    mode: "0644"
+  when: winter_agent.cert.enrollment_mode == 'preissued'
+  tags: [winter_agent, scale-out]
+
+- name: Generate private key locally on the node
+  ansible.builtin.command: "openssl genrsa -out {{ winter_agent.cert.dir }}/{{ winter_agent.cert.key }} {{ winter_agent.cert.key_bits }}"
+  args:
+    creates: "{{ winter_agent.cert.dir }}/{{ winter_agent.cert.key }}"
+  when: winter_agent.cert.enrollment_mode == 'local_csr'
+  tags: [winter_agent, scale-out]
+
+- name: Set private key ownership and mode
+  ansible.builtin.file:
+    path: "{{ winter_agent.cert.dir }}/{{ winter_agent.cert.key }}"
+    owner: "{{ winter_agent.run_user }}"
+    group: "{{ winter_agent.run_user }}"
+    mode: "0600"
+  tags: [winter_agent, scale-out]
+
+- name: Generate CSR with node identity (private key stays on the node)
+  ansible.builtin.command: >-
+    openssl req -new
+    -key {{ winter_agent.cert.dir }}/{{ winter_agent.cert.key }}
+    -out {{ winter_agent.cert.dir }}/{{ winter_agent.cert.csr }}
+    -subj "/CN={{ winter_agent.node_id }}"
+    -addext "subjectAltName=URI:spiffe://winter/node/{{ winter_agent.node_id }}"
+  args:
+    creates: "{{ winter_agent.cert.dir }}/{{ winter_agent.cert.csr }}"
+  when: winter_agent.cert.enrollment_mode == 'local_csr'
+  tags: [winter_agent, scale-out]
+
+- name: Fetch Agent binary from internal repo
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ winter_agent.bin_subdir }}/{{ winter_agent.artifact }}"
+    dest: "/var/tmp/winter-agent/{{ winter_agent.artifact }}.new"
+    mode: "0755"
+    timeout: 120
+  tags: [winter_agent, scale-out]
+
+- name: Install binary (same-directory mv avoids ETXTBSY)
+  ansible.builtin.shell: |
+    set -euo pipefail
+    src=/var/tmp/winter-agent/{{ winter_agent.artifact }}.new
+    dst={{ winter_agent.bin_dir }}/{{ winter_agent.artifact }}
+    if [ -x "$dst" ] && cmp -s "$src" "$dst"; then
+      echo unchanged
+    else
+      cp "$src" "$dst.new"
+      chmod 0755 "$dst.new"
+      mv "$dst.new" "$dst"
+      echo installed
+    fi
+  args:
+    executable: /bin/bash
+  register: agent_install
+  changed_when: "'installed' in agent_install.stdout"
+  tags: [winter_agent, scale-out]
+
+- name: Render Agent environment file
+  ansible.builtin.template:
+    src: winter_agent.env.j2
+    dest: "{{ winter_agent.env_file }}"
+    owner: "{{ winter_agent.run_user }}"
+    group: "{{ winter_agent.run_user }}"
+    mode: "0640"
+  tags: [winter_agent, scale-out]
+
+- name: Render systemd unit
+  ansible.builtin.template:
+    src: winter-agent.service.j2
+    dest: /etc/systemd/system/winter-agent.service
+    mode: "0644"
+  tags: [winter_agent, scale-out]
+
+- name: Render sudo whitelist
+  ansible.builtin.template:
+    src: sudoers.j2
+    dest: "{{ winter_agent.sudo.file }}"
+    owner: root
+    group: root
+    mode: "0440"
+    validate: /usr/sbin/visudo -cf %s
+  when: winter_agent.sudo.enabled | bool
+  tags: [winter_agent, scale-out]
+
+- name: Check whether a certificate has been issued
+  ansible.builtin.stat:
+    path: "{{ winter_agent.cert.dir }}/{{ winter_agent.cert.cert }}"
+  register: agent_cert_local
+  tags: [winter_agent, scale-out]
+
+- name: Apply changes (restart only when a certificate exists)
+  ansible.builtin.meta: flush_handlers
+  tags: [winter_agent, scale-out]
+
+- name: Start and enable Agent
+  ansible.builtin.systemd:
+    name: winter-agent
+    state: started
+    enabled: true
+    daemon_reload: true
+  when: agent_cert_local.stat.exists
+  tags: [winter_agent, scale-out]
+
+- name: Verify Agent service is active
+  ansible.builtin.command: systemctl is-active winter-agent
+  register: agent_active
+  changed_when: false
+  failed_when: agent_active.stdout | trim != 'active'
+  when: agent_cert_local.stat.exists
+  tags: [winter_agent, scale-out]
+
+- name: Report enrollment state
+  ansible.builtin.debug:
+    msg:
+      - "Node {{ winter_agent.node_id }} → {{ winter_agent.server_address }}; CSR at {{ winter_agent.cert.dir }}/{{ winter_agent.cert.csr }}"
+      - "Certificate issued: {{ agent_cert_local.stat.exists }}; service starts automatically once it is"
+  tags: [winter_agent, scale-out]

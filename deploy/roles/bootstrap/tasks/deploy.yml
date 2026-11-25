@@ -10,7 +10,7 @@
     quiet: true
   tags: [bootstrap]
 
-# Base packages and chrony live in roles/system-init; bootstrap-servers runs that role first.
+# Base packages and chrony live in roles/os-init; bootstrap-servers runs that role first.
 
 - name: Render winter sysctl profile
   ansible.builtin.template:
@@ -106,7 +106,7 @@
 - name: Report bootstrap result
   ansible.builtin.debug:
     msg:
-      - "Base packages and clock sync: handled by roles/system-init (system_init_overrides)"
+      - "Base packages and clock sync: handled by roles/os-init (os_init_overrides)"
       - "Kernel settings applied: {{ bootstrap.enforce_kernel | bool }} (profile {{ bootstrap.sysctl_file }})"
       - "Data device: {{ bootstrap.data_disk.device | default('none', true) }} (format={{ bootstrap.data_disk.format_if_empty }}, mount={{ bootstrap.data_disk.mount }})"
   tags: [bootstrap]

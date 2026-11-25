@@ -304,6 +304,11 @@ git reflog                            # 兜底：找回误操作前的 HEAD
 - 禁止：二进制 `foo` 却把 unit 叫 `bar.service`；用通用名（`server`、`agent`、`app`）当进程名；给同一组件多个别名。
 - 允许的差异：第三方组件沿用其官方进程名（`etcd`、`patroni`、`haproxy`、`named`），此时二进制/unit/进程名三者保持官方名一致即可，不强行加平台前缀；平台自有组件一律沿用 §4.8 的 `winter-` 前缀约定（`winter-server`、`winter-agent`、`winter-victoriametrics` …）。
 - 改名前先查全仓引用（unit / service 文件 / 日志路径 / 监控 jobs / 文档），一次性同步；不允许只改一半。
+- **配置项同名原则**：`group_vars/all.yml` 的配置键必须以所属 **role/操作的软件名** 为前缀
+  （`victoriametrics_*` → `roles/victoriametrics`、`winter_server_*` → `roles/winter-server`、
+  `repo_nginx_*` → `roles/repo-nginx`）。禁止用概念名 / 缩写当前缀（`monitoring_*`、`obs_*`、
+  `server_*`、`agent_*`、`local_repo`、`system_init_*`、`realserver_*` 均为 ADR-50 前遗留、已清理）。
+  `all.yml` 头部维护"配置项 → role"归属索引；新增配置时先按索引定位前缀，再写入对应分组。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -584,3 +589,4 @@ trim_trailing_whitespace = false
 | 2026-11-16 | 文档同步：`deploy/README.md` 登记 system-init stage、配置说明、目录结构与可用 tag；AGENTS.md 变更记录 | 本次提交 |
 | 2026-11-20 | 新增 §4.9「进程名与产物名一致」：二进制名/unit 名/进程名/日志标识统一，第三方组件沿用官方名、平台组件用 `winter-` 前缀；以 `systemctl`/`pgrep`/`journalctl` 三者命中同一进程为验收 | 本次提交 |
 | 2026-11-20 | 新增 §14「产品化思维」独立章节：P1~P10 可验收清单（功能完整、幂等安全、可回滚、可校验、可运维、可诊断、升级路径、真机验证、文档闭环、不偷懒），原 §14 变更记录顺延为 §15 | 本次提交 |
+| 2026-11-25 | 配置项命名统一为软件名（ADR-50）：`all.yml` 全部配置键以所属 role 的软件名为前缀（monitoring/obs→victoriametrics、server→winter_server、dns→named、system_init→os_init、agent→winter_agent、local_repo→repo_nginx、realserver→lvs_realserver）；5 个 role 目录同步改名（local-repo/repo-nginx、observability→victoriametrics、system-init→os-init、agent→winter-agent），删除重复的 realserver role；all.yml 头部新增配置归属索引；§4.9 增配置项同名原则 | 本次提交 |

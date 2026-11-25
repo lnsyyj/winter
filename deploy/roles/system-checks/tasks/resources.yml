@@ -17,7 +17,7 @@
       root partition free {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB
       (need ≥{{ prechecks.management_min_root_free_gb }} GB).
       Tune prechecks.management_min_* in group_vars/all.yml, or set prechecks.strict_resources to false to warn only.
-      See deployment plan §1: Harbor and the observability stack take the most space, with Harbor's image storage filling up first.
+      See deployment plan §1: Harbor and the victoriametrics stack take the most space, with Harbor's image storage filling up first.
     success_msg: "Management plane resources meet minimum requirements"
     quiet: true
   when:

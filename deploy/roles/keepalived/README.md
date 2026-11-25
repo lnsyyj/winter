@@ -48,7 +48,7 @@ same Nginx. Enable `ha.lvs.enabled: true` to use Keepalived's native LVS in DR m
 still holds the VIP (with VRRP failover), but `virtual_server` schedules connections across every
 `[nginx]` backend using `ha.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`).
 
-Real servers need the VIP on `lo` plus ARP suppression; that is the job of `roles/realserver`,
+Real servers need the VIP on `lo` plus ARP suppression; that is the job of `roles/lvs-realserver`,
 applied by `application-ha` to `[nginx]`. Return traffic goes straight from the real server to the
 client with the VIP as source, so the Director only handles inbound packets.
 

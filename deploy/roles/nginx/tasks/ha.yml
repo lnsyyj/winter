@@ -25,9 +25,9 @@
 
 
 # ---- roles ----
-- name: Apply role realserver
+- name: Apply role lvs-realserver
   ansible.builtin.include_role:
-    name: realserver
+    name: lvs-realserver
   when: ha.lvs.enabled | bool
   tags: [application-ha]
 - name: Apply role nginx

@@ -3,7 +3,7 @@
 # Idempotent helper for the LVS/DR loopback VIP.
 set -euo pipefail
 
-VIP="{{ realserver_vip }}"
+VIP="{{ lvs_realserver_vip }}"
 
 case "${1:-}" in
     add)

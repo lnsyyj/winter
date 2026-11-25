@@ -1,0 +1,77 @@
+---
+# Scale-in: remove the Agent from a managed node (ADR-35).
+# Platform data is preserved by default; certificate revocation is done through the Server when implemented.
+
+- name: Validate scale-in safety
+  ansible.builtin.assert:
+    that:
+      - not (winter_agent.scale_in.purge_data | bool) or (winter_agent.scale_in.data_dirs | default([]) | length > 0)
+    fail_msg: "scale_in.purge_data=true requires a non-empty scale_in.data_dirs list; platform data is never removed implicitly"
+    quiet: true
+  tags: [winter_agent, scale-in]
+
+- name: Check Agent systemd unit
+  ansible.builtin.stat:
+    path: /etc/systemd/system/winter-agent.service
+  register: agent_remove_unit
+  tags: [winter_agent, scale-in]
+
+- name: Stop and disable Agent
+  ansible.builtin.systemd:
+    name: winter-agent
+    state: stopped
+    enabled: false
+  when: agent_remove_unit.stat.exists
+  tags: [winter_agent, scale-in]
+
+- name: Remove systemd unit
+  ansible.builtin.file:
+    path: /etc/systemd/system/winter-agent.service
+    state: absent
+  tags: [winter_agent, scale-in]
+
+- name: Reload systemd
+  ansible.builtin.systemd:
+    daemon_reload: true
+  tags: [winter_agent, scale-in]
+
+- name: Remove sudo whitelist
+  ansible.builtin.file:
+    path: "{{ winter_agent.sudo.file }}"
+    state: absent
+  tags: [winter_agent, scale-in]
+
+- name: Remove Agent files and directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop:
+    - "{{ winter_agent.env_file }}"
+    - "{{ winter_agent.config_dir }}"
+    - "{{ winter_agent.cert.dir }}"
+    - "{{ winter_agent.log_dir }}"
+    - "{{ winter_agent.bin_dir }}/{{ winter_agent.artifact }}"
+    - /var/tmp/winter-agent
+  tags: [winter_agent, scale-in]
+
+- name: Remove Agent service account (opt-in)
+  ansible.builtin.user:
+    name: "{{ winter_agent.run_user }}"
+    state: absent
+  when: winter_agent.scale_in.remove_user | bool
+  tags: [winter_agent, scale-in]
+
+- name: Purge explicitly listed data directories (opt-in)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ winter_agent.scale_in.data_dirs | default([]) }}"
+  when: winter_agent.scale_in.purge_data | bool
+  tags: [winter_agent, scale-in]
+
+- name: Report scale-in result
+  ansible.builtin.debug:
+    msg:
+      - "Agent removed from {{ inventory_hostname }}; platform data preserved"
+      - "certificate revocation: {{ winter_agent.scale_in.revoke_cert | bool }} (handled by the Server enrollment API once available)"
+  tags: [winter_agent, scale-in]

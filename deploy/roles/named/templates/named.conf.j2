@@ -1,43 +1,43 @@
 # Managed by Ansible (role: named). Do not edit by hand.
 {% if (vault_dns_tsig_secret | default('') | length) > 0 %}
-key "{{ dns.tsig_key_name }}" {
+key "{{ named.tsig_key_name }}" {
     algorithm hmac-sha256;
     secret "{{ vault_dns_tsig_secret }}";
 };
 
 {% endif %}
 options {
-    directory "{{ dns.zone_dir }}";
-    listen-on port {{ dns.listen_port }} { {{ dns.listen_addr }}; };
+    directory "{{ named.zone_dir }}";
+    listen-on port {{ named.listen_port }} { {{ named.listen_addr }}; };
     listen-on-v6 { none; };
     allow-query { {{ dns_allow_query | join('; ') }}; };
-    recursion {{ 'yes' if dns.recursion | bool else 'no' }};
-    dnssec-validation {{ 'auto' if dns.dnssec | bool else 'no' }};
-    managed-keys-directory "{{ dns.zone_dir }}/dynamic";
+    recursion {{ 'yes' if named.recursion | bool else 'no' }};
+    dnssec-validation {{ 'auto' if named.dnssec | bool else 'no' }};
+    managed-keys-directory "{{ named.zone_dir }}/dynamic";
     pid-file "/run/named/named.pid";
     session-keyfile "/run/named/session.key";
-{% if (dns.forwarders | default([]) | length) > 0 %}
-    forwarders { {{ dns.forwarders | join('; ') }}; };
+{% if (named.forwarders | default([]) | length) > 0 %}
+    forwarders { {{ named.forwarders | join('; ') }}; };
     forward only;
 {% endif %}
 };
 
-zone "{{ dns.domain }}" IN {
+zone "{{ named.domain }}" IN {
 {% if dns_server_role == 'slave' %}
     type slave;
     masters { {{ dns_master_addresses | join('; ') }}; };
-    file "slaves/{{ dns.domain }}.zone";
+    file "slaves/{{ named.domain }}.zone";
 {% else %}
     type master;
-    file "{{ dns.domain }}.zone";
+    file "{{ named.domain }}.zone";
     notify yes;
 {% if (dns_slave_addresses | default([]) | length) > 0 %}
     also-notify { {{ dns_slave_addresses | join('; ') }}; };
 {% endif %}
 {% if (vault_dns_tsig_secret | default('') | length) > 0 %}
-    allow-transfer { key "{{ dns.tsig_key_name }}"; };
-{% elif (dns.allow_transfer_cidrs | default([]) | length) > 0 %}
-    allow-transfer { {{ dns.allow_transfer_cidrs | join('; ') }}; };
+    allow-transfer { key "{{ named.tsig_key_name }}"; };
+{% elif (named.allow_transfer_cidrs | default([]) | length) > 0 %}
+    allow-transfer { {{ named.allow_transfer_cidrs | join('; ') }}; };
 {% else %}
     allow-transfer { none; };
 {% endif %}

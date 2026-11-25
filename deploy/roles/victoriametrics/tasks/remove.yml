@@ -1,0 +1,69 @@
+---
+# Remove the victoriametrics stack from a node (ADR-18 / ADR-33 monitoring scale-in).
+# Data is preserved by default. Purging is opt-in and requires an explicit non-empty data_dirs list.
+
+- name: Validate monitoring scale-in options
+  ansible.builtin.assert:
+    that:
+      - not (victoriametrics_scale.purge_data | bool) or (victoriametrics_scale.data_dirs | default([]) | length > 0)
+    fail_msg: "victoriametrics_scale.purge_data=true requires a non-empty victoriametrics_scale.data_dirs list; monitoring data is never removed implicitly"
+    quiet: true
+  tags: [victoriametrics]
+
+- name: Compute components enabled on this node
+  ansible.builtin.set_fact:
+    victoriametrics_components: "{{ victoriametrics.components | dict2items | selectattr('value.enabled', 'equalto', true) | list }}"
+  tags: [victoriametrics]
+
+- name: Stop and disable monitoring services
+  ansible.builtin.systemd:
+    name: "winter-{{ item.key }}"
+    state: stopped
+    enabled: false
+  loop: "{{ victoriametrics_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  failed_when: false
+  tags: [victoriametrics]
+
+- name: Remove monitoring systemd units
+  ansible.builtin.file:
+    path: "/etc/systemd/system/winter-{{ item.key }}.service"
+    state: absent
+  loop: "{{ victoriametrics_components }}"
+  loop_control:
+    label: "{{ item.key }}"
+  tags: [victoriametrics]
+
+- name: Reload systemd manager configuration
+  ansible.builtin.systemd:
+    daemon_reload: true
+  tags: [victoriametrics]
+
+- name: Remove monitoring configuration
+  ansible.builtin.file:
+    path: "{{ victoriametrics.config_dir }}"
+    state: absent
+  tags: [victoriametrics]
+
+- name: Remove artifact staging directory
+  ansible.builtin.file:
+    path: /var/tmp/winter-observability
+    state: absent
+  tags: [victoriametrics]
+
+- name: Purge monitoring data (only when explicitly requested)
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: absent
+  loop: "{{ victoriametrics_scale.data_dirs | default([]) }}"
+  loop_control:
+    label: "{{ item }}"
+  when: victoriametrics_scale.purge_data | bool
+  tags: [victoriametrics]
+
+- name: Print scale-in summary
+  ansible.builtin.debug:
+    msg:
+      - "Monitoring stack removed from {{ inventory_hostname }}; data preserved unless purge_data=true"
+  tags: [victoriametrics]

@@ -8,6 +8,33 @@
 # - Roles carry no defaults/main.yml; every tunable is consolidated in this file
 # - group_vars/all.yml is auto-loaded by Ansible, so no play needs to include it twice
 # - After changing this file, rerun the relevant stage (reconfigure / deploy converge to the new state)
+#
+# Naming (ADR-50): every config key is prefixed with the SOFTWARE NAME of the role/operation
+# that owns it. `victoriametrics_*` -> roles/victoriametrics, `winter_server_*` -> roles/winter-server.
+# No concept names (monitoring/obs/server/agent/repo/system_init) remain.
+#
+# Config ownership index (key -> role / operation):
+#   platform.*                    global (domain, TLS, data dir, registry)
+#   prechecks.*                   system-checks role      (tags: prechecks)
+#   repo_nginx*, repo_nginx.*     repo-nginx role         (tags: repo-nginx)
+#   os_init*, os_init.*           os-init role            (tags: os-init)
+#   bootstrap*, bootstrap.*       bootstrap role          (tags: bootstrap)
+#   postgresql*, pg_cluster*,     postgresql role         (tags: postgresql / postgresql-ha /
+#   pg_scale*, pg_migrate*        postgresql-scale-* / postgresql-migrate)
+#   etcd_role, etcd_nodes         etcd role               (via postgresql-ha)
+#   patroni                       patroni role            (via postgresql-ha)
+#   haproxy_role                  haproxy role            (via postgresql-ha)
+#   nginx*, nginx.*               nginx role              (tags: nginx / application-ha)
+#   winter_server*, winter_server.*  winter-server role   (tags: winter-server / application-ha)
+#   victoriametrics*              victoriametrics role    (tags: victoriametrics / *-scale-*)
+#   harbor*, harbor.*             harbor role             (tags: harbor)
+#   named*, named.*               named role (BIND 9)     (tags: named)
+#   ha*, ha.*, keepalived_*       keepalived role         (tags: keepalived / application-ha)
+#   lvs_realserver_*              lvs-realserver role     (tags: lvs-realserver)
+#   winter_agent*, winter_agent.* winter-agent role       (tags: winter-agent)
+#   uninstall*, uninstall.*       uninstall role          (tags: destroy)
+#   upgrade.* / reconfigure       upgrade / reconfigure operations
+#   vault_*                       secrets consumed by whichever role needs them
 
 platform:
   # Platform external domain name (certificates and access entry point)
@@ -19,7 +46,7 @@ platform:
   # When the site has no internet access, all RPMs / wheels / binaries are fetched from here.
   # Derived from the first [repo-nginx] host so it follows the environment instead of a hardcoded site IP;
   # override platform.repo_base_url in a site-specific vars file if the repo is published elsewhere.
-  repo_base_url: "http://{{ hostvars[groups['repo-nginx'][0]]['ansible_host'] | default(hostvars[groups['repo-nginx'][0]]['inventory_hostname']) }}:{{ repo_listen_port }}"
+  repo_base_url: "http://{{ hostvars[groups['repo-nginx'][0]]['ansible_host'] | default(hostvars[groups['repo-nginx'][0]]['inventory_hostname']) }}:{{ repo_nginx_listen_port }}"
 
   # Image registry (ADR-16): self-hosted Harbor, all images are pulled through it
   registry_host: ""
@@ -66,9 +93,9 @@ platform:
 
 # Port used by the internal artifact repository Nginx site (roles/repo-nginx) and referenced by
 # reconfigure's port-uniqueness check. Single source of truth; adjust here if 8082 is unavailable.
-repo_listen_port: 8082
+repo_nginx_listen_port: 8082
 
-# Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the observability stack dominate)
+# Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the victoriametrics stack dominate)
 # All thresholds below are configurable: tune them to the target host and set strict_* switches to false
 # to downgrade a hard failure into a warning (useful for lab / small test machines).
 prechecks:
@@ -107,7 +134,7 @@ bootstrap_overrides:
 # System initialization (ADR-17): base OS tools and chrony, extracted from bootstrap so it can be
 # deployed alone. Deploy independently with: ./deploy.sh system-init -i inventory/multinode
 # Write only differences; the role combines them with its own defaults.
-system_init_overrides:
+os_init_overrides:
   # packages: [podman, python3, python3-pip, curl, wget, chrony]
   # chrony:
   #   enabled: true
@@ -117,7 +144,7 @@ system_init_overrides:
 # Prerequisites before scale-out: the winter-agent binary in the internal repo, a CA certificate
 # on the control machine, and Nginx grpc_pass on the documented outbound port 443.
 # TODO: set cert.ca_source to the real signing CA once the Go Agent enrollment work lands.
-agent_overrides:
+winter_agent_overrides:
   enabled: true
   server_address: "winter.local:443"
   cert:
@@ -168,7 +195,7 @@ uninstall_overrides:
     - "{{ winter_server.env_file }}"
     - "{{ winter_server.config_dir }}"
     - "{{ winter_server.bin_dir }}/{{ winter_server.artifact }}"
-    - "{{ observability.config_dir }}"
+    - "{{ victoriametrics.config_dir }}"
     - /usr/local/bin/victoria-metrics-prod
     - /usr/local/bin/vmalert-prod
     - /usr/local/bin/victoria-logs-prod
@@ -240,22 +267,22 @@ pg_cluster_defaults:
 # Observability stack (ADR-18 / ADR-33): all components installed by default, single node, all listening only on localhost
 # Ports, versions and retention may only be changed here; roles do not hardcode ports.
 # Grafana is reverse-proxied via Nginx /grafana/ (ADR-09); port 3000 is not exposed directly.
-monitoring_ports:
+victoriametrics_ports:
   victoriametrics: 8428
   vmalert: 8880
   victorialogs: 9428
   alertmanager: 9093
   grafana: 3000
-monitoring_listen_addr: 127.0.0.1
-# Single-node mode: bind and advertise both follow monitoring_listen_addr, so the existing
+victoriametrics_listen_addr: 127.0.0.1
+# Single-node mode: bind and advertise both follow victoriametrics_listen_addr, so the existing
 # localhost-only behaviour is preserved. The scale playbooks override these per host:
-#   monitoring_bind_addr      -> 0.0.0.0              (accept internal traffic)
-#   monitoring_advertise_addr -> the node internal IP (used by peers and reverse proxies)
-monitoring_bind_addr: "{{ monitoring_listen_addr }}"
-monitoring_advertise_addr: "{{ monitoring_listen_addr }}"
-monitoring_data_dir: /var/lib/winter/monitoring
-monitoring_config_dir: /etc/winter/monitoring
-monitoring_retention_days: 30       # 30 days each for metrics and logs; audits live in PG, not in the logging system
+#   victoriametrics_bind_addr      -> 0.0.0.0              (accept internal traffic)
+#   victoriametrics_advertise_addr -> the node internal IP (used by peers and reverse proxies)
+victoriametrics_bind_addr: "{{ victoriametrics_listen_addr }}"
+victoriametrics_advertise_addr: "{{ victoriametrics_listen_addr }}"
+victoriametrics_data_dir: /var/lib/winter/monitoring
+victoriametrics_config_dir: /etc/winter/monitoring
+victoriametrics_retention_days: 30       # 30 days each for metrics and logs; audits live in PG, not in the logging system
 
 # Monitoring scale-out / scale-in (ADR-18 / ADR-33).
 # Scope: stateless and HA layers only — Alertmanager gossip HA, Grafana replicas behind Nginx,
@@ -264,67 +291,67 @@ monitoring_retention_days: 30       # 30 days each for metrics and logs; audits 
 # additional replicas into a central VictoriaMetrics, but the playbooks never do that implicitly.
 # Single-node default keeps the local Alertmanager; monitoring scale playbooks override this with
 # the addresses of all Alertmanager replicas so alerts are de-duplicated by the gossip cluster.
-monitoring_vmalert_notifiers:
-  - "{{ monitoring_listen_addr }}"
+victoriametrics_vmalert_notifiers:
+  - "{{ victoriametrics_listen_addr }}"
 
-monitoring_scale_defaults:
-  nodes: []                  # scale-out targets, must already be listed in the [observability] group
-  removed_nodes: []          # scale-in targets, kept in [observability] but excluded from all references
+victoriametrics_scale_defaults:
+  nodes: []                  # scale-out targets, must already be listed in the [victoriametrics] group
+  removed_nodes: []          # scale-in targets, kept in [victoriametrics] but excluded from all references
   purge_data: false          # never remove monitoring data unless explicitly requested
   data_dirs: []              # required and non-empty when purge_data is true
   cluster_port: 9094         # Alertmanager gossip port
   metrics_query_url: ""      # Grafana datasource target; empty resolves to the first active monitor node
 
-observability:
+victoriametrics:
   enabled: true
   bin_dir: /usr/local/bin
-  data_dir: "{{ monitoring_data_dir }}"
-  config_dir: "{{ monitoring_config_dir }}"
-  listen_addr: "{{ monitoring_listen_addr }}"
+  data_dir: "{{ victoriametrics_data_dir }}"
+  config_dir: "{{ victoriametrics_config_dir }}"
+  listen_addr: "{{ victoriametrics_listen_addr }}"
   run_user: winter-monitor          # run as non-root (similar constraint to ADR-19)
-  retention_days: "{{ monitoring_retention_days }}"
+  retention_days: "{{ victoriametrics_retention_days }}"
   tarball_subdir: tarball
   components:
     victoriametrics:
       enabled: true
       tarball: victoria-metrics-linux-amd64-v1.156.0.tar.gz
       binary: victoria-metrics-prod
-      port: "{{ monitoring_ports.victoriametrics }}"
+      port: "{{ victoriametrics_ports.victoriametrics }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      args: "-storageDataPath={{ monitoring_data_dir }}/victoriametrics -retentionPeriod={{ monitoring_retention_days }}d"
+      args: "-storageDataPath={{ victoriametrics_data_dir }}/victoriametrics -retentionPeriod={{ victoriametrics_retention_days }}d"
     vmalert:
       enabled: true
       tarball: vmalert-linux-amd64-v1.156.0.tar.gz
       binary: vmalert-prod
-      port: "{{ monitoring_ports.vmalert }}"
+      port: "{{ victoriametrics_ports.vmalert }}"
       listen_flag: -httpListenAddr
       health_path: /health
       # Single alert-rule chain (ADR-18): M0 uses placeholder rules; replace with disk-usage/task-backlog rules once collection is wired up.
-      # notifier.url is appended from monitoring_vmalert_notifiers so the scale playbooks can point at every Alertmanager replica.
-      args: "-datasource.url=http://{{ monitoring_metrics_url | default(monitoring_listen_addr) }}:{{ monitoring_ports.victoriametrics }} -rule={{ monitoring_config_dir }}/rules/*.yml -evaluationInterval=15s"
+      # notifier.url is appended from victoriametrics_vmalert_notifiers so the scale playbooks can point at every Alertmanager replica.
+      args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule={{ victoriametrics_config_dir }}/rules/*.yml -evaluationInterval=15s"
     victorialogs:
       enabled: true
       tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz
       binary: victoria-logs-prod
-      port: "{{ monitoring_ports.victorialogs }}"
+      port: "{{ victoriametrics_ports.victorialogs }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      args: "-storageDataPath={{ monitoring_data_dir }}/victorialogs -retentionPeriod={{ monitoring_retention_days }}d"
+      args: "-storageDataPath={{ victoriametrics_data_dir }}/victorialogs -retentionPeriod={{ victoriametrics_retention_days }}d"
     alertmanager:
       enabled: true
       tarball: alertmanager-0.35.0.linux-amd64.tar.gz
       binary: alertmanager
-      port: "{{ monitoring_ports.alertmanager }}"
+      port: "{{ victoriametrics_ports.alertmanager }}"
       listen_flag: --web.listen-address
       health_path: /-/healthy
-      args: "--config.file={{ monitoring_config_dir }}/alertmanager.yml --storage.path={{ monitoring_data_dir }}/alertmanager"
+      args: "--config.file={{ victoriametrics_config_dir }}/alertmanager.yml --storage.path={{ victoriametrics_data_dir }}/alertmanager"
     grafana:
       enabled: true
       mode: directory                # directory-style install (includes frontend static assets), not a single-file binary
       tarball: grafana-9.5.20.linux-amd64.tar.gz
       install_dir: /opt/winter/grafana
-      port: "{{ monitoring_ports.grafana }}"
+      port: "{{ victoriametrics_ports.grafana }}"
       health_path: /api/health
 
 # Server (Go single binary + systemd); passwords and secrets live only in group_vars/all.yml, never here
@@ -376,13 +403,13 @@ ha: "{{ ha_defaults | combine(ha_overrides | default({}, true), recursive=True) 
 # Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with
 # each replica's internal address. database_host must point at the PG HA access point (HAProxy/VIP)
 # once replicas are spread across nodes.
-server_ha_defaults:
+winter_server_ha_defaults:
   # DB endpoint mode: auto (detect HAProxy config on host, fall back to node count) | direct (local
-  # 5432 system PG) | haproxy (server_ha.database_host:5434). Most deployments leave this on auto.
+  # 5432 system PG) | haproxy (winter_server_ha.database_host:5434). Most deployments leave this on auto.
   database_endpoint: auto
   database_host: 127.0.0.1
   audit_database_host: 127.0.0.1
-server_ha: "{{ server_ha_defaults | combine(server_ha_overrides | default({}, true), recursive=True) }}"
+winter_server_ha: "{{ winter_server_ha_defaults | combine(winter_server_ha_overrides | default({}, true), recursive=True) }}"
 
 # Harbor (ADR-16).
 # mode: builtin  — MVP single node. Harbor's own bundled PostgreSQL, Redis and local data volume.
@@ -423,9 +450,9 @@ harbor:
 
 # DNS (BIND 9): authoritative internal DNS for the platform domain (ADR-16 / ADR-17).
 # Publishes one A record per active-active Director VIP so DNS round-robin spreads clients
-# across Directors; the record set is derived from dns.vips -> ha.vips -> ha.vip.
-# Deploy independently with: ./deploy.sh dns -i inventory/multinode
-dns_defaults:
+# across Directors; the record set is derived from named.vips -> ha.vips -> ha.vip.
+# Deploy independently with: ./deploy.sh named -i inventory/multinode
+named_defaults:
   enabled: false
   # package = dnf from host repos; repo = offline RPMs from the internal static repo
   install_method: package
@@ -453,9 +480,9 @@ dns_defaults:
   manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
   manage_systemd_resolved: true         # disable the systemd-resolved stub listener to free the DNS port
   check_interval: 60                   # local resolution check retry window (seconds)
-# ADR-42: operation files set dns_overrides (partial dict); extra-vars @file replaces whole dicts,
+# ADR-42: operation files set named_overrides (partial dict); extra-vars @file replaces whole dicts,
 # so merge onto defaults to preserve lazy keys such as domain ({{ platform.domain }}).
-dns: "{{ dns_defaults | combine(dns_overrides | default({}, true), recursive=True) }}"
+named: "{{ named_defaults | combine(named_overrides | default({}, true), recursive=True) }}"
 
 # Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
 # instance (postgresql.port); the target is the HA entry point (pg_cluster.haproxy.listen_port).
@@ -491,10 +518,10 @@ pg_migrate: "{{ pg_migrate_defaults | combine(pg_migrate_overrides | default({},
 # dicts, so merge onto defaults to preserve keys not listed in an operation file.
 pg_scale: "{{ pg_scale_defaults | combine(pg_scale_overrides | default({}, true), recursive=True) }}"
 pg_cluster: "{{ pg_cluster_defaults | combine(pg_cluster_overrides | default({}, true), recursive=True) }}"
-monitoring_scale: "{{ monitoring_scale_defaults | combine(monitoring_scale_overrides | default({}, true), recursive=True) }}"
+victoriametrics_scale: "{{ victoriametrics_scale_defaults | combine(victoriametrics_scale_overrides | default({}, true), recursive=True) }}"
 
-# ---- consolidated from roles/agent/defaults/main.yml ----
-agent_defaults:
+# ---- consolidated from roles/winter_agent/defaults/main.yml ----
+winter_agent_defaults:
   enabled: true
 
   # Node identity reported in HELLO; must match the CN/SPIFFE URI in the certificate.
@@ -505,9 +532,9 @@ agent_defaults:
   server_address: "winter.local:443"
 
   bin_dir: /usr/local/bin
-  config_dir: /etc/winter/agent
-  env_file: /etc/winter/agent/agent.env
-  log_dir: /var/log/winter/agent
+  config_dir: /etc/winter/winter_agent
+  env_file: /etc/winter/winter_agent/winter_agent.env
+  log_dir: /var/log/winter/winter_agent
   run_user: winter-agent
 
   artifact: winter-agent
@@ -519,11 +546,11 @@ agent_defaults:
   max_message_bytes: 1048576
 
   cert:
-    dir: /etc/winter/agent/certs
-    key: agent.key
-    cert: agent.crt
+    dir: /etc/winter/winter_agent/certs
+    key: winter_agent.key
+    cert: winter_agent.crt
     ca: ca.crt
-    csr: agent.csr
+    csr: winter_agent.csr
     key_bits: 2048
     # Path on the CONTROL machine of the CA that signs Agent certificates.
     # Private keys are generated on the node and never leave it (ADR-28).
@@ -549,14 +576,14 @@ agent_defaults:
     remove_user: false
     revoke_cert: false
 
-agent: "{{ agent_defaults | combine(agent_overrides | default({}, true), recursive=True) }}"
+winter_agent: "{{ winter_agent_defaults | combine(winter_agent_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/bootstrap/defaults/main.yml ----
 bootstrap_defaults:
   enabled: true
 
   # Base OS packages and clock synchronization were extracted into roles/system-init,
-  # which can run on its own. Configure them with system_init_overrides in group_vars/all.yml.
+  # which can run on its own. Configure them with os_init_overrides in group_vars/all.yml.
 
   # Kernel parameters previously only reported by roles/system-checks.
   # Off by default during M0 so bootstrap stays non-invasive; set bootstrap_overrides.enforce_kernel: true
@@ -580,7 +607,7 @@ bootstrap_defaults:
 bootstrap: "{{ bootstrap_defaults | combine(bootstrap_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/system-init/defaults/main.yml ----
-system_init_defaults:
+os_init_defaults:
   enabled: true
 
   # Base OS packages. In an offline site these come from the OS installation media,
@@ -603,7 +630,7 @@ system_init_defaults:
     # these servers; existing configuration is never overwritten or removed.
     servers: []
 
-system_init: "{{ system_init_defaults | combine(system_init_overrides | default({}, true), recursive=True) }}"
+os_init: "{{ os_init_defaults | combine(os_init_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/uninstall/defaults/main.yml ----
 uninstall_defaults:
@@ -724,18 +751,18 @@ keepalived_lvs_check_script: /etc/keepalived/check_lvs.sh
 keepalived_service: keepalived
 
 # ---- consolidated from roles/repo-nginx/defaults/main.yml ----
-local_repo:
+repo_nginx:
   # Artifact source (directory on the control machine)
   src: "{{ playbook_dir }}/artifacts/repo"
   # Publish directory (Nginx root)
   root: "{{ platform.data_dir }}/www/repo"
-  listen_port: "{{ repo_listen_port }}"
+  listen_port: "{{ repo_nginx_listen_port }}"
   # Subnet allowed to access (change to the actual internal subnet on site)
   allow_cidr: "192.168.101.0/24"
 
-# ---- consolidated from roles/observability/defaults/main.yml ----
-obs_health_retries: 30
-obs_health_delay: 2
+# ---- consolidated from roles/victoriametrics/defaults/main.yml ----
+victoriametrics_health_retries: 30
+victoriametrics_health_delay: 2
 
 # ---- consolidated from roles/patroni/defaults/main.yml ----
 patroni:
@@ -756,15 +783,15 @@ patroni:
   pip_subdir: pip
 
 # ---- consolidated from roles/realserver/defaults/main.yml ----
-realserver_sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
-realserver_helper: /usr/local/bin/winter-lvs-vip.sh
-realserver_unit: winter-lvs-vip.service
-realserver_vip: "{{ ha.vip }}"
+lvs_realserver_sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
+lvs_realserver_helper: /usr/local/bin/winter-lvs-vip.sh
+lvs_realserver_unit: winter-lvs-vip.service
+lvs_realserver_vip: "{{ ha.vip }}"
 
 # ---- consolidated from roles/winter-server/defaults/main.yml ----
-server_run_user: winter-server
-server_health_retries: 20
-server_health_delay: 2
+winter_server_run_user: winter-server
+winter_server_health_retries: 20
+winter_server_health_delay: 2
 
 # ---- Secrets (consolidated from group_vars/all.yml, ADR-45) ----
 # Fill real values on the control machine; this file is gitignored.

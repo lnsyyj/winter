@@ -7,23 +7,23 @@ enterprise standard on RHEL, supports standard round-robin A records and master/
 
 ## Configuration
 
-`dns.*` in `deploy/group_vars/all.yml` is the single entry point:
+`named.*` in `deploy/group_vars/all.yml` is the single entry point:
 
 | Key | Meaning |
 | --- | --- |
-| `dns.enabled` | Enables the role; `false` keeps DNS out of the deployment |
-| `dns.domain` | Zone name, defaults to `platform.domain` |
-| `dns.vips` | A records for the domain; empty falls back to `ha.vips`, then `ha.vip` |
-| `dns.master_addresses` / `dns.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
-| `dns.forwarders` | Upstream resolvers for external names; empty means authoritative-only |
-| `dns.recursion` / `dns.dnssec` | Resolver behaviour; off by default for an authoritative internal zone |
-| `dns.allow_query_cidrs` | Query ACL; empty means `any` |
-| `dns.allow_transfer_cidrs` | Transfer ACL on the master; empty means TSIG key only |
-| `dns.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
-| `dns.rpm_files` / `dns.rpm_subdir` | BIND RPMs when `install_method=repo` |
-| `dns.manage_firewall` | Open `dns.listen_port`/tcp and /udp with firewalld; set `false` for an external firewall |
-| `dns.manage_systemd_resolved` | Disable the systemd-resolved stub listener to free `dns.listen_port`; `false` to manage the conflict yourself |
-| `dns.check_interval` | Local resolution retry window (seconds) |
+| `named.enabled` | Enables the role; `false` keeps DNS out of the deployment |
+| `named.domain` | Zone name, defaults to `platform.domain` |
+| `named.vips` | A records for the domain; empty falls back to `ha.vips`, then `ha.vip` |
+| `named.master_addresses` / `named.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
+| `named.forwarders` | Upstream resolvers for external names; empty means authoritative-only |
+| `named.recursion` / `named.dnssec` | Resolver behaviour; off by default for an authoritative internal zone |
+| `named.allow_query_cidrs` | Query ACL; empty means `any` |
+| `named.allow_transfer_cidrs` | Transfer ACL on the master; empty means TSIG key only |
+| `named.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
+| `named.rpm_files` / `named.rpm_subdir` | BIND RPMs when `install_method=repo` |
+| `named.manage_firewall` | Open `named.listen_port`/tcp and /udp with firewalld; set `false` for an external firewall |
+| `named.manage_systemd_resolved` | Disable the systemd-resolved stub listener to free `named.listen_port`; `false` to manage the conflict yourself |
+| `named.check_interval` | Local resolution retry window (seconds) |
 
 `vault_dns_tsig_secret` comes from `deploy/group_vars/all.yml`. Generate one with
 `openssl rand -base64 32` on a trusted machine; the secret never goes into `group_vars`.
@@ -31,7 +31,7 @@ enterprise standard on RHEL, supports standard round-robin A records and master/
 ### Port 53 and systemd-resolved
 
 On stock RHEL/Rocky hosts `systemd-resolved` owns `127.0.0.53:53` with its stub listener, so BIND
-cannot bind `listen_addr: any`. With `dns.manage_systemd_resolved: true` (the default) the role
+cannot bind `listen_addr: any`. With `named.manage_systemd_resolved: true` (the default) the role
 writes `/etc/systemd/resolved.conf.d/winter-dns.conf` containing `DNSStubListener=no` and restarts
 the resolver before BIND starts. The resolver service and `/etc/resolv.conf` stay intact, so host
 name resolution is unaffected. Set the flag to `false` only when port 53 is already free or the
@@ -48,7 +48,7 @@ no `[dns_slaves]` group the single DNS node is the master — the default single
 
 ## Active-active VIP round-robin
 
-`dns_vips` is resolved in this order: `dns.vips` → `ha.vips` → `[ha.vip]`. Every address becomes
+`dns_vips` is resolved in this order: `named.vips` → `ha.vips` → `[ha.vip]`. Every address becomes
 an `@ IN A` record in the zone, so a client resolving the platform domain receives all VIPs and
 BIND rotates the answer order. This completes the multi-VIP Director design: DNS spreads clients
 across Directors, LVS/DR spreads them across Nginx backends. When a VIP fails over, its address
@@ -58,7 +58,7 @@ is unchanged and the A record stays valid.
 
 The master renders a full zone file with a serial derived from a hash of the domain and VIP set,
 so editing VIPs changes the serial deterministically and triggers a notify. Slaves keep a
-transferred copy under `{{ dns.zone_dir }}/slaves/` and do not render the zone themselves. A TSIG
+transferred copy under `{{ named.zone_dir }}/slaves/` and do not render the zone themselves. A TSIG
 key is required when any slave exists; `named-checkconf` validates the rendered configuration
 before the service is reloaded.
 
@@ -67,7 +67,7 @@ before the service is reloaded.
 Read-only and idempotent:
 
 ```bash
-./deploy.sh dns -i inventory/multinode --tags precheck.dns
+./deploy.sh named -i inventory/multinode --tags precheck.named
 ```
 
 Checks: configuration validity, DNS topology, TSIG secret presence, package source availability,

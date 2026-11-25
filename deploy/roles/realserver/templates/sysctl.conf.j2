@@ -1,9 +1,0 @@
-# {{ ansible_managed | default('managed by ansible') }}
-# LVS/DR requires the real server to answer ARP only for its own interfaces,
-# never for the shared VIP configured on loopback.
-net.ipv4.conf.all.arp_ignore = 1
-net.ipv4.conf.all.arp_announce = 2
-net.ipv4.conf.default.arp_ignore = 1
-net.ipv4.conf.default.arp_announce = 2
-net.ipv4.conf.lo.arp_ignore = 1
-net.ipv4.conf.lo.arp_announce = 2

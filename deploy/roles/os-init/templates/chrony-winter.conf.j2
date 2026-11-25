@@ -1,0 +1,4 @@
+# Managed by Ansible (role: os-init). Do not edit by hand.
+{% for server in os_init.chrony.servers %}
+server {{ server }} iburst
+{% endfor %}

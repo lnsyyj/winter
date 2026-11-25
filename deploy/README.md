@@ -25,13 +25,13 @@ IPs if HA is rebuilt — back up PG data before any such rebuild.
 
 # actions: deploy | prechecks | destroy | verify | reconfigure | upgrade
 ./deploy.sh deploy                                                      # default inventory
-./deploy.sh deploy -t local-repo                                        # one component
+./deploy.sh deploy -t repo-nginx                                        # one component
 ./deploy.sh prechecks -t postgresql                                     # one role's prechecks
 ./deploy.sh deploy -t postgresql-scale-out \
     -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'  # transactional op
 ./deploy.sh deploy -t postgresql-ha                                     # PG HA bootstrap
 ./deploy.sh deploy -t lvs-director,lvs-realserver \
-    -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
+    -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
 ```
 
 - Without `-t`, `deploy`/`prechecks` run **components only**; transactional operations (`postgresql-ha`,
@@ -39,7 +39,7 @@ IPs if HA is rebuilt — back up PG data before any such rebuild.
   to prevent accidental execution. Each operation has a dedicated tag so component runs cannot
   trigger it.
 - Component tags: `prechecks os-init bootstrap repo-nginx postgresql nginx victoriametrics
-  winter-server harbor keepalived named agent`.
+  winter-server harbor keepalived named winter_agent`.
 - Operation tags: `postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate application-ha keepalived-operations
   victoriametrics-scale-out victoriametrics-scale-in destroy verify reconfigure upgrade`.
 - **Per-operation variables are passed on the command line with `-e`** (see `deploy.sh --help` for the
@@ -57,17 +57,17 @@ stage commands were removed in ADR-42 — use the action + tag form above.
 
 | Stage | Command | Status |
 | --- | --- | --- |
-| Bootstrap servers | `./deploy.sh bootstrap-servers -i inventory/multinode` | ✅ **Implemented** (runs system-init + optional kernel/data-disk settings) |
+| Bootstrap servers | `./deploy.sh bootstrap-servers -i inventory/multinode` | ✅ **Implemented** (runs os-init + optional kernel/data-disk settings) |
 | Prechecks | `./deploy.sh prechecks -i inventory/multinode` | ✅ **Implemented** (read-only, for the provisioning phase) |
-| OS initialization | `./deploy.sh system-init -i inventory/multinode` | ✅ **Implemented** (base OS tools + chrony; standalone stage, also reused by bootstrap) |
-| Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|dns\|system-init> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
-| Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + observability stack + Server) |
-| Converge observability stack/Server only | `./deploy.sh deploy --tags observability,server` | ✅ **Implemented** (automatically includes the internal repo) |
+| OS initialization | `./deploy.sh os-init -i inventory/multinode` | ✅ **Implemented** (base OS tools + chrony; standalone stage, also reused by bootstrap) |
+| Standalone component stages | `./deploy.sh <repo\|postgresql\|nginx\|monitoring\|server\|harbor\|keepalived\|named\|os-init> -i inventory/multinode` | ✅ **Implemented** (each stage runs its own read-only prechecks before converging) |
+| Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + victoriametrics stack + Server) |
+| Converge victoriametrics stack/Server only | `./deploy.sh deploy --tags victoriametrics,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh postgresql-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
 | PG HA scale out | `./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
 | PG HA scale in | `./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
-| Monitoring scale out | `./deploy.sh victoriametrics-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[observability]`) |
-| Monitoring scale in | `./deploy.sh victoriametrics-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
+| Monitoring scale out | `./deploy.sh victoriametrics-scale-out -i inventory/multinode -e '{"victoriametrics_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[victoriametrics]`) |
+| Monitoring scale in | `./deploy.sh victoriametrics-scale-in -i inventory/multinode -e '{"victoriametrics_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
 | HA converged deployment | `./deploy.sh application-ha -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
 | Scale out (install Agent) | `./deploy.sh agent-scale-out -i inventory/multinode --limit node04` | ✅ **Implemented** (requires the Agent binary and CA; see below) |
 | Scale in (remove Agent) | `./deploy.sh agent-scale-in -i inventory/multinode --limit node03` | ✅ **Implemented** (data preserved by default) |
@@ -89,15 +89,15 @@ actual value and how to fix it.
 
 | Component | Stage | Inventory group | Precheck tag | Checks |
 | --- | --- | --- | --- | --- |
-| OS initialization | `./deploy.sh system-init -i inventory/multinode` | `[system-init]` | `precheck.system-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
-| Internal repo | `./deploy.sh local-repo -i inventory/multinode` | `[local-repo]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
+| OS initialization | `./deploy.sh os-init -i inventory/multinode` | `[os-init]` | `precheck.os-init` | distribution, packages/chrony config, NTP tokens, chronyd unit |
+| Internal repo | `./deploy.sh repo-nginx -i inventory/multinode` | `[repo-nginx]` | `precheck.repo` | artifact source, SHA256SUMS, port 8082, allow CIDR |
 | PostgreSQL | `./deploy.sh postgresql -i inventory/multinode` | `[postgresql]` | `precheck.postgresql` | OS, password, offline RPMs, database port |
 | Nginx | `./deploy.sh nginx -i inventory/multinode` | `[nginx]` | `precheck.nginx` | domain, upstream, web ports, parent paths |
-| Monitoring stack | `./deploy.sh observability -i inventory/multinode` | `[observability]` | `precheck.monitoring` | component tarballs, ports, Grafana secret |
+| Monitoring stack | `./deploy.sh victoriametrics -i inventory/multinode` | `[victoriametrics]` | `precheck.monitoring` | component tarballs, ports, Grafana secret |
 | Server | `./deploy.sh winter-server -i inventory/multinode` | `[winter-server]` | `precheck.server` | JWT secret, binary, DB address, API port |
 | Harbor | `./deploy.sh harbor -i inventory/multinode` | `[harbor]` | `precheck.harbor` | external PG/Redis/NFS, installer, docker |
 | Keepalived / LVS | `./deploy.sh keepalived -i inventory/multinode` | `[keepalived]` + `[nginx]` | `precheck.keepalived` | VIP, interface, VRRP secret, ip_vs, group split |
-| DNS (BIND 9) | `./deploy.sh dns -i inventory/multinode` | `[named]` | `precheck.dns` | domain, VIPs, TSIG, RPMs, port 53 |
+| DNS (BIND 9) | `./deploy.sh named -i inventory/multinode` | `[named]` | `precheck.named` | domain, VIPs, TSIG, RPMs, port 53 |
 
 The groups default to `management` in all shipped inventories, so existing single-node behaviour is
 unchanged. Split them onto dedicated hosts to deploy any component independently. The full converge
@@ -106,25 +106,25 @@ stage (`deploy`) and the HA stage (`application-ha`) remain available for one-sh
 ## System Initialization (chrony and base tools)
 
 ```bash
-./deploy.sh system-init -i inventory/multinode                       # base tools + clock sync
-./deploy.sh system-init -i inventory/multinode --tags precheck.system-init   # checks only
+./deploy.sh os-init -i inventory/multinode                       # base tools + clock sync
+./deploy.sh os-init -i inventory/multinode --tags precheck.os-init   # checks only
 ```
 
-`system-init` installs the base OS tools and enables `chronyd`. It was extracted from
+`os-init` installs the base OS tools and enables `chronyd`. It was extracted from
 `roles/bootstrap` so it can run alone; `bootstrap-servers` runs it first and keeps its original
 full behaviour (kernel sysctl and optional data disk remain in `roles/bootstrap`).
 
 | Key | Meaning |
 | --- | --- |
-| `system_init.enabled` | Enables the role |
-| `system_init.packages` | Base OS packages, default `[podman, python3, python3-pip, curl, wget, chrony]` |
-| `system_init.chrony.enabled` | Enables and starts `chronyd` (mTLS/certificate checks depend on clock sync) |
-| `system_init.chrony.servers` | Extra NTP sources; empty keeps the distribution's own pool |
-| `system_init.chrony.config_file` / `include_dir` / `include_file` | Where the idempotent `include` line and drop-in are written |
+| `os_init.enabled` | Enables the role |
+| `os_init.packages` | Base OS packages, default `[podman, python3, python3-pip, curl, wget, chrony]` |
+| `os_init.chrony.enabled` | Enables and starts `chronyd` (mTLS/certificate checks depend on clock sync) |
+| `os_init.chrony.servers` | Extra NTP sources; empty keeps the distribution's own pool |
+| `os_init.chrony.config_file` / `include_dir` / `include_file` | Where the idempotent `include` line and drop-in are written |
 
 With a non-empty `servers` list the role appends one `include` line to `chrony.conf` and renders
 `server <name> iburst` entries into the drop-in — existing configuration is never overwritten.
-The `[system-init]` group defaults to all management and managed nodes, so the stage covers
+The `[os-init]` group defaults to all management and managed nodes, so the stage covers
 every host. Re-running is idempotent: packages are queried with `rpm -qa` before install.
 
 ## Offline Artifact Repository (ADR-14 / ADR-15)
@@ -135,7 +135,7 @@ All three on-site sources are unreliable (verified: the official PGDG site times
 deploy/artifacts/repo/
 ├── rpm/pgdg17/     4 RPMs for PG 17 (no contrib, see below)
 ├── rpm/base/       haproxy, perl-libs and other base dependencies
-├── tarball/        etcd + 5 static packages for the observability stack
+├── tarball/        etcd + 5 static packages for the victoriametrics stack
 ├── bin/            winter-server (Go single binary, cross-compiled artifact)
 ├── pip/            patroni and its dependency wheels
 └── SHA256SUMS.txt  full transfer checksum manifest (rpm/pip/tarball/bin): cd deploy/artifacts/repo && sha256sum -c SHA256SUMS.txt
@@ -176,7 +176,7 @@ Two deliberate trade-offs:
 
 ## Observability Stack and Server (ADR-18 / ADR-09 / ADR-33)
 
-`./deploy.sh deploy` converges everything at once; you can also run only `--tags observability,server`.
+`./deploy.sh deploy` converges everything at once; you can also run only `--tags victoriametrics,server`.
 The component list, ports, versions and command-line arguments all live in `group_vars/all.yml`; roles do not hardcode ports.
 
 | Component | Port (default) | systemd | Health endpoint |
@@ -191,7 +191,7 @@ The component list, ports, versions and command-line arguments all live in `grou
 - All listen only on `127.0.0.1` and run as non-root users; Grafana is exposed externally only through the `https://<domain>/grafana/` reverse proxy (ADR-09), and ships with a default datasource pointing at local VictoriaMetrics.
 - Single alerting path: `vmalert → Alertmanager → webhook` (ADR-18); M0 uses placeholder rules, the Server's HMAC webhook endpoint is not implemented yet, and dropped alerts do not affect tasks.
 - Metrics/logs are retained for 30 days; **audits live in PG, not in the logging system** (ADR-06 / ADR-32).
-- `observability.enabled: false` or a single component's `enabled: false` trims the stack (ADR-18 packaging layers).
+- `victoriametrics.enabled: false` or a single component's `enabled: false` trims the stack (ADR-18 packaging layers).
 - The Server's `DATABASE_URL` / `JWT_SECRET` / admin password all come from `deploy/group_vars/all.yml` (see `group_vars/all.yml.example` for the template); roles assert explicitly and do not generate default weak passwords.
 - Overwriting a running binary triggers `ETXTBSY`, so the Server role does `cp` in the target directory + `mv` within the same directory to atomically replace the inode, keeping the downloaded source file for idempotency; no restart if content is unchanged.
 
@@ -200,7 +200,7 @@ The component list, ports, versions and command-line arguments all live in `grou
 Managed nodes get the Agent during the provisioning phase; at runtime there is no SSH. Scaling the platform means installing or removing the Agent on nodes, not opening inbound ports.
 
 ```bash
-# Add new hosts to [agent] first, then target only them
+# Add new hosts to [winter-agent] first, then target only them
 ./deploy.sh agent-scale-out -i inventory/multinode --limit node04
 
 # Remove the Agent; platform data is preserved unless explicitly purged
@@ -211,8 +211,8 @@ Prerequisites for `agent-scale-out` (the role fails with an actionable message w
 
 | Prerequisite | Configuration |
 | --- | --- |
-| `winter-agent` binary in the internal repo | `platform.repo_base_url` + `agent_overrides.artifact` |
-| CA certificate on the control machine | `agent_overrides.cert.ca_source` |
+| `winter-agent` binary in the internal repo | `platform.repo_base_url` + `winter_agent_overrides.artifact` |
+| CA certificate on the control machine | `winter_agent_overrides.cert.ca_source` |
 | Nginx `grpc_pass` for the Agent service on outbound 443 | infrastructure outside this role |
 
 Identity: `node_id` defaults to the inventory hostname and must match the certificate `CN` and `SPIFFE URI:spiffe://winter/node/<node_id>`. In `local_csr` mode the private key is generated on the node and never leaves it; a CSR is staged, and the service starts only once a certificate is issued. In `preissued` mode a key/cert pair is copied from the control machine.
@@ -278,29 +278,29 @@ After a successful scale-in, remove the hosts from `[management]` in the invento
 
 ### Scaling the Monitoring Stack
 
-Add the new hosts to `[observability]` in the inventory first; topology is always expressed by inventory groups. Every name in
-`monitoring_scale.nodes` / `removed_nodes` must already be a member of that group.
+Add the new hosts to `[victoriametrics]` in the inventory first; topology is always expressed by inventory groups. Every name in
+`victoriametrics_scale.nodes` / `removed_nodes` must already be a member of that group.
 
 ```bash
 # Add a monitor node: gossip peer + Grafana replica + vmalert notifier
-./deploy.sh victoriametrics-scale-out -i inventory/multinode -e '{"monitoring_scale":{"nodes":["mon02"]}}'
+./deploy.sh victoriametrics-scale-out -i inventory/multinode -e '{"victoriametrics_scale":{"nodes":["mon02"]}}'
 
 # Remove a monitor node: rewire references first, then tear down services
-./deploy.sh victoriametrics-scale-in -i inventory/multinode -e '{"monitoring_scale":{"removed_nodes":["mon02"]}}'
+./deploy.sh victoriametrics-scale-in -i inventory/multinode -e '{"victoriametrics_scale":{"removed_nodes":["mon02"]}}'
 ```
 
 Scope and boundaries:
 
-- **Stateless / HA layers scale horizontally**: Alertmanager forms a gossip cluster (`monitoring_scale.cluster_port`,
+- **Stateless / HA layers scale horizontally**: Alertmanager forms a gossip cluster (`victoriametrics_scale.cluster_port`,
   default 9094), vmalert notifies every Alertmanager replica, and Nginx load-balances Grafana across all monitor nodes.
 - **VictoriaMetrics / VictoriaLogs stay single-node**: they use the single-node binaries with local storage, so adding a
-  monitor node does **not** create a distributed datastore. Point `monitoring_scale.metrics_query_url` at a central
+  monitor node does **not** create a distributed datastore. Point `victoriametrics_scale.metrics_query_url` at a central
   VictoriaMetrics endpoint when replicas must be aggregated; the playbooks never configure `remote_write` implicitly.
 - Multi-node runs bind components to `0.0.0.0` and advertise each node's `ansible_host`; scaling back to one node
   restores the localhost-only binding.
 - At least one monitor node must remain; scale-in refuses to remove the last one.
-- Data is preserved by default: `monitoring_scale.purge_data: true` requires an explicit non-empty
-  `monitoring_scale.data_dirs` list.
+- Data is preserved by default: `victoriametrics_scale.purge_data: true` requires an explicit non-empty
+  `victoriametrics_scale.data_dirs` list.
 
 ### High Availability (Server / Harbor)
 
@@ -323,7 +323,7 @@ Inventory groups: `[keepalived]` (LVS Director + Keepalived), `[nginx]` (real Ng
 
 To avoid an idle standby Director, set `ha.vips` to one address per `[keepalived]` node. Each Director then
 owns one VIP as MASTER and backs up the others (active-active). Publish **all** VIPs as A records
-for the platform domain so clients spread across Directors — the `dns` stage (BIND 9) does this
+for the platform domain so clients spread across Directors — the `named` stage (BIND 9) does this
 automatically, otherwise use an external DNS. A single `ha.vip` keeps the original active-standby behaviour.
 
 Configuration in `group_vars/all.yml`:
@@ -331,9 +331,9 @@ Configuration in `group_vars/all.yml`:
 - `ha.vip`, `ha.interface`, `ha.priority` — VRRP address and election; the shared
   `vault_keepalived_auth_pass` comes from `group_vars/all.yml`. Priority descends across `[keepalived]`.
 - `ha.lvs.enabled: true` and `ha.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`) — four-layer load
-  balancing; requires at least two `[nginx]`. The `realserver` role puts the VIP on `lo`
+  balancing; requires at least two `[nginx]`. The `lvs-realserver` role puts the VIP on `lo`
   with ARP suppression on each backend, and persists it with a oneshot systemd unit.
-- `server_ha.database_host` / `audit_database_host` — must point at the PG HA access point once
+- `winter_server_ha.database_host` / `audit_database_host` — must point at the PG HA access point once
   Server replicas span nodes; the stage refuses `127.0.0.1` in that case.
 - `harbor.enabled: true` plus `harbor.database.*`, `harbor.redis.*`, `harbor.storage.*` — all
   required for Harbor replicas; the offline installer must be present in the internal repo.
@@ -348,27 +348,27 @@ while `/api/v2.0/`, `/v2/`, `/service/` and `/harbor/` are routed to Harbor.
 ### DNS (BIND 9) and VIP Round-Robin
 
 ```bash
-./deploy.sh dns -i inventory/multinode                       # deploy BIND 9
-./deploy.sh dns -i inventory/multinode --tags precheck.dns   # checks only
+./deploy.sh named -i inventory/multinode                       # deploy BIND 9
+./deploy.sh named -i inventory/multinode --tags precheck.named   # checks only
 ```
 
-`dns` is the authoritative internal DNS for `platform.domain`. It publishes one A record per
-active-active VIP, resolved in this order: `dns.vips` → `ha.vips` → `[ha.vip]`. BIND rotates the
+`named` is the authoritative internal DNS for `platform.domain`. It publishes one A record per
+active-active VIP, resolved in this order: `named.vips` → `ha.vips` → `[ha.vip]`. BIND rotates the
 answer order, so clients spread across Directors. A VIP failover does not change its address, so
 the record stays valid. This completes the multi-VIP design: DNS spreads clients across Directors,
 and LVS/DR spreads them across Nginx backends.
 
 | Key | Meaning |
 | --- | --- |
-| `dns.enabled` | Enables the role; `false` keeps DNS out of the deployment |
-| `dns.domain` | Zone name, defaults to `platform.domain` |
-| `dns.vips` | Explicit A records; empty falls back to the `ha.*` VIPs |
-| `dns.master_addresses` / `dns.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
-| `dns.forwarders` | Upstream resolvers for external names; empty means authoritative-only |
-| `dns.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
-| `dns.rpm_files` / `dns.rpm_subdir` | BIND RPMs when `install_method=repo` |
-| `dns.manage_firewall` | Open `dns.listen_port`/tcp and /udp with firewalld; `false` for an external firewall |
-| `dns.tsig_key_name` | TSIG key name; the secret is `vault_dns_tsig_secret` in `group_vars/all.yml` |
+| `named.enabled` | Enables the role; `false` keeps DNS out of the deployment |
+| `named.domain` | Zone name, defaults to `platform.domain` |
+| `named.vips` | Explicit A records; empty falls back to the `ha.*` VIPs |
+| `named.master_addresses` / `named.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
+| `named.forwarders` | Upstream resolvers for external names; empty means authoritative-only |
+| `named.install_method` | `package` (dnf from host repos) or `repo` (offline RPMs from the internal repo) |
+| `named.rpm_files` / `named.rpm_subdir` | BIND RPMs when `install_method=repo` |
+| `named.manage_firewall` | Open `named.listen_port`/tcp and /udp with firewalld; `false` for an external firewall |
+| `named.tsig_key_name` | TSIG key name; the secret is `vault_dns_tsig_secret` in `group_vars/all.yml` |
 
 Topology is in inventory: `[named]` (all servers), `[dns_masters]` (defaults to nodes minus
 slaves) and `[dns_slaves]` (optional). The master renders a full zone with a deterministic serial
@@ -413,7 +413,7 @@ Base layer: `./deploy.sh deploy` ran through with `ok=25 changed=2 failed=0`; th
 Three issues exposed and fixed on real machines:
 
 1. `unarchive` requires the `dest` directory to **already exist**: Grafana had only created the parent `/opt/winter` → added creation of the install directory;
-2. `local-repo` treated the `success` output of every `firewall-cmd --reload` as a change → switched to `--query-rich-rule`, reporting changed only when a rule is actually added;
+2. `repo-nginx` treated the `success` output of every `firewall-cmd --reload` as a change → switched to `--query-rich-rule`, reporting changed only when a rule is actually added;
 3. `winter-server`'s `mv` consumed the downloaded source file, causing a fresh `get_url` on every rerun → changed to copying into the target directory + `mv` within the same directory for atomic replacement, preserving the source file.
 
 ### Five base-layer issues exposed and fixed on real machines (all invisible on paper, only blowing up at runtime):
@@ -443,20 +443,20 @@ deploy/
 ├── site.yml                   # single entry point; thin hosts+roles orchestration (ADR-43/44)
 ├── roles/                     # one role per component; all tunables in group_vars/all.yml (ADR-45)
 └── roles/
-    ├── bootstrap/             # optional kernel/data-disk settings (reuses system-init for base tools)
-    ├── system-init/           # base OS tools + chrony clock sync (standalone, reused by bootstrap)
-    ├── agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
+    ├── bootstrap/             # optional kernel/data-disk settings (reuses os-init for base tools)
+    ├── os-init/           # base OS tools + chrony clock sync (standalone, reused by bootstrap)
+    ├── winter_agent/                 # Agent pre-install and removal (scale-out / scale-in / destroy)
     ├── uninstall/             # platform removal with data preserved by default
     ├── system-checks/         # read-only system checks (precheck action)
-    ├── local-repo/            # publishes the internal artifact repo (8082)
+    ├── repo-nginx/            # publishes the internal artifact repo (8082)
     ├── postgresql/ nginx/     # database and access layer
     ├── etcd/ patroni/ haproxy/# PG high availability
-    ├── observability/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
+    ├── victoriametrics/         # VM/vmalert/VictoriaLogs/Alertmanager/Grafana
     ├── winter-server/         # Go single binary + systemd (multi-replica via application-ha)
     ├── harbor/                # Harbor replicas (external DB/Redis/NFS + docker-compose)
     ├── keepalived/            # VRRP VIP + LVS/DR virtual_server (Director)
-    ├── realserver/            # LVS/DR real servers (loopback VIP + ARP suppression)
-    └── dns/                   # BIND 9 authoritative DNS with multi-VIP round-robin A records
+    ├── lvs-realserver/            # LVS/DR real servers (loopback VIP + ARP suppression)
+    └── named/                   # BIND 9 authoritative DNS with multi-VIP round-robin A records
 ```
 
 Every role ships `tasks/prechecks.yml`; the single-component stages include it automatically.
@@ -474,7 +474,7 @@ cp group_vars/all.yml.example group_vars/all.yml && vi group_vars/all.yml
 ./deploy.sh bootstrap-servers -i inventory/multinode
 
 # 3b. Only base tools + chrony, without kernel/data-disk settings
-./deploy.sh system-init -i inventory/multinode
+./deploy.sh os-init -i inventory/multinode
 
 # 4. Read-only prechecks
 ./deploy.sh prechecks -i inventory/multinode
@@ -486,8 +486,8 @@ cp group_vars/all.yml.example group_vars/all.yml && vi group_vars/all.yml
 ./deploy.sh deploy -i inventory/multinode
 
 # 6b. Deploy a single component (its read-only prechecks run first)
-./deploy.sh dns -i inventory/multinode
-./deploy.sh dns -i inventory/multinode --tags precheck.dns   # run only the checks
+./deploy.sh named -i inventory/multinode
+./deploy.sh named -i inventory/multinode --tags precheck.named   # run only the checks
 
 # 7. Uninstall when needed (data volumes are preserved)
 ./deploy.sh destroy -i inventory/multinode
@@ -501,9 +501,9 @@ sh deploy/scripts/verify-ansible.sh
 
 It parses every YAML file, checks handler/notify consistency, enforces the English-only rule, validates Jinja expressions and links, and runs `ansible-playbook --syntax-check` automatically when ansible-core is installed on the control machine.
 
-Available tags: `bootstrap` / `system-init` / `agent` / `agent-scale-out` / `agent-scale-in` / `destroy` / `local-repo` / `postgresql` / `nginx` / `observability` / `harbor` / `keepalived` / `lvs` / `realserver` / `dns` / `etcd` / `patroni` / `haproxy` / `db`.
+Available tags: `bootstrap` / `os-init` / `winter_agent` / `agent-scale-out` / `agent-scale-in` / `destroy` / `repo-nginx` / `postgresql` / `nginx` / `victoriametrics` / `harbor` / `keepalived` / `lvs` / `lvs-realserver` / `named` / `etcd` / `patroni` / `haproxy` / `db`.
 
-Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups` (global), and `precheck.system-init` / `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.dns` (per component).
+Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups` (global), and `precheck.os-init` / `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.named` (per component).
 
 ## Design Constraints (Read Before Making Changes)
 

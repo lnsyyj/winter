@@ -27,7 +27,7 @@
 #     pg_cluster.haproxy.listen_port (5434).
 # Node count is NOT a reliable signal — a single-node HA bootstrap has one node but uses HAProxy.
 # Detect the deployed HAProxy entry point on this host instead, and allow an explicit override
-# (server_ha.database_endpoint: direct|haproxy) for operators who want to force one.
+# (winter_server_ha.database_endpoint: direct|haproxy) for operators who want to force one.
 # Detect by SERVICE STATE, not config-file presence: a stale haproxy.cfg from a previous HA run
 # would otherwise make a fresh single-node deploy connect to a 5434 that is not running yet.
 - name: Detect whether the HAProxy PG entry point is active on this host
@@ -35,7 +35,7 @@
     systemctl is-active haproxy 2>/dev/null | grep -q '^active$'
   args:
     executable: /bin/bash
-  register: server_haproxy_active
+  register: winter_server_haproxy_active
   changed_when: false
   failed_when: false
   tags: [server]
@@ -46,21 +46,21 @@
   ansible.builtin.set_fact:
     # explicit override wins; otherwise HAProxy config presence decides; multi-node always uses HA
     server_use_haproxy: >-
-      {{ (server_ha.database_endpoint | default('auto') == 'haproxy') or
-         (server_ha.database_endpoint | default('auto') == 'auto' and
-          (server_haproxy_active.rc == 0 or (groups['etcd'] | default([]) | length) > 1)) }}
+      {{ (winter_server_ha.database_endpoint | default('auto') == 'haproxy') or
+         (winter_server_ha.database_endpoint | default('auto') == 'auto' and
+          (winter_server_haproxy_active.rc == 0 or (groups['etcd'] | default([]) | length) > 1)) }}
   tags: [server]
 
 - name: Derive the database endpoint for this Server
   ansible.builtin.set_fact:
-    server_db_host: "{{ server_ha.database_host if (server_use_haproxy | bool) else '127.0.0.1' }}"
+    server_db_host: "{{ winter_server_ha.database_host if (server_use_haproxy | bool) else '127.0.0.1' }}"
     server_db_port: "{{ pg_cluster.haproxy.listen_port if (server_use_haproxy | bool) else (postgresql_overrides.port | default(postgresql.port | default(5432))) }}"
-    server_audit_db_host: "{{ server_ha.audit_database_host if (server_use_haproxy | bool) else '127.0.0.1' }}"
+    server_audit_db_host: "{{ winter_server_ha.audit_database_host if (server_use_haproxy | bool) else '127.0.0.1' }}"
   tags: [server]
 
 - name: Create service account
   ansible.builtin.user:
-    name: "{{ server_run_user }}"
+    name: "{{ winter_server_run_user }}"
     system: true
     shell: /sbin/nologin
     create_home: false
@@ -77,7 +77,7 @@
     # /etc/winter is a shared parent for all winter service accounts (server, monitor, ...).
     # Keep it world-traversable so siblings can reach their own 0750 config subdirectories;
     # secrets remain protected by the 0640 files inside those subdirectories.
-    - { path: "{{ winter_server.config_dir }}", mode: "0755", owner: "{{ server_run_user }}" }
+    - { path: "{{ winter_server.config_dir }}", mode: "0755", owner: "{{ winter_server_run_user }}" }
     - { path: /var/tmp/winter-server, mode: "0755" }
   tags: [server]
 
@@ -115,8 +115,8 @@
   ansible.builtin.template:
     src: server.env.j2
     dest: "{{ winter_server.env_file }}"
-    owner: "{{ server_run_user }}"
-    group: "{{ server_run_user }}"
+    owner: "{{ winter_server_run_user }}"
+    group: "{{ winter_server_run_user }}"
     mode: "0640"
     backup: true
   notify: restart winter-server
@@ -191,8 +191,8 @@
     return_content: false
   register: server_health
   until: server_health.status is defined and server_health.status == 200
-  retries: "{{ server_health_retries | int }}"
-  delay: "{{ server_health_delay | int }}"
+  retries: "{{ winter_server_health_retries | int }}"
+  delay: "{{ winter_server_health_delay | int }}"
   tags: [server]
 
 - name: Print summary

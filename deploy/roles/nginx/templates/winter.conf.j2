@@ -8,13 +8,13 @@
 {% if monitor_grafana_upstreams | default([]) | length > 0 %}
 upstream winter_grafana {
 {% for upstream in monitor_grafana_upstreams %}
-    server {{ upstream }}:{{ monitoring_ports.grafana }} max_fails=3 fail_timeout=10s;
+    server {{ upstream }}:{{ victoriametrics_ports.grafana }} max_fails=3 fail_timeout=10s;
 {% endfor %}
     keepalive 16;
 }
 {% set winter_grafana_target = 'http://winter_grafana' %}
 {% else %}
-{% set winter_grafana_target = 'http://' ~ monitoring_listen_addr ~ ':' ~ (monitoring_ports.grafana | string) %}
+{% set winter_grafana_target = 'http://' ~ victoriametrics_listen_addr ~ ':' ~ (victoriametrics_ports.grafana | string) %}
 {% endif %}
 
 # Server replicas (ADR-35): stateless, load-balanced across [winter-server].
@@ -106,7 +106,7 @@ server {
 {% endif %}
 
     # Grafana: always enter via the platform domain; direct access to port 3000 bypassing platform RBAC is forbidden (ADR-09)
-    # Port comes from group_vars' monitoring_ports.grafana, not hardcoded in this template
+    # Port comes from group_vars' victoriametrics_ports.grafana, not hardcoded in this template
     location /grafana/ {
         proxy_pass         {{ winter_grafana_target }}/;
         proxy_http_version 1.1;

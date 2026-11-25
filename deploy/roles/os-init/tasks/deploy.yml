@@ -1,0 +1,86 @@
+---
+# System initialization: base OS tools plus clock synchronization (chrony).
+# Single-purpose role, also reused by the bootstrap-servers stage. All values come from
+# os_init.* in group_vars/all.yml; no hostname checks and no hardcoded package lists here.
+- name: Confirm this is a supported distribution
+  ansible.builtin.assert:
+    that: ansible_facts.os_family == "RedHat"
+    fail_msg: "Only RHEL family distributions are supported (CentOS Stream 9 / RHEL 9); actual: {{ ansible_facts.distribution }}"
+    quiet: true
+  tags: [os-init]
+
+- name: Collect installed RPM names
+  # Query first, then install only what is missing: on sites with unreachable third-party repos,
+  # a blind dnf call hangs even when every package is already present.
+  ansible.builtin.shell: |
+    set -o pipefail
+    rpm -qa --qf '%{NAME}\n' | sort -u
+  args:
+    executable: /bin/bash
+  register: os_init_installed_rpms
+  changed_when: false
+  tags: [os-init]
+
+- name: Install missing base packages
+  ansible.builtin.dnf:
+    name: "{{ os_init.packages | difference(os_init_installed_rpms.stdout_lines) }}"
+    state: present
+  when: os_init.packages | difference(os_init_installed_rpms.stdout_lines) | length > 0
+  tags: [os-init]
+
+- name: Create the chrony include directory
+  ansible.builtin.file:
+    path: "{{ os_init.chrony.include_dir }}"
+    state: directory
+    mode: '0755'
+  when: os_init.chrony.enabled | bool and (os_init.chrony.servers | length) > 0
+  tags: [os-init]
+
+- name: Render the winter chrony include file
+  ansible.builtin.template:
+    src: chrony-winter.conf.j2
+    dest: "{{ os_init.chrony.include_file }}"
+    mode: '0644'
+  when: os_init.chrony.enabled | bool and (os_init.chrony.servers | length) > 0
+  notify: restart chronyd
+  tags: [os-init]
+
+- name: Add the winter include to chrony.conf
+  ansible.builtin.lineinfile:
+    path: "{{ os_init.chrony.config_file }}"
+    line: "include {{ os_init.chrony.include_file }}"
+    state: present
+    insertafter: EOF
+    create: false
+  when: os_init.chrony.enabled | bool and (os_init.chrony.servers | length) > 0
+  notify: restart chronyd
+  tags: [os-init]
+
+- name: Enable and start chronyd
+  ansible.builtin.systemd:
+    name: "{{ os_init.chrony.service }}"
+    state: started
+    enabled: true
+  when: os_init.chrony.enabled | bool and 'chrony' in os_init.packages
+  tags: [os-init]
+
+- name: Report clock synchronization status
+  ansible.builtin.command: chronyc tracking
+  register: os_init_chrony_tracking
+  changed_when: false
+  failed_when: false
+  when: os_init.chrony.enabled | bool and 'chrony' in os_init.packages
+  tags: [os-init]
+
+- name: Show clock synchronization summary
+  ansible.builtin.debug:
+    msg: "{{ os_init_chrony_tracking.stdout_lines | select('search', 'Reference ID|System time|Last offset|Leap status') | list }}"
+  when: os_init.chrony.enabled | bool and 'chrony' in os_init.packages
+  tags: [os-init]
+
+- name: Summarize system initialization
+  ansible.builtin.debug:
+    msg:
+      - "Base packages: {{ os_init.packages | join(', ') }}"
+      - "Clock sync: {{ os_init.chrony.enabled | bool }} ({{ os_init.chrony.service }}, extra sources: {{ os_init.chrony.servers | join(', ') }})"
+  tags: [always]

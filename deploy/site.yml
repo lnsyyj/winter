@@ -31,7 +31,7 @@
   any_errors_fatal: true
   tags: [os-init]
   roles:
-    - role: system-init
+    - role: os-init
       tags: [os-init]
 
 - name: Base dependencies and OS settings
@@ -52,7 +52,7 @@
   any_errors_fatal: true
   tags: [repo-nginx]
   roles:
-    - role: local-repo
+    - role: repo-nginx
       tags: [repo-nginx]
 
 - name: PostgreSQL single instance
@@ -82,8 +82,8 @@
   any_errors_fatal: true
   tags: [victoriametrics]
   roles:
-    - role: observability
-      when: observability.enabled | bool
+    - role: victoriametrics
+      when: victoriametrics.enabled | bool
       tags: [victoriametrics]
 
 - name: Management Server
@@ -127,7 +127,7 @@
   tags: [named]
   roles:
     - role: named
-      when: dns.enabled | bool
+      when: named.enabled | bool
       tags: [named]
 
 - name: winter-agent pre-install on managed nodes
@@ -137,7 +137,7 @@
   any_errors_fatal: true
   tags: [winter-agent]
   roles:
-    - role: agent
+    - role: winter-agent
       tags: [winter-agent]
 
 - name: Operate HA - PostgreSQL
@@ -277,9 +277,9 @@
   any_errors_fatal: true
   tags: [victoriametrics-scale-out]
   tasks:
-    - name: Apply observability role (scale-out slice)
+    - name: Apply victoriametrics role (scale-out slice)
       ansible.builtin.include_role:
-        name: observability
+        name: victoriametrics
         tasks_from: scale-out
       tags: [victoriametrics-scale-out]
 
@@ -303,9 +303,9 @@
   any_errors_fatal: true
   tags: [victoriametrics-scale-in]
   tasks:
-    - name: Apply observability role (scale-in-register slice)
+    - name: Apply victoriametrics role (scale-in-register slice)
       ansible.builtin.include_role:
-        name: observability
+        name: victoriametrics
         tasks_from: scale-in-register
       tags: [victoriametrics-scale-in]
 
@@ -316,22 +316,22 @@
   any_errors_fatal: true
   tags: [victoriametrics-scale-in]
   tasks:
-    - name: Apply observability role (scale-in slice)
+    - name: Apply victoriametrics role (scale-in slice)
       ansible.builtin.include_role:
-        name: observability
+        name: victoriametrics
         tasks_from: scale-in
       tags: [victoriametrics-scale-in]
 
 - name: Operate scale in remove - VictoriaMetrics
-  hosts: monitoring_scale_targets
+  hosts: victoriametrics_scale_targets
   become: true
   gather_facts: false
   any_errors_fatal: true
   tags: [victoriametrics-scale-in]
   tasks:
-    - name: Apply observability role (scale-in-remove slice)
+    - name: Apply victoriametrics role (scale-in-remove slice)
       ansible.builtin.include_role:
-        name: observability
+        name: victoriametrics
         tasks_from: scale-in-remove
       tags: [victoriametrics-scale-in]
 
@@ -368,9 +368,9 @@
   any_errors_fatal: true
   tags: [destroy]
   tasks:
-    - name: Apply agent role (destroy slice)
+    - name: Apply winter_agent role (destroy slice)
       ansible.builtin.include_role:
-        name: agent
+        name: winter-agent
         tasks_from: destroy
       tags: [destroy]
 

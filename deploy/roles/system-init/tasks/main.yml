@@ -1,4 +1,0 @@
----
-# ADR-42: action dispatcher. winter_ops_action selects the task file at runtime; old playbooks
-# that do not set it fall back to deploy so behaviour is unchanged during the transition.
-- ansible.builtin.include_tasks: "{{ winter_ops_action | default('deploy') }}.yml"

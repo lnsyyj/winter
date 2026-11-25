@@ -15,8 +15,8 @@
 
 - name: Reject localhost database address for multi-replica Server
   ansible.builtin.assert:
-    that: (groups['winter-server'] | length) == 1 or server_ha.database_host != '127.0.0.1'
-    fail_msg: "Server replicas require server_ha.database_host pointing at the PG HA access point (HAProxy/VIP), not 127.0.0.1"
+    that: (groups['winter-server'] | length) == 1 or winter_server_ha.database_host != '127.0.0.1'
+    fail_msg: "Server replicas require winter_server_ha.database_host pointing at the PG HA access point (HAProxy/VIP), not 127.0.0.1"
     quiet: true
   tags: [application-ha]
 

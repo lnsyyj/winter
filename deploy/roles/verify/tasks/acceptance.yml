@@ -50,10 +50,10 @@
 
 - name: Verify local monitoring health endpoints
   ansible.builtin.uri:
-    url: "http://{{ monitoring_listen_addr }}:{{ item.value.port }}{{ item.value.health_path }}"
+    url: "http://{{ victoriametrics_listen_addr }}:{{ item.value.port }}{{ item.value.health_path }}"
     status_code: 200
-  loop: "{{ observability.components | dict2items }}"
-  when: observability.enabled | bool and item.value.enabled | bool and item.value.health_path is defined
+  loop: "{{ victoriametrics.components | dict2items }}"
+  when: victoriametrics.enabled | bool and item.value.enabled | bool and item.value.health_path is defined
   tags: [post-deploy]
 
 - name: Record deployment manifest
@@ -70,11 +70,11 @@
       pg_port: {{ (postgresql | default({})).port | default(pg_cluster.port) }}
       pg_entry_port: {{ pg_cluster.haproxy.listen_port }}
       components:
-        victoriametrics: "{{ observability.components.victoriametrics.tarball }}"
-        vmalert: "{{ observability.components.vmalert.tarball }}"
-        victorialogs: "{{ observability.components.victorialogs.tarball }}"
-        alertmanager: "{{ observability.components.alertmanager.tarball }}"
-        grafana: "{{ observability.components.grafana.tarball }}"
+        victoriametrics: "{{ victoriametrics.components.victoriametrics.tarball }}"
+        vmalert: "{{ victoriametrics.components.vmalert.tarball }}"
+        victorialogs: "{{ victoriametrics.components.victorialogs.tarball }}"
+        alertmanager: "{{ victoriametrics.components.alertmanager.tarball }}"
+        grafana: "{{ victoriametrics.components.grafana.tarball }}"
         server: "{{ winter_server.artifact }}"
   tags: [post-deploy]
 

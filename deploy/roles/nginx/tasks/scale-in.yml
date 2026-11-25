@@ -7,7 +7,7 @@
 - name: Compute remaining Grafana upstream addresses
   ansible.builtin.set_fact:
     monitor_grafana_upstreams: >-
-      {{ groups['victoriametrics'] | difference(monitoring_scale.removed_nodes | default([]))
+      {{ groups['victoriametrics'] | difference(victoriametrics_scale.removed_nodes | default([]))
          | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
   tags: [observability-scale-in]
 
@@ -16,9 +16,9 @@
 - name: Print monitoring scale-in summary
   ansible.builtin.debug:
     msg:
-      - "Removed nodes: {{ monitoring_scale.removed_nodes | join(', ') }}"
+      - "Removed nodes: {{ victoriametrics_scale.removed_nodes | join(', ') }}"
       - "Remaining Grafana replicas: {{ monitor_grafana_upstreams | join(', ') }}"
-      - "Monitoring data preserved unless monitoring_scale.purge_data=true"
+      - "Monitoring data preserved unless victoriametrics_scale.purge_data=true"
   tags: [observability-scale-in]
 
 # ---- roles ----

@@ -6,7 +6,7 @@ Removes the platform from management nodes (ADR-17 `destroy`). Data volumes are 
 
 - Platform systemd units and their enabled-at-boot state.
 - Nginx site fragments (`winter.conf`, `winter-repo.conf`) without touching other sites' configuration.
-- Server/observability binaries, config and staging directories.
+- Server/victoriametrics binaries, config and staging directories.
 - The internal repo firewall rich rule (scoped to the configured subnet and port).
 - Service accounts, only when `remove_users: true`.
 

@@ -1,0 +1,5 @@
+# Managed by the winter scale-out stage; do not edit by hand.
+# Explicit absolute paths only; no ALL and no interpreters (ADR-19).
+{% for rule in winter_agent.sudo.rules %}
+{{ rule }}
+{% endfor %}

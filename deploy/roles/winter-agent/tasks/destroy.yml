@@ -1,0 +1,18 @@
+---
+# ADR-44 (Plan X): migrated verbatim from roles/destroy/tasks/winter_agent.yml.
+# Platform uninstall (migrated from destroy.yml, ADR-43). Split per host group; data preserved by default.
+# Play 2: Remove Agents from managed nodes (hosts: winter-agent)
+
+# ---- post_tasks ----
+- name: Summarize destroy
+  ansible.builtin.debug:
+    msg:
+      - "Platform and Agents removed; data volumes were preserved"
+  tags: [always]
+
+# ---- roles ----
+- name: Apply role winter_agent
+  ansible.builtin.include_role:
+    name: winter-agent
+    tasks_from: remove
+  tags: [destroy, scale-in]

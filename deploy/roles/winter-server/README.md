@@ -11,7 +11,7 @@ Deploys the Go single binary cross-compiled from `server/` as a systemd service,
 - Service: `winter-server.service`, `Type=exec`, `Restart=always`, start on boot.
 - Port: `winter_server.port` (default 8081), must match `nginx.api_upstream`.
 - Multi-replica: `./deploy.sh application-ha` deploys this role to every `[winter-server]` host and overrides
-  `winter_server.listen_addr` with that host's internal address. Set `server_ha.database_host` /
+  `winter_server.listen_addr` with that host's internal address. Set `winter_server_ha.database_host` /
   `audit_database_host` to the PG HA access point, then Nginx load-balances the replicas through
   `upstream winter_api`. The binary is stateless — sessions and tokens live in PostgreSQL (ADR-34).
 
@@ -24,7 +24,7 @@ if content is unchanged, nothing changes and there is no restart; only a content
 
 ## Prerequisites
 
-1. Run `local-repo` (artifact repository available) and `postgresql` (database and account exist) first;
+1. Run `repo-nginx` (artifact repository available) and `postgresql` (database and account exist) first;
 2. `deploy/group_vars/all.yml` must have `vault_pg_password`, `vault_jwt_secret` (≥32 characters),
    `vault_admin_password`; the role asserts to block missing values, never generating a default weak password;
 3. Migrations and the break-glass administrator are handled automatically at process startup; the role does not run SQL again.

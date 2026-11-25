@@ -1,0 +1,20 @@
+[Unit]
+Description=Winter managed-node Agent (mTLS, outbound only)
+Documentation=file:/etc/winter/winter_agent/winter_agent.env
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User={{ winter_agent.run_user }}
+Group={{ winter_agent.run_user }}
+EnvironmentFile={{ winter_agent.env_file }}
+ExecStart={{ winter_agent.bin_dir }}/{{ winter_agent.artifact }}
+Restart=always
+RestartSec=5s
+# Do NOT set NoNewPrivileges: privileged actions are delegated through the sudo whitelist (ADR-19).
+ProtectHome=yes
+PrivateTmp=yes
+
+[Install]
+WantedBy=multi-user.target

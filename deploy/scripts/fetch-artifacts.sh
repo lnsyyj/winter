@@ -1,5 +1,5 @@
 #!/usr/bin/env sh
-# Build packages with internet access: collect the observability stack and Server binaries into the offline artifact repository (ADR-14, first section).
+# Build packages with internet access: collect the victoriametrics stack and Server binaries into the offline artifact repository (ADR-14, first section).
 #
 # Run only on a control machine with internet access; the site needs no internet, ansible pulls packages from the local Nginx repo.
 # All versions are pinned, latest is forbidden; on completion, generate SHA256SUMS.txt for transfer verification.

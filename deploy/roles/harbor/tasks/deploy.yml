@@ -172,8 +172,8 @@
     status_code: 200
   register: harbor_health
   until: harbor_health.status is defined and harbor_health.status == 200
-  retries: "{{ obs_health_retries | default(30) | int }}"
-  delay: "{{ obs_health_delay | default(2) | int }}"
+  retries: "{{ victoriametrics_health_retries | default(30) | int }}"
+  delay: "{{ victoriametrics_health_delay | default(2) | int }}"
   tags: [harbor]
 
 - name: Print Harbor summary (builtin mode)

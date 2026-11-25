@@ -25,7 +25,7 @@ Actions (first argument, becomes winter_ops_action):
 
 Targets are selected by -t tags and inventory groups. All available tags:
   Components:  prechecks os-init bootstrap repo-nginx postgresql nginx victoriametrics
-               winter-server harbor keepalived named agent
+               winter-server harbor keepalived named winter-agent
   Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
                victoriametrics-scale-out victoriametrics-scale-in application-ha destroy
 
@@ -43,19 +43,19 @@ Examples:
   ./deploy.sh deploy -t postgresql-scale-out \
       -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
   ./deploy.sh deploy -t lvs-director,lvs-realserver \
-      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
+      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
   ./deploy.sh deploy -t application-ha \
-      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"server_ha_overrides":{"database_host":"192.168.101.189"}}'
+      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189"}}'
 
 Per-operation variables (pass via -e; all.yml holds only defaults):
-  named              -e '{"dns_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
+  named              -e '{"named_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
   postgresql-ha      (single-node bootstrap) -e '{"pg_cluster_overrides":{"allow_single_node_bootstrap":true}}'
   postgresql-scale-out  -e '{"pg_scale_overrides":{"nodes":["<new-node>",...]}}'
   postgresql-scale-in  -e '{"pg_scale_overrides":{"removed_nodes":["<node>",...]}}'
   postgresql-migrate (no extra vars; stop-the-world)
-  victoriametrics-scale-out -e '{"monitoring_scale_overrides":{"nodes":["<node>",...]}}'
-  victoriametrics-scale-in  -e '{"monitoring_scale_overrides":{"removed_nodes":["<node>",...]}}'
-  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"server_ha_overrides":{"database_host":"<PG-HA-entry>"}}'
+  victoriametrics-scale-out -e '{"victoriametrics_scale_overrides":{"nodes":["<node>",...]}}'
+  victoriametrics-scale-in  -e '{"victoriametrics_scale_overrides":{"removed_nodes":["<node>",...]}}'
+  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"winter_server_ha_overrides":{"database_host":"<PG-HA-entry>"}}'
   LVS/DR (app-ha)    add "lvs":{"enabled":true,"scheduler":"rr"} inside ha_overrides
 
 Notes:

@@ -1,0 +1,24 @@
+---
+# ADR-44 (Plan X): migrated verbatim from roles/observability-scale-in/tasks/localhost.yml.
+# Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
+# Play 1: Register monitoring scale-in targets (hosts: localhost)
+
+# ---- tasks ----
+- name: Validate monitoring scale-in plan
+  ansible.builtin.assert:
+    that:
+      - victoriametrics_scale.removed_nodes | length > 0
+      - victoriametrics_scale.removed_nodes | unique | length == victoriametrics_scale.removed_nodes | length
+      - (victoriametrics_scale.removed_nodes | difference(groups['victoriametrics'])) | length == 0
+      - (groups['victoriametrics'] | length - victoriametrics_scale.removed_nodes | length) >= 1
+      - not (victoriametrics_scale.purge_data | bool) or (victoriametrics_scale.data_dirs | default([]) | length > 0)
+    fail_msg: "Scale-in targets must be unique [victoriametrics] members, at least one node must remain, and purge_data=true requires a non-empty data_dirs list"
+    quiet: true
+
+- name: Register removed nodes for the teardown play
+  ansible.builtin.add_host:
+    name: "{{ item }}"
+    groups: victoriametrics_scale_targets
+  loop: "{{ victoriametrics_scale.removed_nodes }}"
+  loop_control:
+    label: "{{ item }}"

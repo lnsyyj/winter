@@ -370,7 +370,7 @@
   ansible.builtin.debug:
     msg:
       - "Migration complete. Source PG ({{ pg_migrate.source_port }}) data directory preserved at {{ pg_cluster.data_dir | regex_replace('ha$','data') }}"
-      - "Rollback (if needed): stop {{ pg_migrate.server_service }}, set server_ha.database_endpoint=direct, restart; then restore source if required."
+      - "Rollback (if needed): stop {{ pg_migrate.server_service }}, set winter_server_ha.database_endpoint=direct, restart; then restore source if required."
       - "Do NOT delete the source data directory until the HA cluster has been backed up and accepted."
   run_once: true
   tags: [postgresql-migrate]
