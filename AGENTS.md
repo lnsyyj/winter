@@ -309,6 +309,12 @@ git reflog                            # 兜底：找回误操作前的 HEAD
   `repo_nginx_*` → `roles/repo-nginx`）。禁止用概念名 / 缩写当前缀（`monitoring_*`、`obs_*`、
   `server_*`、`agent_*`、`local_repo`、`system_init_*`、`realserver_*` 均为 ADR-50 前遗留、已清理）。
   `all.yml` 头部维护"配置项 → role"归属索引；新增配置时先按索引定位前缀，再写入对应分组。
+- **配置归位原则（ADR-52/53）**：配置项不仅要前缀对，还必须**收在所属软件的字典里**
+  （`patroni.port` / `haproxy.listen_port` / `keepalived.service`），禁止寄生在其他软件字典下
+  （如旧的 `pg_cluster.etcd.*` / `pg_cluster.haproxy.*`），也禁止散落成扁平变量
+  （如旧的 `winter_server_run_user` / `keepalived_config_path`）。`pg_cluster` 只保留跨组件共享的
+  集群策略与网段（scope / allow_single_node_bootstrap / vip_iface_cidr）。
+  字典内部引用自身键会触发 Jinja 自引用错误——内部用字面值，由 role/template 从外部读字典。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -590,3 +596,4 @@ trim_trailing_whitespace = false
 | 2026-11-20 | 新增 §4.9「进程名与产物名一致」：二进制名/unit 名/进程名/日志标识统一，第三方组件沿用官方名、平台组件用 `winter-` 前缀；以 `systemctl`/`pgrep`/`journalctl` 三者命中同一进程为验收 | 本次提交 |
 | 2026-11-20 | 新增 §14「产品化思维」独立章节：P1~P10 可验收清单（功能完整、幂等安全、可回滚、可校验、可运维、可诊断、升级路径、真机验证、文档闭环、不偷懒），原 §14 变更记录顺延为 §15 | 本次提交 |
 | 2026-11-25 | 配置项命名统一为软件名（ADR-50）：`all.yml` 全部配置键以所属 role 的软件名为前缀（monitoring/obs→victoriametrics、server→winter_server、dns→named、system_init→os_init、agent→winter_agent、local_repo→repo_nginx、realserver→lvs_realserver）；5 个 role 目录同步改名（local-repo/repo-nginx、observability→victoriametrics、system-init→os-init、agent→winter-agent），删除重复的 realserver role；all.yml 头部新增配置归属索引；§4.9 增配置项同名原则 | 本次提交 |
+| 2026-11-25 | 全部 role 配置归位（ADR-52/53）：etcd 配置从 pg_cluster.etcd.* 迁到 etcd.*；pg_cluster 收敛为纯集群策略，haproxy/patroni 配置归各自字典；散落扁平变量（keepalived_*/winter_server_*/harbor_*/lvs_realserver_*/victoriametrics_*）并入软件字典；§4.9 增配置归位原则 | 本次提交 |

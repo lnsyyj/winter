@@ -195,7 +195,7 @@ uninstall_overrides:
     - "{{ winter_server.env_file }}"
     - "{{ winter_server.config_dir }}"
     - "{{ winter_server.bin_dir }}/{{ winter_server.artifact }}"
-    - "{{ victoriametrics.config_dir }}"
+    - "/etc/winter/monitoring"
     - /usr/local/bin/victoria-metrics-prod
     - /usr/local/bin/vmalert-prod
     - /usr/local/bin/victoria-logs-prod
@@ -306,7 +306,7 @@ victoriametrics:
       port: "{{ victoriametrics_ports.victoriametrics }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      args: "-storageDataPath={{ victoriametrics.data_dir }}/victoriametrics -retentionPeriod={{ victoriametrics.retention_days }}d"
+      args: "-storageDataPath=/var/lib/winter/monitoring/victoriametrics -retentionPeriod=30d"
     vmalert:
       enabled: true
       tarball: vmalert-linux-amd64-v1.156.0.tar.gz
@@ -316,7 +316,7 @@ victoriametrics:
       health_path: /health
       # Single alert-rule chain (ADR-18): M0 uses placeholder rules; replace with disk-usage/task-backlog rules once collection is wired up.
       # notifier.url is appended from victoriametrics_vmalert_notifiers so the scale playbooks can point at every Alertmanager replica.
-      args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule={{ victoriametrics.config_dir }}/rules/*.yml -evaluationInterval=15s"
+      args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule=/etc/winter/monitoring/rules/*.yml -evaluationInterval=15s"
     victorialogs:
       enabled: true
       tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz
@@ -324,7 +324,7 @@ victoriametrics:
       port: "{{ victoriametrics_ports.victorialogs }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      args: "-storageDataPath={{ victoriametrics.data_dir }}/victorialogs -retentionPeriod={{ victoriametrics.retention_days }}d"
+      args: "-storageDataPath=/var/lib/winter/monitoring/victorialogs -retentionPeriod=30d"
     alertmanager:
       enabled: true
       tarball: alertmanager-0.35.0.linux-amd64.tar.gz
@@ -332,7 +332,7 @@ victoriametrics:
       port: "{{ victoriametrics_ports.alertmanager }}"
       listen_flag: --web.listen-address
       health_path: /-/healthy
-      args: "--config.file={{ victoriametrics.config_dir }}/alertmanager.yml --storage.path={{ victoriametrics.data_dir }}/alertmanager"
+      args: "--config.file=/etc/winter/monitoring/alertmanager.yml --storage.path=/var/lib/winter/monitoring/alertmanager"
     grafana:
       enabled: true
       mode: directory                # directory-style install (includes frontend static assets), not a single-file binary
