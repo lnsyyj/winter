@@ -25,14 +25,14 @@
       tags: [prechecks]
 
 - name: System initialization
-  hosts: system-init
+  hosts: os-init
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [system-init]
+  tags: [os-init]
   roles:
     - role: system-init
-      tags: [system-init]
+      tags: [os-init]
 
 - name: Base dependencies and OS settings
   hosts: all
@@ -46,14 +46,14 @@
       tags: [bootstrap]
 
 - name: Internal artifact repository
-  hosts: local-repo
+  hosts: repo-nginx
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [local-repo]
+  tags: [repo-nginx]
   roles:
     - role: local-repo
-      tags: [local-repo]
+      tags: [repo-nginx]
 
 - name: PostgreSQL single instance
   hosts: postgresql
@@ -76,15 +76,15 @@
       tags: [nginx]
 
 - name: Observability stack
-  hosts: observability
+  hosts: victoriametrics
   become: true
   gather_facts: false
   any_errors_fatal: true
-  tags: [observability]
+  tags: [victoriametrics]
   roles:
     - role: observability
       when: observability.enabled | bool
-      tags: [observability]
+      tags: [victoriametrics]
 
 - name: Management Server
   hosts: winter-server
@@ -131,17 +131,17 @@
       tags: [named]
 
 - name: Agent pre-install on managed nodes
-  hosts: agent
+  hosts: winter-agent
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [agent]
+  tags: [winter-agent]
   roles:
     - role: agent
-      tags: [agent]
+      tags: [winter-agent]
 
 - name: Operate HA - PostgreSQL
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -156,7 +156,7 @@
       tags: [postgresql-ha]
 
 - name: Operate scale out - PostgreSQL
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -169,7 +169,7 @@
       tags: [postgresql-scale-out]
 
 - name: Operate scale in - PostgreSQL
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -183,7 +183,7 @@
       tags: [postgresql-scale-in]
 
 - name: Operate migrate - PostgreSQL
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -250,8 +250,8 @@
       when: ha.enabled | bool
       tags: [application-ha]
 
-- name: LVS director (hosts in [lvs-dr-director])
-  hosts: lvs-dr-director
+- name: LVS director (hosts in [keepalived-director])
+  hosts: keepalived-director
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -260,8 +260,8 @@
     - role: lvs-director
       tags: [lvs-director]
 
-- name: LVS real servers (hosts in [lvs-dr-realserver])
-  hosts: lvs-dr-realserver
+- name: LVS real servers (hosts in [lvs-backend])
+  hosts: lvs-backend
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -271,7 +271,7 @@
       tags: [lvs-realserver]
 
 - name: Operate scale out - Observability
-  hosts: observability
+  hosts: victoriametrics
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -284,7 +284,7 @@
       tags: [observability-scale-out]
 
 - name: Operate scale out - Nginx upstream
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -310,7 +310,7 @@
       tags: [observability-scale-in]
 
 - name: Operate scale in - Observability
-  hosts: observability
+  hosts: victoriametrics
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -336,7 +336,7 @@
       tags: [observability-scale-in]
 
 - name: Operate scale in - Nginx upstream
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -349,7 +349,7 @@
       tags: [observability-scale-in]
 
 - name: Operate destroy - Platform
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -362,7 +362,7 @@
       tags: [destroy]
 
 - name: Operate destroy - Agents
-  hosts: agent
+  hosts: winter-agent
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -375,7 +375,7 @@
       tags: [destroy]
 
 - name: Deployment acceptance checks
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -388,7 +388,7 @@
       tags: [verify]
 
 - name: Validate configuration
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -401,7 +401,7 @@
       tags: [reconfigure]
 
 - name: Verify artifacts and version plan
-  hosts: management
+  hosts: etcd
   become: true
   gather_facts: true
   any_errors_fatal: true

@@ -20,7 +20,7 @@
       member list 2>/dev/null | grep -q '{{ pg_join_node }}'
   args:
     executable: /bin/bash
-  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   register: pg_member_exists
   changed_when: false
@@ -34,7 +34,7 @@
     member add {{ pg_join_node }}
     --peer-urls=http://{{ hostvars[pg_join_node]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
     --learner
-  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   register: pg_etcd_add
   changed_when: true
@@ -47,7 +47,7 @@
     --endpoints=http://{{ pg_existing_endpoint }}:{{ pg_cluster.etcd.client_port }}
     member add {{ pg_join_node }}
     --peer-urls=http://{{ hostvars[pg_join_node]['ansible_host'] }}:{{ pg_cluster.etcd.peer_port }}
-  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   register: pg_etcd_add_voting
   changed_when: true
@@ -131,7 +131,7 @@
     exit 1
   args:
     executable: /bin/bash
-  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   changed_when: true
   when: pg_use_learner | bool
@@ -152,7 +152,7 @@
     exit 1
   args:
     executable: /bin/bash
-  delegate_to: "{{ groups['management'] | difference(pg_scale.nodes) | first }}"
+  delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
   run_once: true
   changed_when: false
   tags: [postgresql-scale-out]

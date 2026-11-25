@@ -1,6 +1,6 @@
 ---
 # Version upgrade (migrated from upgrade.yml, ADR-43).
-# Play 1: Verify upgrade inputs and offline artifacts (hosts: management)
+# Play 1: Verify upgrade inputs and offline artifacts (hosts: etcd)
 
 # ---- tasks ----
 - name: Confirm a target version was provided

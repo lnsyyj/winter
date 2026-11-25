@@ -1,6 +1,6 @@
 ---
 # Configuration validation (migrated from reconfigure.yml, ADR-43).
-# Play 1: Validate configuration before reconfigure (hosts: management)
+# Play 1: Validate configuration before reconfigure (hosts: etcd)
 
 # ---- tasks ----
 

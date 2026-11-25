@@ -24,7 +24,7 @@ backend winter_pg_primary
     option httpchk GET /primary
     http-check expect status 200
     default-server inter {{ pg_cluster.haproxy.check_interval }} fall {{ pg_cluster.haproxy.check_fall }} rise {{ pg_cluster.haproxy.check_rise }}
-{% for h in groups['management'] | difference((pg_scale | default({})).removed_nodes | default([])) %}
+{% for h in groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) %}
     server {{ h }} {{ hostvars[h]['ansible_host'] }}:{{ pg_cluster.port }} check port {{ pg_cluster.rest_port }}
 {% endfor %}
 

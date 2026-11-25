@@ -1,7 +1,7 @@
 ---
 # ADR-44 (Plan X): migrated verbatim from roles/destroy/tasks/management.yml.
 # Platform uninstall (migrated from destroy.yml, ADR-43). Split per host group; data preserved by default.
-# Play 1: Uninstall platform components from management nodes (hosts: management)
+# Play 1: Uninstall platform components from management nodes (hosts: etcd)
 
 # ---- pre_tasks ----
 

@@ -48,7 +48,7 @@
     server_use_haproxy: >-
       {{ (server_ha.database_endpoint | default('auto') == 'haproxy') or
          (server_ha.database_endpoint | default('auto') == 'auto' and
-          (server_haproxy_active.rc == 0 or (groups['management'] | default([]) | length) > 1)) }}
+          (server_haproxy_active.rc == 0 or (groups['etcd'] | default([]) | length) > 1)) }}
   tags: [server]
 
 - name: Derive the database endpoint for this Server

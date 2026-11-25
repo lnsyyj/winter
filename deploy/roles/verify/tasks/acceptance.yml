@@ -1,6 +1,6 @@
 ---
 # Deployment acceptance checks (migrated from post-deploy.yml, ADR-43).
-# Play 1: Verify deployment and record the release manifest (hosts: management)
+# Play 1: Verify deployment and record the release manifest (hosts: etcd)
 
 # ---- pre_tasks ----
 

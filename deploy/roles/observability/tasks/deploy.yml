@@ -14,12 +14,12 @@
     fail_msg: "deploy/group_vars/all.yml is missing vault_grafana_admin_password, see group_vars/all.yml.example"
     quiet: true
   when: observability.components.grafana.enabled | bool
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Compute enabled components
   ansible.builtin.set_fact:
     obs_components: "{{ observability.components | dict2items | selectattr('value.enabled', 'equalto', true) | list }}"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Create service account (non-root)
   ansible.builtin.user:
@@ -27,7 +27,7 @@
     system: true
     shell: /sbin/nologin
     create_home: false
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Make the shared /etc/winter parent traversable by all winter service accounts
   # Multiple service accounts share /etc/winter (winter-server, winter-monitor, ...).
@@ -37,7 +37,7 @@
     path: "{{ observability.config_dir | dirname }}"
     state: directory
     mode: "0755"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Create data / config / rules / staging directories
   ansible.builtin.file:
@@ -56,7 +56,7 @@
     - /var/tmp/winter-observability
     - /opt/winter
     - "{{ observability.components.grafana.install_dir }}"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Create extraction directory for each component
   ansible.builtin.file:
@@ -66,7 +66,7 @@
   loop: "{{ obs_components }}"
   loop_control:
     label: "{{ item.key }}"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Fetch static packages from internal repo (ADR-15 install channel)
   ansible.builtin.get_url:
@@ -77,7 +77,7 @@
   loop: "{{ obs_components }}"
   loop_control:
     label: "{{ item.key }}"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Extract single-file binary components
   ansible.builtin.unarchive:
@@ -89,7 +89,7 @@
   loop_control:
     label: "{{ item.key }}"
   when: item.value.mode | default('binary') == 'binary'
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Mark as extracted (marker changes with tarball version)
   ansible.builtin.copy:
@@ -100,7 +100,7 @@
   loop_control:
     label: "{{ item.key }}"
   when: item.value.mode | default('binary') == 'binary'
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Install single-file binaries (do not overwrite if unchanged)
   ansible.builtin.shell: |
@@ -122,7 +122,7 @@
   loop_control:
     label: "{{ item.key }}"
   when: item.value.mode | default('binary') == 'binary'
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Install Grafana directory (includes frontend static assets, needs the whole directory)
   ansible.builtin.unarchive:
@@ -143,7 +143,7 @@
     mode: "0640"
     backup: true
   notify: restart alertmanager
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Render vmalert rules (M0 placeholder)
   ansible.builtin.template:
@@ -154,7 +154,7 @@
     mode: "0640"
     backup: true
   notify: restart vmalert
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Render Grafana configuration (includes admin password, mode 0640)
   ansible.builtin.template:
@@ -193,11 +193,11 @@
     comp_key: "{{ item.key }}"
     comp: "{{ item.value }}"
   notify: "restart {{ item.key }}"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Apply configuration changes (restart first)
   ansible.builtin.meta: flush_handlers
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Start and enable on boot
   ansible.builtin.systemd:
@@ -208,7 +208,7 @@
   loop: "{{ obs_components }}"
   loop_control:
     label: "{{ item.key }}"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Wait for components to be healthy
   ansible.builtin.uri:
@@ -222,7 +222,7 @@
   loop: "{{ obs_components }}"
   loop_control:
     label: "{{ item.key }}"
-  tags: [observability]
+  tags: [victoriametrics]
 
 - name: Print summary
   ansible.builtin.debug:
@@ -230,4 +230,4 @@
       - "Observability stack: {{ obs_components | map(attribute='key') | join(', ') }}"
       - "All listen only on {{ observability.listen_addr }}; Grafana external entry point https://{{ platform.domain }}/grafana/"
       - "Metrics/logs retained for {{ observability.retention_days }} days; single alert pipeline (vmalert → Alertmanager)"
-  tags: [observability]
+  tags: [victoriametrics]

@@ -1,7 +1,7 @@
 ---
 - name: Assert this host is an LVS RealServer
   ansible.builtin.assert:
-    that: inventory_hostname in groups['lvs-dr-realserver'] | default([])
-    fail_msg: "lvs-realserver must run on hosts in [lvs-dr-realserver]"
+    that: inventory_hostname in groups['lvs-backend'] | default([])
+    fail_msg: "lvs-realserver must run on hosts in [lvs-backend]"
     quiet: true
   tags: [lvs, lvs-realserver]

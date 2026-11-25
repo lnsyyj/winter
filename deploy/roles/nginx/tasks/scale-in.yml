@@ -1,13 +1,13 @@
 ---
 # ADR-44 (Plan X): migrated verbatim from roles/observability-scale-in/tasks/nginx.yml.
 # Observability scale-in (migrated from observability-scale-in.yml, ADR-43).
-# Play 4: Drop removed Grafana replicas from the Nginx upstream (hosts: management)
+# Play 4: Drop removed Grafana replicas from the Nginx upstream (hosts: etcd)
 
 # ---- pre_tasks ----
 - name: Compute remaining Grafana upstream addresses
   ansible.builtin.set_fact:
     monitor_grafana_upstreams: >-
-      {{ groups['observability'] | difference(monitoring_scale.removed_nodes | default([]))
+      {{ groups['victoriametrics'] | difference(monitoring_scale.removed_nodes | default([]))
          | map('extract', hostvars, 'ansible_host') | select('defined') | list }}
   tags: [observability-scale-in]
 

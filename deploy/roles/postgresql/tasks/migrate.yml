@@ -15,7 +15,7 @@
 # multiple management nodes would dump/restore the same local source more than once.
 - name: Select the migration host (first management node)
   ansible.builtin.set_fact:
-    pg_migrate_host: "{{ groups['management'] | first }}"
+    pg_migrate_host: "{{ groups['etcd'] | first }}"
   run_once: true
   tags: [postgresql-migrate]
 
