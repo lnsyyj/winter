@@ -1,33 +1,24 @@
 ---
-# LVS Director role (ADR-46): runs on hosts with lvs_role=director in the inventory.
-# RealServer addresses are discovered from hostvars (lvs_role=realserver), not from [nginx],
-# so one unified inventory needs no keepalived/nginx group split.
-- name: Discover LVS RealServer addresses from inventory lvs_role
+# LVS Director role (ADR-46): runs on hosts in [lvs-dr-director].
+# RealServers come from [lvs-dr-realserver] and VRRP peers from [lvs-dr-director] — group
+# membership defines the topology, so one unified inventory needs no static group split.
+- name: Discover LVS RealServer addresses from [lvs-dr-realserver]
   ansible.builtin.set_fact:
-    lvs_realservers: >-
-      {{ groups['management'] | default([])
-         | select('in', (groups['management'] | default([])))
-         | map('extract', hostvars) | selectattr('lvs_role', 'defined')
-         | selectattr('lvs_role', 'equalto', 'realserver')
-         | map(attribute='ansible_host') | list }}
+    lvs_realservers: "{{ groups['lvs-dr-realserver'] | default([]) | map('extract', hostvars, 'ansible_host') | list }}"
   run_once: true
   tags: [lvs, lvs-director]
 
-- name: Discover LVS Directors and VRRP peers from inventory lvs_role
+- name: Discover LVS Directors and VRRP peers from [lvs-dr-director]
   ansible.builtin.set_fact:
-    lvs_directors: "{{ groups['management'] | default([]) | map('extract', hostvars)
-      | selectattr('lvs_role', 'defined') | selectattr('lvs_role', 'equalto', 'director')
-      | map(attribute='ansible_host') | list }}"
-    ha_peer_addresses: "{{ groups['management'] | default([]) | map('extract', hostvars)
-      | selectattr('lvs_role', 'defined') | selectattr('lvs_role', 'equalto', 'director')
-      | map(attribute='ansible_host') | reject('equalto', ansible_host) | list }}"
+    lvs_directors: "{{ groups['lvs-dr-director'] | default([]) | map('extract', hostvars, 'ansible_host') | list }}"
+    ha_peer_addresses: "{{ groups['lvs-dr-director'] | default([]) | map('extract', hostvars, 'ansible_host') | reject('equalto', ansible_host) | list }}"
   run_once: true
   tags: [lvs, lvs-director]
 
 - name: Fail if fewer than two RealServers are configured
   ansible.builtin.assert:
     that: lvs_realservers | length >= 2
-    fail_msg: "LVS/DR needs >=2 hosts with lvs_role=realserver in inventory/hosts.ini"
+    fail_msg: "LVS/DR needs >=2 hosts in [lvs-dr-realserver] in inventory/hosts.ini"
     quiet: true
   run_once: true
   tags: [lvs, lvs-director]
@@ -56,7 +47,7 @@
     that:
       - lvs_realservers | length >= 2
       - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
-    fail_msg: "LVS/DR requires at least two RealServers (lvs_role=realserver) and ha.vip"
+    fail_msg: "LVS/DR requires at least two hosts in [lvs-dr-realserver] and ha.vip"
     quiet: true
   when: ha.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]

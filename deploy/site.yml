@@ -250,30 +250,25 @@
       when: ha.enabled | bool
       tags: [application-ha]
 
-- name: LVS director (from inventory lvs_role=director)
-  hosts: management
+- name: LVS director (hosts in [lvs-dr-director])
+  hosts: lvs-dr-director
   become: true
   gather_facts: true
   any_errors_fatal: true
   tags: [lvs-director]
-  tasks:
-    - name: Apply lvs-director role
-      ansible.builtin.include_role:
-        name: lvs-director
-      when: lvs_role | default('') == 'director'
+  roles:
+    - role: lvs-director
       tags: [lvs-director]
 
-- name: LVS real servers (from inventory lvs_role=realserver)
-  hosts: management
+- name: LVS real servers (hosts in [lvs-dr-realserver])
+  hosts: lvs-dr-realserver
   become: true
   gather_facts: true
   any_errors_fatal: true
   tags: [lvs-realserver]
-  tasks:
-    - name: Apply lvs-realserver role
-      ansible.builtin.include_role:
-        name: lvs-realserver
-      when: lvs_role | default('') == 'realserver' and ha.lvs.enabled | default(false) | bool
+  roles:
+    - role: lvs-realserver
+      when: ha.lvs.enabled | default(false) | bool
       tags: [lvs-realserver]
 
 - name: Operate scale out - Observability
