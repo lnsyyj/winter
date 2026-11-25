@@ -62,7 +62,7 @@
 - name: Install the Nginx health-check script
   ansible.builtin.template:
     src: check_nginx.sh.j2
-    dest: "{{ keepalived_check_script }}"
+    dest: "{{ keepalived.check_script }}"
     mode: "0755"
   notify: restart keepalived
   tags: [ha, keepalived]
@@ -70,7 +70,7 @@
 - name: Install the LVS health-check script
   ansible.builtin.template:
     src: check_lvs.sh.j2
-    dest: "{{ keepalived_lvs_check_script }}"
+    dest: "{{ keepalived.lvs_check_script }}"
     mode: "0755"
   notify: restart keepalived
   when: ha.lvs.enabled | default(false) | bool
@@ -79,7 +79,7 @@
 - name: Render keepalived configuration
   ansible.builtin.template:
     src: keepalived.conf.j2
-    dest: "{{ keepalived_config_path }}"
+    dest: "{{ keepalived.config_path }}"
     mode: "0644"
     backup: true
   notify: restart keepalived
@@ -91,7 +91,7 @@
 
 - name: Start and enable keepalived
   ansible.builtin.systemd:
-    name: "{{ keepalived_service }}"
+    name: "{{ keepalived.service }}"
     state: started
     enabled: true
     daemon_reload: true

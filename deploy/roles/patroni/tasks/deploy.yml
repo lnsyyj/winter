@@ -54,7 +54,7 @@
 
 - name: Create data directory (separate from the system instance)
   ansible.builtin.file:
-    path: "{{ pg_cluster.data_dir }}"
+    path: "{{ patroni.data_dir }}"
     state: directory
     owner: postgres
     group: postgres
@@ -98,8 +98,8 @@
 
 - name: Allow PG and REST ports through firewall (cluster subnet only)
   ansible.builtin.shell: |
-    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.port }} protocol=tcp accept' >/dev/null 2>&1
-    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.rest_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ patroni.port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ patroni.rest_port }} protocol=tcp accept' >/dev/null 2>&1
     firewall-cmd --reload >/dev/null 2>&1
     echo done
   changed_when: false
@@ -110,7 +110,7 @@
   ansible.builtin.shell: |
     set -o pipefail
     for i in $(seq 1 40); do
-      curl -s --max-time 2 http://{{ ansible_host }}:{{ pg_cluster.rest_port }}/ | grep -q '"state"' && exit 0
+      curl -s --max-time 2 http://{{ ansible_host }}:{{ patroni.rest_port }}/ | grep -q '"state"' && exit 0
       sleep 3
     done
     echo "patroni REST not ready" >&2

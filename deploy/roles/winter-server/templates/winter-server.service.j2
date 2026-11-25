@@ -6,8 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=exec
-User={{ winter_server_run_user }}
-Group={{ winter_server_run_user }}
+User={{ winter_server.run_user }}
+Group={{ winter_server.run_user }}
 EnvironmentFile={{ winter_server.env_file }}
 ExecStart={{ winter_server.bin_dir }}/winter-server
 Restart=always

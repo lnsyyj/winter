@@ -6,8 +6,8 @@ Wants=network-online.target
 
 [Service]
 Type=oneshot
-ExecStart={{ lvs_realserver_helper }} add
-ExecStop={{ lvs_realserver_helper }} del
+ExecStart={{ lvs_realserver.helper }} add
+ExecStop={{ lvs_realserver.helper }} del
 RemainAfterExit=yes
 
 [Install]

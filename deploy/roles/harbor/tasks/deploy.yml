@@ -38,7 +38,7 @@
   tags: [harbor]
 
 - name: Check docker-compose is available
-  ansible.builtin.command: "{{ harbor_compose_command }} version"
+  ansible.builtin.command: "{{ harbor.compose_command }} version"
   register: harbor_compose_version
   changed_when: false
   failed_when: false
@@ -58,7 +58,7 @@
     mode: "0755"
   loop:
     - "{{ harbor.install_dir }}"
-    - "{{ harbor_staging_dir }}"
+    - "{{ harbor.staging_dir }}"
   tags: [harbor]
 
 # Builtin mode stores all data (including bundled PG/Redis) on a local volume.
@@ -110,14 +110,14 @@
 - name: Fetch the Harbor offline installer from the internal repo
   ansible.builtin.get_url:
     url: "{{ platform.repo_base_url }}/{{ harbor.tarball_subdir }}/{{ harbor.tarball }}"
-    dest: "{{ harbor_staging_dir }}/{{ harbor.tarball }}"
+    dest: "{{ harbor.staging_dir }}/{{ harbor.tarball }}"
     mode: "0644"
     timeout: 600
   tags: [harbor]
 
 - name: Extract the Harbor offline installer
   ansible.builtin.unarchive:
-    src: "{{ harbor_staging_dir }}/{{ harbor.tarball }}"
+    src: "{{ harbor.staging_dir }}/{{ harbor.tarball }}"
     dest: "{{ harbor.install_dir }}"
     remote_src: true
     extra_opts: [--strip-components=1]
@@ -159,7 +159,7 @@
     set -euo pipefail
     cd "{{ harbor.install_dir }}"
     ./prepare
-    {{ harbor_compose_command }} up -d
+    {{ harbor.compose_command }} up -d
   args:
     executable: /bin/bash
   register: harbor_start

@@ -7,7 +7,7 @@
 # fallback here, and also ensure replicator exists (required for streaming replication).
 set -euo pipefail
 
-PGPORT={{ pg_cluster.port }}
+PGPORT={{ patroni.port }}
 APP_DB="{{ patroni.app_db }}"
 APP_USER="{{ patroni.app_user }}"
 APP_PW='{{ vault_pg_password }}'

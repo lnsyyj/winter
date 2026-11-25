@@ -19,13 +19,13 @@
   vars:
     # The internal repo port is the single source of truth in group_vars/all.yml.
     repo_port: "{{ repo_nginx_listen_port }}"
-    candidate_ports: "{{ [platform.https_port, winter_server.port, pg_cluster.port, pg_cluster.rest_port, pg_cluster.haproxy.listen_port, repo_port] + victoriametrics_ports.values() | list }}"
+    candidate_ports: "{{ [platform.https_port, winter_server.port, patroni.port, patroni.rest_port, haproxy.listen_port, repo_port] + victoriametrics_ports.values() | list }}"
   tags: [reconfigure]
 
 - name: Report effective configuration
   ansible.builtin.debug:
     msg:
       - "Domain {{ platform.domain }}; HTTPS {{ platform.https_port }}; Server {{ winter_server.port }}"
-      - "PG {{ pg_cluster.port }} → entry {{ pg_cluster.haproxy.listen_port }}; Patroni REST {{ pg_cluster.rest_port }}"
+      - "PG {{ patroni.port }} → entry {{ haproxy.listen_port }}; Patroni REST {{ patroni.rest_port }}"
       - "Retention logs/metrics/tasks/audit: {{ platform.retention.logs_days }}/{{ platform.retention.metrics_days }}/{{ platform.retention.tasks_days }}/{{ platform.retention.audit_online_days }}"
   tags: [reconfigure]

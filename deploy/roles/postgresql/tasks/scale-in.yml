@@ -27,7 +27,7 @@
 # ---- migrated from playbook tasks ----
 - name: Confirm removed nodes are replicas, never the leader
   ansible.builtin.uri:
-    url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ pg_cluster.rest_port }}/replica"
+    url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ patroni.rest_port }}/replica"
     status_code: 200
   loop: "{{ pg_scale.removed_nodes }}"
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.removed_nodes) | first }}"

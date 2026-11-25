@@ -67,8 +67,8 @@
       domain: "{{ platform.domain }}"
       repo_base_url: "{{ platform.repo_base_url }}"
       server_port: {{ winter_server.port }}
-      pg_port: {{ (postgresql | default({})).port | default(pg_cluster.port) }}
-      pg_entry_port: {{ pg_cluster.haproxy.listen_port }}
+      pg_port: {{ (postgresql | default({})).port | default(patroni.port) }}
+      pg_entry_port: {{ haproxy.listen_port }}
       components:
         victoriametrics: "{{ victoriametrics.components.victoriametrics.tarball }}"
         vmalert: "{{ victoriametrics.components.vmalert.tarball }}"

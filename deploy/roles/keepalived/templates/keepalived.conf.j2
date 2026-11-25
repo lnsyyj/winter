@@ -22,7 +22,7 @@ global_defs {
 
 {% if lvs_on %}
 vrrp_script chk_lvs {
-    script "{{ keepalived_lvs_check_script }}"
+    script "{{ keepalived.lvs_check_script }}"
     interval {{ ha.nginx_check_interval }}
     timeout 2
     rise 2
@@ -30,7 +30,7 @@ vrrp_script chk_lvs {
 }
 {% else %}
 vrrp_script chk_nginx {
-    script "{{ keepalived_check_script }}"
+    script "{{ keepalived.check_script }}"
     interval {{ ha.nginx_check_interval }}
     timeout 2
     rise 2

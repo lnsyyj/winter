@@ -22,15 +22,15 @@
 #   postgresql*, pg_cluster*,     postgresql role         (tags: postgresql / postgresql-ha /
 #   pg_scale*, pg_migrate*        postgresql-scale-* / postgresql-migrate)
 #   etcd*, etcd.*                 etcd role              (tags: etcd / via postgresql-ha)
-#   patroni                       patroni role            (via postgresql-ha)
-#   haproxy_role                  haproxy role            (via postgresql-ha)
+#   patroni.*                     patroni role            (via postgresql-ha)
+#   haproxy.*                     haproxy role            (tags: postgresql-ha)
 #   nginx*, nginx.*               nginx role              (tags: nginx / application-ha)
 #   winter_server*, winter_server.*  winter-server role   (tags: winter-server / application-ha)
 #   victoriametrics*              victoriametrics role    (tags: victoriametrics / *-scale-*)
 #   harbor*, harbor.*             harbor role             (tags: harbor)
 #   named*, named.*               named role (BIND 9)     (tags: named)
-#   ha*, ha.*, keepalived_*       keepalived role         (tags: keepalived / application-ha)
-#   lvs_realserver_*              lvs-realserver role     (tags: lvs-realserver)
+#   ha*, ha.*, keepalived.*       keepalived role         (tags: keepalived / application-ha)
+#   lvs_realserver.*              lvs-realserver role     (tags: lvs-realserver)
 #   winter_agent*, winter_agent.* winter-agent role       (tags: winter-agent)
 #   uninstall*, uninstall.*       uninstall role          (tags: destroy)
 #   upgrade.* / reconfigure       upgrade / reconfigure operations
@@ -245,20 +245,14 @@ nginx_overrides:
 # PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
 # All ports are configurable; the 5433 default avoids port 5432, already occupied by argus on .194
 pg_cluster_defaults:
-  scope: winter-pg
+  scope: winter-pg          # Patroni cluster scope (DCS key prefix)
   # Single-node HA bootstrap (1-member etcd + single Patroni + HAProxy) is technically valid but
   # offers no fault tolerance. Opt in explicitly for a 1 -> 3 online growth path; keep false for
   # production so an undersized [etcd] is never deployed by accident.
   allow_single_node_bootstrap: false
-  port: 5433                # PG instance port (same on every node)
-  rest_port: 8008           # Patroni REST API
-  data_dir: /var/lib/pgsql/17/ha   # separate from the system's /data so they do not affect each other
-  vip_iface_cidr: "192.168.101.0/24"   # cluster subnet (used by pg_hba and the PG/Patroni/HAProxy firewalls)
-  haproxy:
-    listen_port: 5434       # applications connect to this port; always points to the current primary
-    check_interval: 2s
-    check_fall: 3
-    check_rise: 2
+  vip_iface_cidr: "192.168.101.0/24"   # subnet shared by pg_hba and all component firewalls
+# NOTE (ADR-53): Patroni's port/rest_port/data_dir moved to patroni.*; HAProxy's
+# listen_port/check_* moved to haproxy.*. pg_cluster keeps only cluster-wide policy/network.
 
 # Observability stack (ADR-18 / ADR-33): all components installed by default, single node, all listening only on localhost
 # Ports, versions and retention may only be changed here; roles do not hardcode ports.
@@ -276,9 +270,6 @@ victoriametrics_listen_addr: 127.0.0.1
 #   victoriametrics_advertise_addr -> the node internal IP (used by peers and reverse proxies)
 victoriametrics_bind_addr: "{{ victoriametrics_listen_addr }}"
 victoriametrics_advertise_addr: "{{ victoriametrics_listen_addr }}"
-victoriametrics_data_dir: /var/lib/winter/monitoring
-victoriametrics_config_dir: /etc/winter/monitoring
-victoriametrics_retention_days: 30       # 30 days each for metrics and logs; audits live in PG, not in the logging system
 
 # Monitoring scale-out / scale-in (ADR-18 / ADR-33).
 # Scope: stateless and HA layers only — Alertmanager gossip HA, Grafana replicas behind Nginx,
@@ -301,11 +292,11 @@ victoriametrics_scale_defaults:
 victoriametrics:
   enabled: true
   bin_dir: /usr/local/bin
-  data_dir: "{{ victoriametrics_data_dir }}"
-  config_dir: "{{ victoriametrics_config_dir }}"
+  data_dir: /var/lib/winter/monitoring
+  config_dir: /etc/winter/monitoring
   listen_addr: "{{ victoriametrics_listen_addr }}"
   run_user: winter-monitor          # run as non-root (similar constraint to ADR-19)
-  retention_days: "{{ victoriametrics_retention_days }}"
+  retention_days: 30
   tarball_subdir: tarball
   components:
     victoriametrics:
@@ -315,7 +306,7 @@ victoriametrics:
       port: "{{ victoriametrics_ports.victoriametrics }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      args: "-storageDataPath={{ victoriametrics_data_dir }}/victoriametrics -retentionPeriod={{ victoriametrics_retention_days }}d"
+      args: "-storageDataPath={{ victoriametrics.data_dir }}/victoriametrics -retentionPeriod={{ victoriametrics.retention_days }}d"
     vmalert:
       enabled: true
       tarball: vmalert-linux-amd64-v1.156.0.tar.gz
@@ -325,7 +316,7 @@ victoriametrics:
       health_path: /health
       # Single alert-rule chain (ADR-18): M0 uses placeholder rules; replace with disk-usage/task-backlog rules once collection is wired up.
       # notifier.url is appended from victoriametrics_vmalert_notifiers so the scale playbooks can point at every Alertmanager replica.
-      args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule={{ victoriametrics_config_dir }}/rules/*.yml -evaluationInterval=15s"
+      args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule={{ victoriametrics.config_dir }}/rules/*.yml -evaluationInterval=15s"
     victorialogs:
       enabled: true
       tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz
@@ -333,7 +324,7 @@ victoriametrics:
       port: "{{ victoriametrics_ports.victorialogs }}"
       listen_flag: -httpListenAddr
       health_path: /health
-      args: "-storageDataPath={{ victoriametrics_data_dir }}/victorialogs -retentionPeriod={{ victoriametrics_retention_days }}d"
+      args: "-storageDataPath={{ victoriametrics.data_dir }}/victorialogs -retentionPeriod={{ victoriametrics.retention_days }}d"
     alertmanager:
       enabled: true
       tarball: alertmanager-0.35.0.linux-amd64.tar.gz
@@ -341,7 +332,7 @@ victoriametrics:
       port: "{{ victoriametrics_ports.alertmanager }}"
       listen_flag: --web.listen-address
       health_path: /-/healthy
-      args: "--config.file={{ victoriametrics_config_dir }}/alertmanager.yml --storage.path={{ victoriametrics_data_dir }}/alertmanager"
+      args: "--config.file={{ victoriametrics.config_dir }}/alertmanager.yml --storage.path={{ victoriametrics.data_dir }}/alertmanager"
     grafana:
       enabled: true
       mode: directory                # directory-style install (includes frontend static assets), not a single-file binary
@@ -430,7 +421,7 @@ harbor:
   local_volume: /var/lib/winter/harbor/data
   database:
     host: ""                              # external PostgreSQL address, required in external mode
-    port: "{{ pg_cluster.haproxy.listen_port }}"
+    port: "{{ haproxy.listen_port }}"
     name: registry
     user: harbor
   redis:
@@ -481,11 +472,11 @@ named_defaults:
 named: "{{ named_defaults | combine(named_overrides | default({}, true), recursive=True) }}"
 
 # Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
-# instance (postgresql.port); the target is the HA entry point (pg_cluster.haproxy.listen_port).
+# instance (postgresql.port); the target is the HA entry point (haproxy.listen_port).
 # Both use the same database / role names, so only one database is moved.
 pg_migrate_defaults:
   source_port: "{{ postgresql.port | default(5432) }}"
-  target_port: "{{ pg_cluster.haproxy.listen_port }}"
+  target_port: "{{ haproxy.listen_port }}"
   database: "{{ postgresql.db_name | default('winter') }}"
   role: "{{ postgresql.db_user | default('winter') }}"
   # Marker written on the HA primary after a verified migration; makes the stage idempotent.
@@ -736,20 +727,23 @@ etcd_defaults:
 etcd: "{{ etcd_defaults | combine(etcd_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/haproxy/defaults/main.yml ----
-haproxy_role:
+haproxy:
   rpm: haproxy-2.8.14-4.el9.x86_64.rpm
   rpm_subdir: rpm/base
   config: /etc/haproxy/haproxy.cfg
+  listen_port: 5434       # applications connect here; always points to current primary
+  check_interval: 2s
+  check_fall: 3
+  check_rise: 2
 
 # ---- consolidated from roles/harbor/defaults/main.yml ----
-harbor_compose_command: docker-compose
-harbor_staging_dir: /var/tmp/winter-harbor
 
 # ---- consolidated from roles/keepalived/defaults/main.yml ----
-keepalived_config_path: /etc/keepalived/keepalived.conf
-keepalived_check_script: /etc/keepalived/check_nginx.sh
-keepalived_lvs_check_script: /etc/keepalived/check_lvs.sh
-keepalived_service: keepalived
+keepalived:
+  config_path: /etc/keepalived/keepalived.conf
+  check_script: /etc/keepalived/check_nginx.sh
+  lvs_check_script: /etc/keepalived/check_lvs.sh
+  service: keepalived
 
 # ---- consolidated from roles/repo-nginx/defaults/main.yml ----
 repo_nginx:
@@ -767,6 +761,10 @@ victoriametrics_health_delay: 2
 
 # ---- consolidated from roles/patroni/defaults/main.yml ----
 patroni:
+  # PG instance + REST ports and data dir (ADR-53: moved from pg_cluster.*)
+  port: 5433                       # PG instance port (same on every node)
+  rest_port: 8008                  # Patroni REST API
+  data_dir: /var/lib/pgsql/17/ha   # separate from system /data
   # Target PG major version (must match the installed one)
   pg_major: "17"
   pg_bin: "/usr/pgsql-17/bin"
@@ -784,15 +782,13 @@ patroni:
   pip_subdir: pip
 
 # ---- consolidated from roles/realserver/defaults/main.yml ----
-lvs_realserver_sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
-lvs_realserver_helper: /usr/local/bin/winter-lvs-vip.sh
-lvs_realserver_unit: winter-lvs-vip.service
-lvs_realserver_vip: "{{ ha.vip }}"
+lvs_realserver:
+  sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
+  helper: /usr/local/bin/winter-lvs-vip.sh
+  unit: winter-lvs-vip.service
+  vip: "{{ ha.vip }}"
 
 # ---- consolidated from roles/winter-server/defaults/main.yml ----
-winter_server_run_user: winter-server
-winter_server_health_retries: 20
-winter_server_health_delay: 2
 
 # ---- Secrets (consolidated from group_vars/all.yml, ADR-45) ----
 # Fill real values on the control machine; this file is gitignored.

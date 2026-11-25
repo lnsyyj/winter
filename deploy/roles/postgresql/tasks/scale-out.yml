@@ -54,7 +54,7 @@
 # ---- migrated from playbook post_tasks ----
 - name: Verify the new nodes are streaming replicas
   ansible.builtin.uri:
-    url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ pg_cluster.rest_port }}/replica"
+    url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ patroni.rest_port }}/replica"
     status_code: 200
   loop: "{{ pg_scale.nodes }}"
   delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"

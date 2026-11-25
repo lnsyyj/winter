@@ -74,7 +74,7 @@
   failed_when: false
 
 - name: Precheck Harbor | docker-compose is available
-  ansible.builtin.command: "{{ harbor_compose_command }} --version"
+  ansible.builtin.command: "{{ harbor.compose_command }} --version"
   register: harbor_compose
   changed_when: false
   failed_when: false
@@ -85,7 +85,7 @@
       - harbor_docker.rc == 0
       - harbor_compose.rc == 0
     fail_msg: >-
-      Harbor requires Docker and {{ harbor_compose_command }} on every Harbor node
+      Harbor requires Docker and {{ harbor.compose_command }} on every Harbor node
       (docker rc={{ harbor_docker.rc }}, compose rc={{ harbor_compose.rc }}). Install them first;
       bootstrap-servers does not provide a container runtime.
     success_msg: "Docker and docker-compose are available"

@@ -7,7 +7,7 @@ the target machine does not compile or connect to the external network (ADR-14 /
 
 | Component | Binary | Port | Health endpoint | Description |
 | --- | --- | --- | --- | --- |
-| VictoriaMetrics | `victoria-metrics-prod` | 8428 | `/health` | Metrics, retained for `victoriametrics_retention_days` days |
+| VictoriaMetrics | `victoria-metrics-prod` | 8428 | `/health` | Metrics, retained for `victoriametrics.retention_days` days |
 | vmalert | `vmalert-prod` | 8880 | `/health` | The **only** alert rule pipeline; rules directory `config_dir/rules/*.yml` |
 | VictoriaLogs | `victoria-logs-prod` | 9428 | `/health` | Logs, retained for 30 days; audit is in PG, not here |
 | Alertmanager | `alertmanager` | 9093 | `/-/healthy` | webhook feeds back to the platform (ADR-33) |
@@ -23,7 +23,7 @@ stages override the bind address with `0.0.0.0` and advertise each node's intern
 
 - `victoriametrics.enabled: false` skips the whole stack (playbook-level `when`).
 - Setting a single component's `enabled: false` trims it, corresponding to ADR-18's "packaging layers".
-- `victoriametrics_retention_days` applies to both metrics and logs; audit retention is a separate setting (ADR-32).
+- `victoriametrics.retention_days` applies to both metrics and logs; audit retention is a separate setting (ADR-32).
 - `vault_grafana_admin_password` must come from `deploy/group_vars/all.yml`; the role asserts this explicitly
   and will not generate a default weak password.
 - vmalert's `rules/platform.yml` is an M0 placeholder rule (never true); after collection is connected, add

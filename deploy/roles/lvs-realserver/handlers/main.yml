@@ -5,6 +5,6 @@
 
 - name: restart loopback VIP service
   ansible.builtin.systemd:
-    name: "{{ lvs_realserver_unit }}"
+    name: "{{ lvs_realserver.unit }}"
     state: restarted
     daemon_reload: true

@@ -8,8 +8,8 @@ namespace: /winter/
 name: {{ inventory_hostname }}
 
 restapi:
-  listen: {{ ansible_host }}:{{ pg_cluster.rest_port }}
-  connect_address: {{ ansible_host }}:{{ pg_cluster.rest_port }}
+  listen: {{ ansible_host }}:{{ patroni.rest_port }}
+  connect_address: {{ ansible_host }}:{{ patroni.rest_port }}
 
 etcd3:
   hosts:
@@ -68,9 +68,9 @@ bootstrap:
   post_bootstrap: /etc/patroni/post_bootstrap.sh
 
 postgresql:
-  listen: {{ ansible_host }}:{{ pg_cluster.port }}
-  connect_address: {{ ansible_host }}:{{ pg_cluster.port }}
-  data_dir: {{ pg_cluster.data_dir }}
+  listen: {{ ansible_host }}:{{ patroni.port }}
+  connect_address: {{ ansible_host }}:{{ patroni.port }}
+  data_dir: {{ patroni.data_dir }}
   bin_dir: {{ patroni.pg_bin }}
   pgpass: /var/lib/pgsql/.pgpass
   authentication:

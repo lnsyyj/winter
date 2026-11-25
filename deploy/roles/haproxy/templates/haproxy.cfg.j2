@@ -17,15 +17,15 @@ defaults
 
 # Write entry point: applications connect here
 frontend winter_pg
-    bind *:{{ pg_cluster.haproxy.listen_port }}
+    bind *:{{ haproxy.listen_port }}
     default_backend winter_pg_primary
 
 backend winter_pg_primary
     option httpchk GET /primary
     http-check expect status 200
-    default-server inter {{ pg_cluster.haproxy.check_interval }} fall {{ pg_cluster.haproxy.check_fall }} rise {{ pg_cluster.haproxy.check_rise }}
+    default-server inter {{ haproxy.check_interval }} fall {{ haproxy.check_fall }} rise {{ haproxy.check_rise }}
 {% for h in groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) %}
-    server {{ h }} {{ hostvars[h]['inventory_hostname'] }}:{{ pg_cluster.port }} check port {{ pg_cluster.rest_port }}
+    server {{ h }} {{ hostvars[h]['inventory_hostname'] }}:{{ patroni.port }} check port {{ patroni.rest_port }}
 {% endfor %}
 
 # Optional: read-only entry point (pointing to replicas), not currently used, kept for future expansion

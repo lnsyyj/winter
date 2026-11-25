@@ -6,7 +6,7 @@ Deploys the Go single binary cross-compiled from `server/` as a systemd service,
   **no compilation on site**, ADR-14).
 - Install: `/usr/local/bin/winter-server`, dedicated account `winter-server` (non-root).
 - Configuration: `/etc/winter/server.env`, mode 0640, template `templates/server.env.j2`.
-  `DATABASE_URL` is assembled from `vault_pg_password` in `group_vars/all.yml` and `pg_cluster.haproxy.listen_port`;
+  `DATABASE_URL` is assembled from `vault_pg_password` in `group_vars/all.yml` and `haproxy.listen_port`;
   `JWT_SECRET` / `ADMIN_PASSWORD` also come only from `group_vars/all.yml`.
 - Service: `winter-server.service`, `Type=exec`, `Restart=always`, start on boot.
 - Port: `winter_server.port` (default 8081), must match `nginx.api_upstream`.

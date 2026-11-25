@@ -88,7 +88,7 @@
 # Patroni REST binds to the internal address (ansible_host), not 127.0.0.1.
 - name: "[precheck] Check HAProxy entry and Patroni primary on target"
   ansible.builtin.uri:
-    url: "http://{{ ansible_host }}:{{ pg_cluster.rest_port }}/primary"
+    url: "http://{{ ansible_host }}:{{ patroni.rest_port }}/primary"
     status_code: 200
   register: pm_primary
   changed_when: false
@@ -369,7 +369,7 @@
 - name: Report migration result and rollback path
   ansible.builtin.debug:
     msg:
-      - "Migration complete. Source PG ({{ pg_migrate.source_port }}) data directory preserved at {{ pg_cluster.data_dir | regex_replace('ha$','data') }}"
+      - "Migration complete. Source PG ({{ pg_migrate.source_port }}) data directory preserved at {{ patroni.data_dir | regex_replace('ha$','data') }}"
       - "Rollback (if needed): stop {{ pg_migrate.server_service }}, set winter_server_ha.database_endpoint=direct, restart; then restore source if required."
       - "Do NOT delete the source data directory until the HA cluster has been backed up and accepted."
   run_once: true

@@ -9,8 +9,8 @@
 
 - name: Fetch RPM from internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ haproxy_role.rpm_subdir }}/{{ haproxy_role.rpm }}"
-    dest: /var/tmp/{{ haproxy_role.rpm }}
+    url: "{{ platform.repo_base_url }}/{{ haproxy.rpm_subdir }}/{{ haproxy.rpm }}"
+    dest: /var/tmp/{{ haproxy.rpm }}
     mode: "0644"
     timeout: 60
   when: not haproxy_bin.stat.exists
@@ -19,7 +19,7 @@
 - name: Install locally (no remote repository access)
   ansible.builtin.shell: |
     set -o pipefail
-    dnf -y --disablerepo='*' --nogpgcheck install /var/tmp/{{ haproxy_role.rpm }}
+    dnf -y --disablerepo='*' --nogpgcheck install /var/tmp/{{ haproxy.rpm }}
   args:
     executable: /bin/bash
   when: not haproxy_bin.stat.exists
@@ -28,7 +28,7 @@
 - name: Install configuration
   ansible.builtin.template:
     src: haproxy.cfg.j2
-    dest: "{{ haproxy_role.config }}"
+    dest: "{{ haproxy.config }}"
     mode: "0644"
     backup: true
   notify: restart haproxy
@@ -36,7 +36,7 @@
 
 - name: Validate configuration
   ansible.builtin.command:
-    cmd: haproxy -c -f {{ haproxy_role.config }}
+    cmd: haproxy -c -f {{ haproxy.config }}
   register: haproxy_check
   changed_when: false
   failed_when: haproxy_check.rc != 0
@@ -55,9 +55,9 @@
   # SELinux only allows ports of type http_port_t; 5434 is not among them
   ansible.builtin.shell: |
     set -o pipefail
-    semanage port -a -t http_port_t -p tcp {{ pg_cluster.haproxy.listen_port }} 2>/dev/null \
-      || semanage port -m -t http_port_t -p tcp {{ pg_cluster.haproxy.listen_port }}
-    semanage port -l | grep "{{ pg_cluster.haproxy.listen_port }}"
+    semanage port -a -t http_port_t -p tcp {{ haproxy.listen_port }} 2>/dev/null \
+      || semanage port -m -t http_port_t -p tcp {{ haproxy.listen_port }}
+    semanage port -l | grep "{{ haproxy.listen_port }}"
   args:
     executable: /bin/bash
   register: haproxy_seport
@@ -96,7 +96,7 @@
 
 - name: Allow entry port through firewall (cluster subnet and localhost only)
   ansible.builtin.shell: |
-    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ pg_cluster.haproxy.listen_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ haproxy.listen_port }} protocol=tcp accept' >/dev/null 2>&1
     firewall-cmd --reload >/dev/null 2>&1
     echo done
   changed_when: false
@@ -106,7 +106,7 @@
 - name: Verify entry point points to primary (query current primary identity)
   ansible.builtin.shell: |
     set -o pipefail
-    PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ pg_cluster.haproxy.listen_port }} \
+    PGPASSWORD='{{ vault_pg_password }}' psql -h 127.0.0.1 -p {{ haproxy.listen_port }} \
       -U {{ patroni.app_user }} -d {{ patroni.app_db }} -tAc "select inet_server_addr()||':'||inet_server_port()"
   args:
     executable: /bin/bash
@@ -121,5 +121,5 @@
 - name: Show conclusion
   ansible.builtin.debug:
     msg:
-      - "Application entry 127.0.0.1:{{ pg_cluster.haproxy.listen_port }} → primary {{ haproxy_probe.stdout | trim }}"
+      - "Application entry 127.0.0.1:{{ haproxy.listen_port }} → primary {{ haproxy_probe.stdout | trim }}"
   tags: [haproxy]
