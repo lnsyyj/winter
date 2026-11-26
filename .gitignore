@@ -90,3 +90,6 @@ deploy/artifacts/repo/tarball/harbor-offline-installer-*.tgz
 # 有网制包的中间产物（下载的 vmutils 全量包、未完成的下载）
 /deploy/.fetch-tmp/
 *.partial
+
+# Ansible fact cache (runtime, contains host facts)
+/deploy/.ansible_facts/
