@@ -612,3 +612,4 @@ trim_trailing_whitespace = false
 | 2026-11-26 | 允许超融合部署（ADR-55）：移除 system-checks 的 management/ceph_nodes 组互斥断言，一台主机可属于任意多组；修复 os/ports/resources 中 11 处失效旧组名判断（podman/端口/资源检查恢复生效） | 本次提交 |
 | 2026-11-26 | 预检去掉永真组校验与组 gating（ADR-56）：删除 Group validity 断言（play 的 hosts 已保证成员资格），移除 system-checks 内所有 group_names 判断，端口/磁盘检查对所有被检查主机生效 | 本次提交 |
 | 2026-11-26 | OS 基线检查可配置化（ADR-57）：system-checks 的 Verify OS baseline 从写死 CentOS Stream 9 改为 prechecks_supported_os 白名单匹配，支持 -e 覆盖扩展新系统；ADR-11 默认基线不变 | 本次提交 |
+| 2026-11-26 | podman 独立 role（ADR-58）：从 system-checks 的 os.yml 与 os_init.packages 中拆出，新建 roles/podman（安装+检查），site.yml/inventory/deploy.sh/all.yml 同步接入；podman 不再混在基础包里 | 本次提交 |

@@ -1,0 +1,24 @@
+---
+# Read-only podman prechecks. No install, no config change.
+# Run with: ./deploy.sh prechecks -t podman
+- name: Precheck podman | Probe binary
+  ansible.builtin.command: podman --version
+  register: podman_probe
+  changed_when: false
+  failed_when: false
+
+- name: Precheck podman | Verify presence and runtime
+  ansible.builtin.assert:
+    that:
+      - podman_probe.rc | default(1) == 0
+    fail_msg: >-
+      podman not found ({{ podman_probe.stderr | default('') | trim }}).
+      The container runtime is fixed to podman (ADR-11); docker is not used.
+      Deploy it with: ./deploy.sh deploy -t podman
+    success_msg: "podman available: {{ podman_probe.stdout | default('') }}"
+    quiet: true
+
+- name: Precheck podman | Show version
+  ansible.builtin.debug:
+    msg: "{{ podman_probe.stdout | default('podman not installed') }}"
+  when: podman_probe.rc | default(1) == 0

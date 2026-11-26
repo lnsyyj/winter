@@ -10,8 +10,8 @@ Corresponds to installation/deployment manual phase C3 and test case TC-26. **Th
 
 | File | What it checks | On failure |
 | --- | --- | --- |
-| `tasks/precheck.yml` | Group validity (main.yml is the action dispatcher) (cannot be in both management and ceph_nodes) | Fail immediately, indicating which group the host should belong to |
-| `tasks/os.yml` | CentOS Stream 9, podman present | Fail and indicate the baseline is locked (ADR-11) |
+| `tasks/precheck.yml` | Action dispatcher; no group validity check (ADR-56: hosts: already guarantees membership) | — |
+| `tasks/os.yml` | OS baseline against `prechecks_supported_os` whitelist (ADR-57) | Fail with actual OS + whitelist config hint |
 | `tasks/resources.yml` | Management plane min vCPU / RAM / free root GB (all configurable); managed node ≥N data disks | Fail in strict mode, warn only in report-only mode; both thresholds and strictness are configurable |
 | `tasks/time.yml` | chronyd running, offset ≤1s | Fail; clock drift causes cephadm to fail immediately |
 | `tasks/kernel.yml` | overcommit_memory / max_map_count | Report only by default; fail when `enforce_kernel: true` |

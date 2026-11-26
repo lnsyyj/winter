@@ -90,10 +90,14 @@ ansible all -i inventory/hosts.ini -m ping
 ./deploy.sh prechecks -t os-init,postgresql \
   -e '{"prechecks_strict_resources":false,"prechecks_strict_ports":false}'
 
-# 1.2 系统初始化（基础工具 + chrony）
+# 1.2 系统初始化（基础工具 + chrony，不含 podman）
 ./deploy.sh deploy -t os-init
 
-# 1.3 基础依赖与内核参数
+# 1.3 容器运行时 podman（独立 role，默认从 OS repo 安装；ADR-58）
+./deploy.sh deploy -t podman
+./deploy.sh prechecks -t podman       # 验证二进制可用
+
+# 1.4 基础依赖与内核参数
 ./deploy.sh deploy -t bootstrap
 ```
 
@@ -331,6 +335,7 @@ cd /root/github/winter/deploy
 # 0 准备：设密码、校验产物、ping（见正文）
 ./deploy.sh prechecks -t os-init,postgresql -e '{"prechecks_strict_resources":false,"prechecks_strict_ports":false}'
 ./deploy.sh deploy -t os-init
+./deploy.sh deploy -t podman                 # 容器运行时独立 role
 ./deploy.sh deploy -t bootstrap
 ./deploy.sh deploy -t repo-nginx
 ./deploy.sh deploy -t etcd                       # 可选：只部署 DCS 层；postgresql-ha 会连带部署

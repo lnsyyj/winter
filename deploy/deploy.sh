@@ -24,7 +24,7 @@ Actions (first argument, becomes winter_ops_action):
   upgrade       Verify artifacts, converge to pinned versions, re-run acceptance
 
 Targets are selected by -t tags and inventory groups. All available tags:
-  Components:  prechecks os-init bootstrap repo-nginx etcd postgresql nginx victoriametrics
+  Components:  prechecks os-init podman bootstrap repo-nginx etcd postgresql nginx victoriametrics
                winter-server harbor keepalived named winter-agent
   Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
                victoriametrics-scale-out victoriametrics-scale-in application-ha destroy
@@ -95,7 +95,7 @@ esac
 
 # Prechecks and destroy must not trigger the transactional operation playbooks. If the caller did
 # not pass an explicit -t, restrict to the component tags for those actions.
-COMPONENT_TAGS="prechecks,os-init,bootstrap,repo-nginx,etcd,postgresql,nginx,victoriametrics,winter-server,harbor,keepalived,named,winter-agent"
+COMPONENT_TAGS="prechecks,os-init,podman,bootstrap,repo-nginx,etcd,postgresql,nginx,victoriametrics,winter-server,harbor,keepalived,named,winter-agent"
 ACTION_TAGS=""
 case "$ACTION" in
     deploy|prechecks)

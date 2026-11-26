@@ -1,0 +1,38 @@
+---
+# Install podman from the OS repository (ADR-11: container runtime is podman, not docker).
+# Query installed RPMs first so offline sites with unreachable repos do not hang on a blind dnf call.
+- name: Deploy podman | Assert enabled
+  ansible.builtin.assert:
+    that: podman.enabled | bool
+    fail_msg: "podman.enabled is false; set podman_overrides.enabled: true in group_vars/all.yml"
+    quiet: true
+  tags: [podman]
+
+- name: Deploy podman | Collect installed RPM names
+  ansible.builtin.shell: |
+    set -o pipefail
+    rpm -qa --qf '%{NAME}\n' | sort -u
+  args:
+    executable: /bin/bash
+  register: podman_installed_rpms
+  changed_when: false
+  tags: [podman]
+
+- name: Deploy podman | Install package if missing
+  ansible.builtin.dnf:
+    name: "{{ podman.package }}"
+    state: present
+    disablerepo: "{{ podman.disablerepo | default([]) }}"
+  when: podman.package not in podman_installed_rpms.stdout_lines
+  tags: [podman]
+
+- name: Deploy podman | Verify binary
+  ansible.builtin.command: podman --version
+  register: podman_version
+  changed_when: false
+  tags: [podman]
+
+- name: Deploy podman | Report
+  ansible.builtin.debug:
+    msg: "podman ready: {{ podman_version.stdout }}"
+  tags: [podman]

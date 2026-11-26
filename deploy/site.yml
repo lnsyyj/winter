@@ -34,6 +34,16 @@
     - role: os-init
       tags: [os-init]
 
+- name: Container runtime (podman)
+  hosts: podman
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [podman]
+  roles:
+    - role: podman
+      tags: [podman]
+
 - name: Base dependencies and OS settings
   hosts: bootstrap
   become: true

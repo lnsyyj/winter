@@ -168,3 +168,4 @@ graph LR
 | 58 | [ADR-55-允许超融合部署.md](./02-研发线/04-架构师/ADR-55-允许超融合部署.md) | 架构师 ④ | **已确认** · 2026-11-26 | 移除 management/ceph_nodes 组互斥，一台主机可属于任意多组；修复 system-checks 中 11 处失效的旧组名判断，让 podman/端口/资源检查真正生效 |
 | 59 | [ADR-56-预检不做组校验与组gating.md](./02-研发线/04-架构师/ADR-56-预检不做组校验与组gating.md) | 架构师 ④ | **已确认** · 2026-11-26 | 删除永真的 Group validity 断言；移除 system-checks 内所有 group_names gating，端口/磁盘检查对所有被检查主机生效 |
 | 59 | [ADR-57-OS基线改为可配置白名单.md](./02-研发线/04-架构师/ADR-57-OS基线改为可配置白名单.md) | 架构师 ④ | **已确认** · 2026-11-26 | OS 基线检查从写死 CentOS Stream 9 改为可配置白名单 prechecks_supported_os，支持 -e 运行时扩展；默认仍锁定 CentOS Stream 9（ADR-11 不变） |
+| 60 | [ADR-58-podman独立role.md](./02-研发线/04-架构师/ADR-58-podman独立role.md) | 架构师 ④ | **已确认** · 2026-11-26 | podman 从 system-checks 检查+os_init 安装中拆出为独立 role，含 site.yml play / [podman] 组 / tag / podman.* 配置，安装与检查归位 |

@@ -118,8 +118,8 @@ os_init_defaults:
 
   # Base OS packages. In an offline site these come from the OS installation media,
   # not from the platform's internal artifact repo (which carries platform artifacts only).
+  # podman is installed by the dedicated podman role (ADR-58), not here.
   packages:
-    - podman
     - python3
     - python3-pip
     - curl
@@ -714,7 +714,7 @@ winter_agent_defaults:
 
 winter_agent: "{{ winter_agent_defaults | combine(winter_agent_overrides | default({}, true), recursive=True) }}"
 
-  # packages: [podman, python3, python3-pip, curl, wget, chrony]
+  # packages: [python3, python3-pip, curl, wget, chrony]  # podman has its own role (ADR-58)
   # chrony:
   #   enabled: true
   #   servers: []              # e.g. [time.corp.local, 10.0.0.1] to add explicit NTP sources
@@ -742,6 +742,14 @@ winter_agent_overrides:
 upgrade:
   target_version: ""
   require_checksums: true
+
+# ---- podman role (container runtime, ADR-11 / ADR-58) ----
+# podman is a standalone role, not a package inside os_init.packages.
+podman_defaults:
+  enabled: true
+  package: podman
+  disablerepo: []        # e.g. ['pgdg*'] when third-party repos are unreachable
+podman: "{{ podman_defaults | combine(podman_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/uninstall/defaults/main.yml ----
 uninstall_defaults:

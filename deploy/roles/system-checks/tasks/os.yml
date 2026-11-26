@@ -50,19 +50,3 @@
       (matched {{ (prechecks_os_matches | default([])) | length }} whitelist entry/entries)
     quiet: true
   when: (prechecks_supported_os | length) > 0
-
-- name: Precheck | podman version
-  ansible.builtin.command: podman --version
-  register: prechecks_podman
-  changed_when: false
-  failed_when: false
-
-- name: Precheck | podman presence
-  ansible.builtin.assert:
-    that:
-      - prechecks_podman.rc | default(1) == 0
-    fail_msg: >-
-      podman not found ({{ prechecks_podman.stderr | default('') | trim }}).
-      The runtime is fixed to podman (ADR-11); docker is not used. Install podman from the internal repo and retry.
-    success_msg: "podman available: {{ prechecks_podman.stdout | default('') }}"
-    quiet: true
