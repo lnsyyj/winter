@@ -1,13 +1,14 @@
 ---
-# Before deployment, the external ports on the management node must be free, otherwise the deploy phase will conflict.
+# Before deployment, the external ports must be free on hosts running the access layer.
+# Hyper-converged hosts may join many groups; the port check targets Nginx/Server roles explicitly.
 - name: Precheck | Read listening ports
   ansible.builtin.command: ss -H -ltn
   register: prechecks_ss
   changed_when: false
   failed_when: false
-  when: "'management' in group_names"
+  when: "'nginx' in group_names or 'winter-server' in group_names"
 
-- name: Precheck | Management plane ports free (strict mode)
+- name: Precheck | Access layer ports free (strict mode)
   ansible.builtin.assert:
     that:
       - "prechecks_ss.stdout is not search(':' ~ (item | string) ~ '\\s')"
@@ -20,16 +21,16 @@
     quiet: true
   loop: "{{ prechecks.required_free_ports }}"
   when:
-    - "'management' in group_names"
+    - "'nginx' in group_names or 'winter-server' in group_names"
     - (prechecks_strict_ports | default(prechecks.strict_ports)) | bool
 
-- name: Precheck | Management plane ports free (report-only mode)
+- name: Precheck | Access layer ports free (report-only mode)
   ansible.builtin.debug:
     msg: >-
       WARN port {{ item }} is in use (see: ss -ltnp 'sport = :{{ item }}').
       Running in report-only mode (prechecks.strict_ports=false); a fresh deployment needs this port free.
   loop: "{{ prechecks.required_free_ports }}"
   when:
-    - "'management' in group_names"
+    - "'nginx' in group_names or 'winter-server' in group_names"
     - prechecks_ss.stdout is search(':' ~ (item | string) ~ '\\s')
     - not ((prechecks_strict_ports | default(prechecks.strict_ports)) | bool)

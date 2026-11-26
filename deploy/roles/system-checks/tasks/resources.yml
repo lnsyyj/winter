@@ -5,35 +5,33 @@
       {{ (ansible_facts.mounts | selectattr('mount', 'equalto', '/')
           | map(attribute='size_available') | list | first | default(0)) | int }}
 
-- name: Precheck | Management plane minimum requirements (strict mode)
+- name: Precheck | Host minimum requirements (strict mode)
   ansible.builtin.assert:
     that:
       - ansible_facts.processor_vcpus | int >= prechecks.management_min_vcpus | int
       - ansible_facts.memtotal_mb | int >= prechecks.management_min_memory_mb | int
       - (prechecks_root_available_bytes | int) >= (prechecks.management_min_root_free_gb | int) * 1073741824
     fail_msg: >-
-      Insufficient resources on the management node: CPU {{ ansible_facts.processor_vcpus }} cores (need ≥{{ prechecks.management_min_vcpus }}),
+      Insufficient resources on this host: CPU {{ ansible_facts.processor_vcpus }} cores (need ≥{{ prechecks.management_min_vcpus }}),
       memory {{ ansible_facts.memtotal_mb }} MB (need ≥{{ prechecks.management_min_memory_mb }} MB),
       root partition free {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB
       (need ≥{{ prechecks.management_min_root_free_gb }} GB).
       Tune prechecks.management_min_* in group_vars/all.yml, or set prechecks.strict_resources to false to warn only.
       See deployment plan §1: Harbor and the victoriametrics stack take the most space, with Harbor's image storage filling up first.
-    success_msg: "Management plane resources meet minimum requirements"
+    success_msg: "Host resources meet minimum requirements"
     quiet: true
   when:
-    - "'management' in group_names"
     - (prechecks_strict_resources | default(prechecks.strict_resources)) | bool
 
-- name: Precheck | Management plane minimum requirements (report-only mode)
+- name: Precheck | Host minimum requirements (report-only mode)
   ansible.builtin.debug:
     msg: >-
-      WARN management resources below configured thresholds: CPU {{ ansible_facts.processor_vcpus }} cores (need ≥{{ prechecks.management_min_vcpus }}),
+      WARN host resources below configured thresholds: CPU {{ ansible_facts.processor_vcpus }} cores (need ≥{{ prechecks.management_min_vcpus }}),
       memory {{ ansible_facts.memtotal_mb }} MB (need ≥{{ prechecks.management_min_memory_mb }} MB),
       root partition free {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB
       (need ≥{{ prechecks.management_min_root_free_gb }} GB).
       Running in report-only mode (prechecks.strict_resources=false); tune the thresholds in group_vars/all.yml for production.
   when:
-    - "'management' in group_names"
     - not ((prechecks_strict_resources | default(prechecks.strict_resources)) | bool)
 
 - name: Precheck | List whole disks
@@ -41,12 +39,12 @@
   register: prechecks_lsblk
   changed_when: false
   failed_when: false
-  when: "'ceph_nodes' in group_names"
+  when: "'etcd' in group_names"
 
 - name: Precheck | Parse whole-disk list
   ansible.builtin.set_fact:
     prechecks_disks: "{{ (prechecks_lsblk.stdout_lines | default([])) | select('search', ' disk ') | list }}"
-  when: "'ceph_nodes' in group_names"
+  when: "'etcd' in group_names"
 
 - name: Precheck | Data disk count (strict mode)
   ansible.builtin.assert:
@@ -59,7 +57,7 @@
     success_msg: "Data disk count OK ({{ (prechecks_disks | length) - 1 }} available)"
     quiet: true
   when:
-    - "'ceph_nodes' in group_names"
+    - "'etcd' in group_names"
     - prechecks.strict_data_disks | bool
 
 - name: Precheck | Data disk count (report-only mode)
@@ -69,5 +67,5 @@
       {{ (prechecks_disks | length) - 1 }} available for OSD after excluding the system disk, required ≥{{ prechecks.ceph_node_min_data_disks }}).
       Currently in report-only mode; for production delivery, set prechecks.strict_data_disks to true in group_vars.
   when:
-    - "'ceph_nodes' in group_names"
+    - "'etcd' in group_names"
     - not (prechecks.strict_data_disks | bool)

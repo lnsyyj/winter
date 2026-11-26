@@ -27,7 +27,6 @@
   register: prechecks_podman
   changed_when: false
   failed_when: false
-  when: "'management' in group_names or 'ceph_nodes' in group_names"
 
 - name: Precheck | podman presence
   ansible.builtin.assert:
@@ -38,4 +37,3 @@
       The runtime is fixed to podman (ADR-11); docker is not used. Install podman from the internal repo and retry.
     success_msg: "podman available: {{ prechecks_podman.stdout | default('') }}"
     quiet: true
-  when: "'management' in group_names or 'ceph_nodes' in group_names"

@@ -2,14 +2,17 @@
 # Precheck entry point, split by category for easy troubleshooting with --tags.
 # All subtasks must remain read-only (changed_when: false), otherwise the check itself becomes a change.
 - name: Precheck | Group validity
+  # Hyper-converged deployment is allowed: a host may belong to any number of
+  # software groups (e.g. etcd + postgresql + nginx + winter-server on one box).
+  # The only hard rule is that the host is placed in at least one group.
   ansible.builtin.assert:
     that:
       - group_names | length > 0
-      - not ('management' in group_names and 'ceph_nodes' in group_names)
     fail_msg: >-
-      Host {{ inventory_hostname }} has an invalid group assignment: it must belong to either management or ceph_nodes,
-      and not both (the management plane and managed node roles are mutually exclusive; for single-machine deployment, use only management).
-    success_msg: "Group validation passed: {{ group_names | join(', ') }}"
+      Host {{ inventory_hostname }} does not belong to any group in inventory/hosts.ini.
+      Add it to the software groups whose roles it should run (one host may join multiple groups
+      for hyper-converged deployment).
+    success_msg: "Group validation passed: {{ group_names | join(', ') }} (hyper-converged allowed)"
     quiet: true
   tags: [prechecks, prechecks.groups]
 

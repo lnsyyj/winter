@@ -319,6 +319,9 @@ git reflog                            # 兜底：找回误操作前的 HEAD
   **明确列出 IP 的具名组**（`system-checks` / `bootstrap` / `os-init` / …）。`hosts: all` 无法从
   inventory 看出会执行哪些节点；写哪个 IP 就执行哪个节点，未列入该组的节点绝不被触碰。
   inventory 的 `[组]` 顺序、`group_vars/all.yml` 的配置块顺序都必须与 `site.yml` 的 play 顺序一致。
+- **超融合允许原则（ADR-55）**：一台主机可同时属于任意多个软件组（管理面与节点角色不互斥），
+  precheck 只要求"至少属于一个组"，禁止在预检里写"某两组不可共存"的互斥断言。
+  资源/端口检查要按**实际承载的角色**判断，不要假设"管理节点"与"存储节点"是不同机器。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -602,3 +605,4 @@ trim_trailing_whitespace = false
 | 2026-11-25 | 配置项命名统一为软件名（ADR-50）：`all.yml` 全部配置键以所属 role 的软件名为前缀（monitoring/obs→victoriametrics、server→winter_server、dns→named、system_init→os_init、agent→winter_agent、local_repo→repo_nginx、realserver→lvs_realserver）；5 个 role 目录同步改名（local-repo/repo-nginx、observability→victoriametrics、system-init→os-init、agent→winter-agent），删除重复的 realserver role；all.yml 头部新增配置归属索引；§4.9 增配置项同名原则 | 本次提交 |
 | 2026-11-25 | 全部 role 配置归位（ADR-52/53）：etcd 配置从 pg_cluster.etcd.* 迁到 etcd.*；pg_cluster 收敛为纯集群策略，haproxy/patroni 配置归各自字典；散落扁平变量（keepalived_*/winter_server_*/harbor_*/lvs_realserver_*/victoriametrics_*）并入软件字典；§4.9 增配置归位原则 | 本次提交 |
 | 2026-11-26 | 消除 hosts: all（ADR-54）：site.yml 的 System checks / Base deps 改用显式 [system-checks]/[bootstrap] 组，只有列入 inventory 组的 IP 才被执行；§4.9 增显式主机组原则；inventory/group_vars 顺序与 play 顺序对齐 | 本次提交 |
+| 2026-11-26 | 允许超融合部署（ADR-55）：移除 system-checks 的 management/ceph_nodes 组互斥断言，一台主机可属于任意多组；修复 os/ports/resources 中 11 处失效旧组名判断（podman/端口/资源检查恢复生效） | 本次提交 |
