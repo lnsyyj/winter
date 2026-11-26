@@ -57,6 +57,11 @@ cd artifacts/repo && sha256sum -c SHA256SUMS.txt | grep -v ': OK' ; cd ../..
 
 产物应包含：PG17 RPM×4、haproxy RPM、etcd tarball、5 个监控 tarball、pip wheels、Server 二进制；Harbor tarball 为可选项（629MB，不入库）。
 
+**OS 基线**：默认只支持 CentOS Stream 9（`prechecks_supported_os_defaults`）。
+其他系统（Rocky/Alma/RHEL/Ubuntu）需先走 ADR 修订，然后往白名单加条目；
+临时测试可用 `-e '{"prechecks_supported_os":[{"distribution":"Rocky","major_version":"9"}]}'` 覆盖，
+不影响其他预检配置。详见 [ADR-57](../../docs/02-研发线/04-架构师/ADR-57-OS基线改为可配置白名单.md)。
+
 ### 0.4 确认 inventory
 
 ```bash

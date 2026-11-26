@@ -322,6 +322,10 @@ git reflog                            # 兜底：找回误操作前的 HEAD
 - **超融合允许原则（ADR-55）**：一台主机可同时属于任意多个软件组（管理面与节点角色不互斥），
   precheck 只要求"至少属于一个组"，禁止在预检里写"某两组不可共存"的互斥断言。
   资源/端口检查要按**实际承载的角色**判断，不要假设"管理节点"与"存储节点"是不同机器。
+- **OS 基线扩展原则（ADR-57）**：预检不得把发行版/版本写死在 role 里。OS 基线走
+  `prechecks_supported_os` 白名单（默认 CentOS Stream 9，遵循 ADR-11），新增系统先走 ADR 修订、
+  再往白名单加条目；支持 `-e '{"prechecks_supported_os":[...]}'` 运行时覆盖，且覆盖不得影响
+  其他 `prechecks.*` 配置。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -607,3 +611,4 @@ trim_trailing_whitespace = false
 | 2026-11-26 | 消除 hosts: all（ADR-54）：site.yml 的 System checks / Base deps 改用显式 [system-checks]/[bootstrap] 组，只有列入 inventory 组的 IP 才被执行；§4.9 增显式主机组原则；inventory/group_vars 顺序与 play 顺序对齐 | 本次提交 |
 | 2026-11-26 | 允许超融合部署（ADR-55）：移除 system-checks 的 management/ceph_nodes 组互斥断言，一台主机可属于任意多组；修复 os/ports/resources 中 11 处失效旧组名判断（podman/端口/资源检查恢复生效） | 本次提交 |
 | 2026-11-26 | 预检去掉永真组校验与组 gating（ADR-56）：删除 Group validity 断言（play 的 hosts 已保证成员资格），移除 system-checks 内所有 group_names 判断，端口/磁盘检查对所有被检查主机生效 | 本次提交 |
+| 2026-11-26 | OS 基线检查可配置化（ADR-57）：system-checks 的 Verify OS baseline 从写死 CentOS Stream 9 改为 prechecks_supported_os 白名单匹配，支持 -e 覆盖扩展新系统；ADR-11 默认基线不变 | 本次提交 |

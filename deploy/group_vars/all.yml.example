@@ -171,6 +171,17 @@ bootstrap_defaults:
 
 bootstrap: "{{ bootstrap_defaults | combine(bootstrap_overrides | default({}, true), recursive=True) }}"
 
+# Supported OS baselines (ADR-57). A host passes when its distribution +
+# major version match any entry; `pretty_name_contains` optionally narrows it.
+# Add Rocky/Alma/RHEL/Ubuntu here after a new baseline is approved — no role edit.
+# Override at runtime with -e '{"prechecks_supported_os":[...]}' (top-level, so it
+# does not wipe other prechecks.* settings).
+prechecks_supported_os_defaults:
+  - distribution: CentOS
+    major_version: "9"
+    pretty_name_contains: "CentOS Stream 9"
+prechecks_supported_os: "{{ prechecks_supported_os_defaults }}"
+
 # Base layer (roles/bootstrap): OS packages and the settings that prechecks only reports.
 # Keep enforce_kernel in sync with prechecks.enforce_kernel above.
 # Merge rule: write only differences here; the role combines them with its own defaults.
