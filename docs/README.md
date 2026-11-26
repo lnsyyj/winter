@@ -164,3 +164,4 @@ graph LR
 
 在这些答案确定前，所有文档均保持 `草案` 状态。
 | 57 | [ADR-53-所有role配置归位到软件字典.md](./02-研发线/04-架构师/ADR-53-所有role配置归位到软件字典.md) | 架构师 ④ | **已确认** · 2026-11-25 | 检查全部76个配置项：清除pg_cluster下寄生的haproxy/patroni配置，散落扁平变量并入软件字典；记录字典自引用/配置丢失两个陷阱 |
+| 58 | [ADR-54-禁止hosts-all全用显式组.md](./02-研发线/04-架构师/ADR-54-禁止hosts-all全用显式组.md) | 架构师 ④ | **已确认** · 2026-11-26 | site.yml 消除 hosts: all，新增 system-checks/bootstrap 显式组，写哪个 IP 执行哪个节点；inventory/group_vars 顺序与 play 顺序对齐 |

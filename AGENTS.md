@@ -315,6 +315,10 @@ git reflog                            # 兜底：找回误操作前的 HEAD
   （如旧的 `winter_server_run_user` / `keepalived_config_path`）。`pg_cluster` 只保留跨组件共享的
   集群策略与网段（scope / allow_single_node_bootstrap / vip_iface_cidr）。
   字典内部引用自身键会触发 Jinja 自引用错误——内部用字面值，由 role/template 从外部读字典。
+- **显式主机组原则（ADR-54）**：`site.yml` 禁止 `hosts: all`，每个 play 必须指向 inventory 里
+  **明确列出 IP 的具名组**（`system-checks` / `bootstrap` / `os-init` / …）。`hosts: all` 无法从
+  inventory 看出会执行哪些节点；写哪个 IP 就执行哪个节点，未列入该组的节点绝不被触碰。
+  inventory 的 `[组]` 顺序、`group_vars/all.yml` 的配置块顺序都必须与 `site.yml` 的 play 顺序一致。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -597,3 +601,4 @@ trim_trailing_whitespace = false
 | 2026-11-20 | 新增 §14「产品化思维」独立章节：P1~P10 可验收清单（功能完整、幂等安全、可回滚、可校验、可运维、可诊断、升级路径、真机验证、文档闭环、不偷懒），原 §14 变更记录顺延为 §15 | 本次提交 |
 | 2026-11-25 | 配置项命名统一为软件名（ADR-50）：`all.yml` 全部配置键以所属 role 的软件名为前缀（monitoring/obs→victoriametrics、server→winter_server、dns→named、system_init→os_init、agent→winter_agent、local_repo→repo_nginx、realserver→lvs_realserver）；5 个 role 目录同步改名（local-repo/repo-nginx、observability→victoriametrics、system-init→os-init、agent→winter-agent），删除重复的 realserver role；all.yml 头部新增配置归属索引；§4.9 增配置项同名原则 | 本次提交 |
 | 2026-11-25 | 全部 role 配置归位（ADR-52/53）：etcd 配置从 pg_cluster.etcd.* 迁到 etcd.*；pg_cluster 收敛为纯集群策略，haproxy/patroni 配置归各自字典；散落扁平变量（keepalived_*/winter_server_*/harbor_*/lvs_realserver_*/victoriametrics_*）并入软件字典；§4.9 增配置归位原则 | 本次提交 |
+| 2026-11-26 | 消除 hosts: all（ADR-54）：site.yml 的 System checks / Base deps 改用显式 [system-checks]/[bootstrap] 组，只有列入 inventory 组的 IP 才被执行；§4.9 增显式主机组原则；inventory/group_vars 顺序与 play 顺序对齐 | 本次提交 |
