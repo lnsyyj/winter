@@ -60,6 +60,10 @@ fail_msg 明确提示"one host may join multiple groups for hyper-converged depl
   这是"检查真正生效"的代价，不是新增限制。
 - 数据盘检查挂到 `[etcd]` 沿用旧 Ceph OSD 语义（`strict_data_disks` 默认 false，不阻塞）。
 
+> **后续修正（ADR-56）**：本节 §2.2 保留的 `Group validity` 断言被证明是永真式
+> （play 的 `hosts: system-checks` 已保证主机在组内），已整体删除；同时端口/数据盘检查
+> 的组 gating 也一并移除，改为对所有被检查主机生效。以 ADR-56 为准。
+
 ## 5. 验证（2026-11-26）
 
 - 本地语法检查通过。

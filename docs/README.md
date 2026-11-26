@@ -166,3 +166,4 @@ graph LR
 | 57 | [ADR-53-所有role配置归位到软件字典.md](./02-研发线/04-架构师/ADR-53-所有role配置归位到软件字典.md) | 架构师 ④ | **已确认** · 2026-11-25 | 检查全部76个配置项：清除pg_cluster下寄生的haproxy/patroni配置，散落扁平变量并入软件字典；记录字典自引用/配置丢失两个陷阱 |
 | 58 | [ADR-54-禁止hosts-all全用显式组.md](./02-研发线/04-架构师/ADR-54-禁止hosts-all全用显式组.md) | 架构师 ④ | **已确认** · 2026-11-26 | site.yml 消除 hosts: all，新增 system-checks/bootstrap 显式组，写哪个 IP 执行哪个节点；inventory/group_vars 顺序与 play 顺序对齐 |
 | 58 | [ADR-55-允许超融合部署.md](./02-研发线/04-架构师/ADR-55-允许超融合部署.md) | 架构师 ④ | **已确认** · 2026-11-26 | 移除 management/ceph_nodes 组互斥，一台主机可属于任意多组；修复 system-checks 中 11 处失效的旧组名判断，让 podman/端口/资源检查真正生效 |
+| 59 | [ADR-56-预检不做组校验与组gating.md](./02-研发线/04-架构师/ADR-56-预检不做组校验与组gating.md) | 架构师 ④ | **已确认** · 2026-11-26 | 删除永真的 Group validity 断言；移除 system-checks 内所有 group_names gating，端口/磁盘检查对所有被检查主机生效 |

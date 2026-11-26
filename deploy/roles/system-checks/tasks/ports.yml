@@ -1,12 +1,12 @@
 ---
-# Before deployment, the external ports must be free on hosts running the access layer.
-# Hyper-converged hosts may join many groups; the port check targets Nginx/Server roles explicitly.
+# Before deployment, the external ports must be free on every host being checked.
+# The System checks play already targets the operators' chosen hosts; no further
+# group gating here (a host may join any number of software groups for hyper-converged deployment).
 - name: Precheck | Read listening ports
   ansible.builtin.command: ss -H -ltn
   register: prechecks_ss
   changed_when: false
   failed_when: false
-  when: "'nginx' in group_names or 'winter-server' in group_names"
 
 - name: Precheck | Access layer ports free (strict mode)
   ansible.builtin.assert:
@@ -20,9 +20,7 @@
     success_msg: "Port {{ item }} available"
     quiet: true
   loop: "{{ prechecks.required_free_ports }}"
-  when:
-    - "'nginx' in group_names or 'winter-server' in group_names"
-    - (prechecks_strict_ports | default(prechecks.strict_ports)) | bool
+  when: (prechecks_strict_ports | default(prechecks.strict_ports)) | bool
 
 - name: Precheck | Access layer ports free (report-only mode)
   ansible.builtin.debug:
@@ -31,6 +29,5 @@
       Running in report-only mode (prechecks.strict_ports=false); a fresh deployment needs this port free.
   loop: "{{ prechecks.required_free_ports }}"
   when:
-    - "'nginx' in group_names or 'winter-server' in group_names"
     - prechecks_ss.stdout is search(':' ~ (item | string) ~ '\\s')
     - not ((prechecks_strict_ports | default(prechecks.strict_ports)) | bool)

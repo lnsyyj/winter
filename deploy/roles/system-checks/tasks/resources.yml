@@ -39,12 +39,10 @@
   register: prechecks_lsblk
   changed_when: false
   failed_when: false
-  when: "'etcd' in group_names"
 
 - name: Precheck | Parse whole-disk list
   ansible.builtin.set_fact:
     prechecks_disks: "{{ (prechecks_lsblk.stdout_lines | default([])) | select('search', ' disk ') | list }}"
-  when: "'etcd' in group_names"
 
 - name: Precheck | Data disk count (strict mode)
   ansible.builtin.assert:
@@ -52,20 +50,17 @@
       - ((prechecks_disks | length) - 1) >= (prechecks.ceph_node_min_data_disks | int)
     fail_msg: >-
       Detected {{ prechecks_disks | length }} whole disks; after excluding the system disk, about
-      {{ (prechecks_disks | length) - 1 }} are available for OSD, need ≥{{ prechecks.ceph_node_min_data_disks }}.
-      OSDs require dedicated data disks (PRD FR-05); add disks or adjust this host's role.
+      {{ (prechecks_disks | length) - 1 }} are available as extra data disks, need ≥{{ prechecks.ceph_node_min_data_disks }}.
+      This is the legacy Ceph-OSD disk layout check (PRD FR-05); disable it with prechecks.strict_data_disks=false
+      if this host does not need dedicated data disks.
     success_msg: "Data disk count OK ({{ (prechecks_disks | length) - 1 }} available)"
     quiet: true
-  when:
-    - "'etcd' in group_names"
-    - prechecks.strict_data_disks | bool
+  when: prechecks.strict_data_disks | bool
 
 - name: Precheck | Data disk count (report-only mode)
   ansible.builtin.debug:
     msg: >-
       WARN detected {{ prechecks_disks | length }} whole disks (about
-      {{ (prechecks_disks | length) - 1 }} available for OSD after excluding the system disk, required ≥{{ prechecks.ceph_node_min_data_disks }}).
-      Currently in report-only mode; for production delivery, set prechecks.strict_data_disks to true in group_vars.
-  when:
-    - "'etcd' in group_names"
-    - not (prechecks.strict_data_disks | bool)
+      {{ (prechecks_disks | length) - 1 }} extra data disks after excluding the system disk, required ≥{{ prechecks.ceph_node_min_data_disks }}).
+      Legacy Ceph-OSD check, report-only (prechecks.strict_data_disks=false); set to true only if this host needs dedicated data disks.
+  when: not (prechecks.strict_data_disks | bool)

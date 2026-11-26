@@ -606,3 +606,4 @@ trim_trailing_whitespace = false
 | 2026-11-25 | 全部 role 配置归位（ADR-52/53）：etcd 配置从 pg_cluster.etcd.* 迁到 etcd.*；pg_cluster 收敛为纯集群策略，haproxy/patroni 配置归各自字典；散落扁平变量（keepalived_*/winter_server_*/harbor_*/lvs_realserver_*/victoriametrics_*）并入软件字典；§4.9 增配置归位原则 | 本次提交 |
 | 2026-11-26 | 消除 hosts: all（ADR-54）：site.yml 的 System checks / Base deps 改用显式 [system-checks]/[bootstrap] 组，只有列入 inventory 组的 IP 才被执行；§4.9 增显式主机组原则；inventory/group_vars 顺序与 play 顺序对齐 | 本次提交 |
 | 2026-11-26 | 允许超融合部署（ADR-55）：移除 system-checks 的 management/ceph_nodes 组互斥断言，一台主机可属于任意多组；修复 os/ports/resources 中 11 处失效旧组名判断（podman/端口/资源检查恢复生效） | 本次提交 |
+| 2026-11-26 | 预检去掉永真组校验与组 gating（ADR-56）：删除 Group validity 断言（play 的 hosts 已保证成员资格），移除 system-checks 内所有 group_names 判断，端口/磁盘检查对所有被检查主机生效 | 本次提交 |
