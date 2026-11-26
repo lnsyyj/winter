@@ -15,7 +15,7 @@
 #       -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
 
 - name: System checks
-  hosts: all
+  hosts: system-checks
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -35,7 +35,7 @@
       tags: [os-init]
 
 - name: Base dependencies and OS settings
-  hosts: all
+  hosts: bootstrap
   become: true
   gather_facts: true
   any_errors_fatal: true
