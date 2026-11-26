@@ -13,29 +13,26 @@
 # that owns it. `victoriametrics_*` -> roles/victoriametrics, `winter_server_*` -> roles/winter-server.
 # No concept names (monitoring/obs/server/agent/repo/system_init) remain.
 #
-# Config ownership index (key -> role / operation):
-#   platform.*                    global (domain, TLS, data dir, registry)
-#   prechecks.*                   system-checks role      (tags: prechecks)
-#   repo_nginx*, repo_nginx.*     repo-nginx role         (tags: repo-nginx)
-#   os_init*, os_init.*           os-init role            (tags: os-init)
-#   bootstrap*, bootstrap.*       bootstrap role          (tags: bootstrap)
-#   postgresql*, pg_cluster*,     postgresql role         (tags: postgresql / postgresql-ha /
+# Config ownership index (key -> role / operation), ordered as site.yml plays:
+#   platform.*, prechecks.*       system-checks / global    (hosts: all, plays 1 / prechecks)
+#   os_init*, os_init.*           os-init role              (play: OS initialization)
+#   bootstrap*, bootstrap.*       bootstrap role            (play: Base dependencies, hosts: all)
+#   repo_nginx*, repo_nginx.*     repo-nginx role           (play: Nginx artifact repository)
+#   etcd*, etcd.*                 etcd role                 (play: etcd cluster)
+#   postgresql*, pg_cluster*,     postgresql role           (play: PostgreSQL single instance / HA /
 #   pg_scale*, pg_migrate*        postgresql-scale-* / postgresql-migrate)
-#   etcd*, etcd.*                 etcd role              (tags: etcd / via postgresql-ha)
-#   patroni.*                     patroni role            (via postgresql-ha)
-#   haproxy.*                     haproxy role            (tags: postgresql-ha)
-#   nginx*, nginx.*               nginx role              (tags: nginx / application-ha)
-#   winter_server*, winter_server.*  winter-server role   (tags: winter-server / application-ha)
-#   victoriametrics*              victoriametrics role    (tags: victoriametrics / *-scale-*)
-#   harbor*, harbor.*             harbor role             (tags: harbor)
-#   named*, named.*               named role (BIND 9)     (tags: named)
-#   ha*, ha.*, keepalived.*       keepalived role         (tags: keepalived / application-ha)
-#   lvs_realserver.*              lvs-realserver role     (tags: lvs-realserver)
-#   winter_agent*, winter_agent.* winter-agent role       (tags: winter-agent)
-#   uninstall*, uninstall.*       uninstall role          (tags: destroy)
+#   patroni.*, haproxy.*         patroni / haproxy roles   (via postgresql-ha)
+#   nginx*, nginx.*               nginx role                (play: Nginx access layer / application-ha)
+#   victoriametrics*              victoriametrics role      (play: VictoriaMetrics stack / *-scale-*)
+#   winter_server*, winter_server.*  winter-server role     (play: Management Server / application-ha)
+#   harbor*, harbor.*             harbor role               (play: Harbor registry)
+#   keepalived.*, ha*, ha.*       keepalived role           (play: Keepalived / application-ha)
+#   lvs_realserver.*              lvs-realserver role       (operations: LVS real servers)
+#   named*, named.*               named role (BIND 9)       (play: BIND 9 DNS)
+#   winter_agent*, winter_agent.* winter-agent role         (play: winter-agent pre-install)
 #   upgrade.* / reconfigure       upgrade / reconfigure operations
+#   uninstall*, uninstall.*       uninstall role            (operations: destroy)
 #   vault_*                       secrets consumed by whichever role needs them
-
 platform:
   # Platform external domain name (certificates and access entry point)
   domain: winter.local
@@ -91,10 +88,6 @@ platform:
     audit_online_days: 180
     sessions_days: 7
 
-# Port used by the internal artifact repository Nginx site (roles/repo-nginx) and referenced by
-# reconfigure's port-uniqueness check. Single source of truth; adjust here if 8082 is unavailable.
-repo_nginx_listen_port: 8082
-
 # Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the victoriametrics stack dominate)
 # All thresholds below are configurable: tune them to the target host and set strict_* switches to false
 # to downgrade a hard failure into a warning (useful for lab / small test machines).
@@ -119,6 +112,65 @@ prechecks:
   # Set to true only after stage C1 brings up the internal repo, to check repo and Harbor reachability
   check_artifacts: false
 
+# ---- consolidated from roles/system-init/defaults/main.yml ----
+os_init_defaults:
+  enabled: true
+
+  # Base OS packages. In an offline site these come from the OS installation media,
+  # not from the platform's internal artifact repo (which carries platform artifacts only).
+  packages:
+    - podman
+    - python3
+    - python3-pip
+    - curl
+    - wget
+    - chrony
+
+  chrony:
+    enabled: true
+    service: chronyd
+    config_file: /etc/chrony.conf
+    include_dir: /etc/chrony.d
+    include_file: /etc/chrony.d/winter.conf
+    # Empty keeps the distribution's default time sources. Non-empty appends an include file with
+    # these servers; existing configuration is never overwritten or removed.
+    servers: []
+
+os_init: "{{ os_init_defaults | combine(os_init_overrides | default({}, true), recursive=True) }}"
+
+# System initialization (ADR-17): base OS tools and chrony, extracted from bootstrap so it can be
+# deployed alone. Deploy independently with: ./deploy.sh system-init -i inventory/multinode
+# Write only differences; the role combines them with its own defaults.
+os_init_overrides:
+
+# ---- consolidated from roles/bootstrap/defaults/main.yml ----
+bootstrap_defaults:
+  enabled: true
+
+  # Base OS packages and clock synchronization were extracted into roles/system-init,
+  # which can run on its own. Configure them with os_init_overrides in group_vars/all.yml.
+
+  # Kernel parameters previously only reported by roles/system-checks.
+  # Off by default during M0 so bootstrap stays non-invasive; set bootstrap_overrides.enforce_kernel: true
+  # (together with prechecks.enforce_kernel) to actually write them.
+  enforce_kernel: false
+  sysctl_file: /etc/sysctl.d/99-winter.conf
+  sysctl:
+    vm.overcommit_memory: 1
+    vm.max_map_count: 262144
+    net.bridge.bridge-nf-call-iptables: 1
+    net.bridge.bridge-nf-call-ip6tables: 1
+
+  # Optional data disk. Both destructive steps are opt-in: nothing is formatted or mounted by default.
+  data_disk:
+    device: ""
+    mount_point: /data
+    filesystem: xfs
+    format_if_empty: false
+    mount: false
+
+bootstrap: "{{ bootstrap_defaults | combine(bootstrap_overrides | default({}, true), recursive=True) }}"
+
 # Base layer (roles/bootstrap): OS packages and the settings that prechecks only reports.
 # Keep enforce_kernel in sync with prechecks.enforce_kernel above.
 # Merge rule: write only differences here; the role combines them with its own defaults.
@@ -131,90 +183,84 @@ bootstrap_overrides:
     format_if_empty: false
     mount: false
 
-# System initialization (ADR-17): base OS tools and chrony, extracted from bootstrap so it can be
-# deployed alone. Deploy independently with: ./deploy.sh system-init -i inventory/multinode
-# Write only differences; the role combines them with its own defaults.
-os_init_overrides:
-  # packages: [podman, python3, python3-pip, curl, wget, chrony]
-  # chrony:
-  #   enabled: true
-  #   servers: []              # e.g. [time.corp.local, 10.0.0.1] to add explicit NTP sources
+# Port used by the internal artifact repository Nginx site (roles/repo-nginx) and referenced by
+# reconfigure's port-uniqueness check. Single source of truth; adjust here if 8082 is unavailable.
+repo_nginx_listen_port: 8082
 
-# Managed-node Agent (ADR-35 / ADR-19 / ADR-28), driven by scale-out and scale-in.
-# Prerequisites before scale-out: the winter-agent binary in the internal repo, a CA certificate
-# on the control machine, and Nginx grpc_pass on the documented outbound port 443.
-# TODO: set cert.ca_source to the real signing CA once the Go Agent enrollment work lands.
-winter_agent_overrides:
-  enabled: true
-  server_address: "winter.local:443"
-  cert:
-    ca_source: ""
-  sudo:
-    rules:
-      - "winter-agent ALL=(root) NOPASSWD: /usr/bin/ceph -s, /usr/bin/ceph status, /usr/bin/ceph health"
-  scale_in:
-    purge_data: false
-    data_dirs: []
-    remove_user: false
-    revoke_cert: false
+# ---- consolidated from roles/repo-nginx/defaults/main.yml ----
+repo_nginx:
+  # Artifact source (directory on the control machine)
+  src: "{{ playbook_dir }}/artifacts/repo"
+  # Publish directory (Nginx root)
+  root: "{{ platform.data_dir }}/www/repo"
+  listen_port: "{{ repo_nginx_listen_port }}"
+  # Subnet allowed to access (change to the actual internal subnet on site)
+  allow_cidr: "192.168.101.0/24"
 
-# PostgreSQL HA membership changes (ADR-17 / ADR-37). Nodes must already be in [etcd] in inventory/hosts.ini.
-# The final etcd member count must stay odd and >= 3. Data is preserved unless purge_data is set.
-pg_scale_defaults:
-  nodes: []            # scale-out targets, e.g. [pg-d, pg-e]
-  removed_nodes: []    # scale-in targets, e.g. [pg-e]
-  purge_data: false
-  data_dirs: []
+# ---- etcd role (DCS for Patroni); all etcd settings live here, not under pg_cluster ----
+# ADR-52: etcd is a standalone role (tag `etcd`), so its ports/dirs/binary are configured here.
+# Override with -e '{"etcd_overrides":{"client_port":...}}' without touching PG settings.
+etcd_defaults:
+  client_port: 2379              # client read/write port
+  peer_port: 2380                # Raft peer communication between members
+  data_dir: /var/lib/etcd        # etcd data (mode 0700)
+  bin_dir: /usr/local/bin        # etcd / etcdctl install directory
+  tarball: etcd-v3.5.17-linux-amd64.tar.gz
+  tarball_subdir: tarball        # subdir under platform.repo_base_url
+  firewall_cidr: "192.168.101.0/24"   # subnet allowed to reach 2379/2380
 
-# Version upgrade (ADR-17): versions are pinned in group_vars and in artifacts/repo/SHA256SUMS.txt.
-# Pass target_version at runtime with -e; empty by default so an upgrade cannot be run accidentally.
-upgrade:
-  target_version: ""
-  require_checksums: true
+etcd: "{{ etcd_defaults | combine(etcd_overrides | default({}, true), recursive=True) }}"
 
-# Platform uninstall (ADR-17 destroy stage). Review these paths if any deployment path was customized.
-# purge_data is off by default; an explicit data_dirs list is required to remove anything irreversible.
-uninstall_overrides:
-  services:
-    - winter-server
-    - winter-victoriametrics
-    - winter-vmalert
-    - winter-victorialogs
-    - winter-alertmanager
-    - winter-grafana
-  unit_paths:
-    - /etc/systemd/system/winter-server.service
-    - /etc/systemd/system/winter-victoriametrics.service
-    - /etc/systemd/system/winter-vmalert.service
-    - /etc/systemd/system/winter-victorialogs.service
-    - /etc/systemd/system/winter-alertmanager.service
-    - /etc/systemd/system/winter-grafana.service
-  file_paths:
-    - /etc/nginx/conf.d/winter.conf
-    - /etc/nginx/conf.d/winter-repo.conf
-    - "{{ winter_server.env_file }}"
-    - "{{ winter_server.config_dir }}"
-    - "{{ winter_server.bin_dir }}/{{ winter_server.artifact }}"
-    - "/etc/winter/monitoring"
-    - /usr/local/bin/victoria-metrics-prod
-    - /usr/local/bin/vmalert-prod
-    - /usr/local/bin/victoria-logs-prod
-    - /usr/local/bin/alertmanager
-    - /opt/winter/grafana
-    - /var/tmp/winter-server
-    - /var/tmp/winter-observability
-    - "{{ platform.data_dir }}/www"
-    - "{{ platform.data_dir }}/tls"
-  users:
-    - winter-server
-    - winter-monitor
-  firewall:
-    remove_rule: true
-    cidr: "192.168.101.0/24"
-    port: 8082
-  purge_data: false
-  data_dirs: []
-  remove_users: false
+# ---- consolidated from roles/postgresql/defaults/main.yml ----
+postgresql_defaults:
+  # Target major version. Empty = auto-detect (an already-running instance takes priority)
+  major: ""
+
+  # Empty = auto-detect (show data_directory)
+  data_dir: ""
+
+  # Connections and database
+  port: 5432
+  listen_addresses: "127.0.0.1"
+  db_name: winter
+  db_user: winter
+
+  # Whether to force-sync the password when the role already exists (default false: do not touch passwords others may have changed)
+  force_password: false
+
+  # Whether to tune memory parameters. Default false — tuning requires an instance restart, which interrupts other applications on the same machine (e.g. argus)
+  tune: false
+
+  # Effective when tune=true (rule of thumb for a 3GB single machine with co-located ceph; can be raised on a dedicated management node)
+  shared_buffers: 256MB
+  effective_cache_size: 1GB
+  work_mem: 4MB
+  maintenance_work_mem: 64MB
+  max_connections: 100
+
+  # Empty = postgresql-{{ major }}
+  service_name: ""
+
+  # Offline install: fetch the following RPMs from the internal repo (roles/repo-nginx), versions pinned to avoid on-site drift
+  rpm_subdir: rpm/pgdg17
+  # contrib is required: the Server migration creates the pgcrypto extension (0001_business.sql /
+  # 0001_audit.sql) on both single-node and HA databases. Without it a clean HA cluster fails
+  # to start the Server with 'extension pgcrypto is not available'.
+  rpm_packages:
+    - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
+  # contrib links against libperl.so.5.32, which the base OS already provides via perl-libs.
+  # Do NOT pin a perl-libs RPM here: the OS perl package requires an exact perl-libs version
+  # (e.g. 483), and installing a different one from the repo (e.g. 484) causes a dnf conflict.
+  # The local repo still carries perl-libs as a fallback for minimal hosts that lack it.
+  rpm_deps_subdir: rpm/base
+  rpm_deps: []
+  # Local staging directory
+  rpm_stage_dir: /var/tmp/winter-pg17
+
+postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"
 
 # Database (role defaults are in roles/postgresql/defaults; only differences are written here)
 # Note: you must use postgresql_overrides — writing postgresql: directly replaces the role's default dict wholesale,
@@ -234,14 +280,6 @@ postgresql_overrides:
   maintenance_work_mem: 64MB
   max_connections: 100
 
-# Access layer (additive: does not modify nginx.conf or take over default_server)
-# Same as above: use nginx_overrides and write only differences
-nginx_overrides:
-  server_name: "{{ platform.domain }}"
-  # Port 8080 may be occupied by another service on the same host (argus here); the platform API uses 8081 by default
-  api_upstream: "http://127.0.0.1:8081"
-  tls_days: 825
-
 # PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
 # All ports are configurable; the 5433 default avoids port 5432, already occupied by argus on .194
 pg_cluster_defaults:
@@ -251,6 +289,113 @@ pg_cluster_defaults:
   # production so an undersized [etcd] is never deployed by accident.
   allow_single_node_bootstrap: false
   vip_iface_cidr: "192.168.101.0/24"   # subnet shared by pg_hba and all component firewalls
+
+pg_cluster: "{{ pg_cluster_defaults | combine(pg_cluster_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/patroni/defaults/main.yml ----
+patroni:
+  # PG instance + REST ports and data dir (ADR-53: moved from pg_cluster.*)
+  port: 5433                       # PG instance port (same on every node)
+  rest_port: 8008                  # Patroni REST API
+  data_dir: /var/lib/pgsql/17/ha   # separate from system /data
+  # Target PG major version (must match the installed one)
+  pg_major: "17"
+  pg_bin: "/usr/pgsql-17/bin"
+  # Accounts (passwords come from group_vars/all.yml; see the vault_* variables in the templates)
+  superuser: postgres
+  repl_user: replicator
+  # Application database/account (keep consistent with the postgresql role)
+  app_db: "{{ postgresql.db_name }}"
+  app_user: "{{ postgresql.db_user }}"
+  # Whether to disable the system-provided postgresql-<ver> service
+  # - Standalone PG node: true (avoid competing with Patroni for the same instance)
+  # - Another service already uses the system instance (e.g. argus on .194): false
+  disable_standalone_pg: true
+  # Source of pip wheels (internal repo)
+  pip_subdir: pip
+
+# ---- consolidated from roles/haproxy/defaults/main.yml ----
+haproxy:
+  rpm: haproxy-2.8.14-4.el9.x86_64.rpm
+  rpm_subdir: rpm/base
+  config: /etc/haproxy/haproxy.cfg
+  listen_port: 5434       # applications connect here; always points to current primary
+  check_interval: 2s
+  check_fall: 3
+  check_rise: 2
+
+# PostgreSQL HA membership changes (ADR-17 / ADR-37). Nodes must already be in [etcd] in inventory/hosts.ini.
+# The final etcd member count must stay odd and >= 3. Data is preserved unless purge_data is set.
+pg_scale_defaults:
+  nodes: []            # scale-out targets, e.g. [pg-d, pg-e]
+  removed_nodes: []    # scale-in targets, e.g. [pg-e]
+  purge_data: false
+  data_dirs: []
+
+# ADR-42: operation var files set *_overrides (partial dicts). extra-vars @file replaces whole
+# dicts, so merge onto defaults to preserve keys not listed in an operation file.
+pg_scale: "{{ pg_scale_defaults | combine(pg_scale_overrides | default({}, true), recursive=True) }}"
+
+# Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
+# instance (postgresql.port); the target is the HA entry point (haproxy.listen_port).
+# Both use the same database / role names, so only one database is moved.
+pg_migrate_defaults:
+  source_port: "{{ postgresql.port | default(5432) }}"
+  target_port: "{{ haproxy.listen_port }}"
+  database: "{{ postgresql.db_name | default('winter') }}"
+  role: "{{ postgresql.db_user | default('winter') }}"
+  # Marker written on the HA primary after a verified migration; makes the stage idempotent.
+  marker_file: /etc/winter/pg-migrated
+  # Staging area for the dump on the control host (deleted after a successful verified restore).
+  dump_dir: /var/tmp/winter-pg-migrate
+  # Per-table row-count comparison; checksums add a full-row hash for the critical tables.
+  verify_checksums: true
+  # Critical tables additionally verified by content hash (business + audit chain).
+  critical_tables:
+    - users
+    - refresh_tokens
+    - regions
+    - azs
+    - clusters
+    - tasks
+    - audit_intents
+    - audit_results
+  # Server services stopped during the maintenance window (no writes to the source).
+  server_service: winter-server
+
+# ADR-42: operations set pg_migrate_overrides (partial dict); merge to preserve defaults.
+pg_migrate: "{{ pg_migrate_defaults | combine(pg_migrate_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/nginx/defaults/main.yml ----
+nginx_defaults:
+  # External domain (same as certificate CN); defaults to the platform domain
+  server_name: "{{ platform.domain }}"
+
+  http_port: 80
+  https_port: "{{ platform.https_port }}"
+
+  # Separate directory to avoid mixing with existing sites' (e.g. argus) /var/www
+  doc_root: "{{ platform.data_dir }}/www"
+  tls_dir: "{{ platform.data_dir }}/tls"
+  conf_path: /etc/nginx/conf.d/winter.conf
+
+  # Backend API (this platform's Server).
+  # Note: 8080 may already be occupied by other services on the same host; default to 8081, keep it consistent when deploying the Server.
+  api_upstream: "http://127.0.0.1:8081"
+
+  # Self-signed certificate validity (days)
+  tls_days: 825
+
+nginx: "{{ nginx_defaults | combine(nginx_overrides | default({}, true), recursive=True) }}"
+
+# Access layer (additive: does not modify nginx.conf or take over default_server)
+# Same as above: use nginx_overrides and write only differences
+nginx_overrides:
+  server_name: "{{ platform.domain }}"
+  # Port 8080 may be occupied by another service on the same host (argus here); the platform API uses 8081 by default
+  api_upstream: "http://127.0.0.1:8081"
+  tls_days: 825
+
 # NOTE (ADR-53): Patroni's port/rest_port/data_dir moved to patroni.*; HAProxy's
 # listen_port/check_* moved to haproxy.*. pg_cluster keeps only cluster-wide policy/network.
 
@@ -263,12 +408,15 @@ victoriametrics_ports:
   victorialogs: 9428
   alertmanager: 9093
   grafana: 3000
+
 victoriametrics_listen_addr: 127.0.0.1
+
 # Single-node mode: bind and advertise both follow victoriametrics_listen_addr, so the existing
 # localhost-only behaviour is preserved. The scale playbooks override these per host:
 #   victoriametrics_bind_addr      -> 0.0.0.0              (accept internal traffic)
 #   victoriametrics_advertise_addr -> the node internal IP (used by peers and reverse proxies)
 victoriametrics_bind_addr: "{{ victoriametrics_listen_addr }}"
+
 victoriametrics_advertise_addr: "{{ victoriametrics_listen_addr }}"
 
 # Monitoring scale-out / scale-in (ADR-18 / ADR-33).
@@ -288,6 +436,8 @@ victoriametrics_scale_defaults:
   data_dirs: []              # required and non-empty when purge_data is true
   cluster_port: 9094         # Alertmanager gossip port
   metrics_query_url: ""      # Grafana datasource target; empty resolves to the first active monitor node
+
+victoriametrics_scale: "{{ victoriametrics_scale_defaults | combine(victoriametrics_scale_overrides | default({}, true), recursive=True) }}"
 
 victoriametrics:
   enabled: true
@@ -341,6 +491,11 @@ victoriametrics:
       port: "{{ victoriametrics_ports.grafana }}"
       health_path: /api/health
 
+# ---- consolidated from roles/victoriametrics/defaults/main.yml ----
+victoriametrics_health_retries: 30
+
+victoriametrics_health_delay: 2
+
 # Server (Go single binary + systemd); passwords and secrets live only in group_vars/all.yml, never here
 winter_server:
   enabled: true
@@ -354,38 +509,6 @@ winter_server:
   artifact: winter-server
   bin_subdir: bin
 
-# High availability (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas sit behind
-# Nginx, with Keepalived providing a floating VIP on the [keepalived] nodes. Single-node inventories keep
-# everything on etcd and leave ha.enabled=false.
-ha_defaults:
-  enabled: false
-  interface: eth0                         # NIC that carries the VIP
-  vip: ""                                 # single VIP (active-standby)
-  # Multiple VIPs enable active-active Directors: each [keepalived] node owns one VIP as MASTER and
-  # backs up the rest. Publish every VIP as an A record for the platform domain so clients
-  # spread across Directors. Empty falls back to the single ha.vip.
-  vips: []                                # e.g. [10.0.0.100, 10.0.0.101]
-  virtual_router_id: 51                   # base VRRP ID; each extra VIP increments it
-  priority: 100                           # override per host for master/backup (e.g. 100 / 90)
-  advertise_interval: 1
-  preempt: true
-  auth_type: PASS
-  nginx_check_interval: 2                 # health-check script interval in seconds
-  peer_addresses: []                      # other [keepalived] addresses; computed by the playbook when empty
-  # LVS/DR four-layer load balancing (Keepalived native). Without it the VIP only provides
-  # failover and every connection lands on the single node holding the VIP.
-  lvs:
-    enabled: false                        # requires at least two [nginx]
-    scheduler: rr                         # rr / wrr / lc / wlc
-    persistence_timeout: 0                # seconds, 0 = no session affinity
-    health_interval: 6
-    connect_timeout: 3
-    real_server_port: "{{ platform.https_port }}"
-    real_servers: []                      # computed by application-ha from [nginx]
-# ADR-42: operations set ha_overrides (partial dict); extra-vars @file replaces whole dicts, so
-# merging is required or ha.lvs / ha.virtual_router_id disappear during an operation run.
-ha: "{{ ha_defaults | combine(ha_overrides | default({}, true), recursive=True) }}"
-
 # Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
 # Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with
 # each replica's internal address. database_host must point at the PG HA access point (HAProxy/VIP)
@@ -396,6 +519,7 @@ winter_server_ha_defaults:
   database_endpoint: auto
   database_host: 127.0.0.1
   audit_database_host: 127.0.0.1
+
 winter_server_ha: "{{ winter_server_ha_defaults | combine(winter_server_ha_overrides | default({}, true), recursive=True) }}"
 
 # Harbor (ADR-16).
@@ -435,6 +559,55 @@ harbor:
     options: "vers=4.1,rw"
   health_path: /api/v2.0/health
 
+# ---- consolidated from roles/harbor/defaults/main.yml ----
+
+# ---- consolidated from roles/keepalived/defaults/main.yml ----
+keepalived:
+  config_path: /etc/keepalived/keepalived.conf
+  check_script: /etc/keepalived/check_nginx.sh
+  lvs_check_script: /etc/keepalived/check_lvs.sh
+  service: keepalived
+
+# High availability (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas sit behind
+# Nginx, with Keepalived providing a floating VIP on the [keepalived] nodes. Single-node inventories keep
+# everything on etcd and leave ha.enabled=false.
+ha_defaults:
+  enabled: false
+  interface: eth0                         # NIC that carries the VIP
+  vip: ""                                 # single VIP (active-standby)
+  # Multiple VIPs enable active-active Directors: each [keepalived] node owns one VIP as MASTER and
+  # backs up the rest. Publish every VIP as an A record for the platform domain so clients
+  # spread across Directors. Empty falls back to the single ha.vip.
+  vips: []                                # e.g. [10.0.0.100, 10.0.0.101]
+  virtual_router_id: 51                   # base VRRP ID; each extra VIP increments it
+  priority: 100                           # override per host for master/backup (e.g. 100 / 90)
+  advertise_interval: 1
+  preempt: true
+  auth_type: PASS
+  nginx_check_interval: 2                 # health-check script interval in seconds
+  peer_addresses: []                      # other [keepalived] addresses; computed by the playbook when empty
+  # LVS/DR four-layer load balancing (Keepalived native). Without it the VIP only provides
+  # failover and every connection lands on the single node holding the VIP.
+  lvs:
+    enabled: false                        # requires at least two [nginx]
+    scheduler: rr                         # rr / wrr / lc / wlc
+    persistence_timeout: 0                # seconds, 0 = no session affinity
+    health_interval: 6
+    connect_timeout: 3
+    real_server_port: "{{ platform.https_port }}"
+    real_servers: []                      # computed by application-ha from [nginx]
+
+# ADR-42: operations set ha_overrides (partial dict); extra-vars @file replaces whole dicts, so
+# merging is required or ha.lvs / ha.virtual_router_id disappear during an operation run.
+ha: "{{ ha_defaults | combine(ha_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/realserver/defaults/main.yml ----
+lvs_realserver:
+  sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
+  helper: /usr/local/bin/winter-lvs-vip.sh
+  unit: winter-lvs-vip.service
+  vip: "{{ ha.vip }}"
+
 # DNS (BIND 9): authoritative internal DNS for the platform domain (ADR-16 / ADR-17).
 # Publishes one A record per active-active Director VIP so DNS round-robin spreads clients
 # across Directors; the record set is derived from named.vips -> ha.vips -> ha.vip.
@@ -467,45 +640,10 @@ named_defaults:
   manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
   manage_systemd_resolved: true         # disable the systemd-resolved stub listener to free the DNS port
   check_interval: 60                   # local resolution check retry window (seconds)
+
 # ADR-42: operation files set named_overrides (partial dict); extra-vars @file replaces whole dicts,
 # so merge onto defaults to preserve lazy keys such as domain ({{ platform.domain }}).
 named: "{{ named_defaults | combine(named_overrides | default({}, true), recursive=True) }}"
-
-# Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
-# instance (postgresql.port); the target is the HA entry point (haproxy.listen_port).
-# Both use the same database / role names, so only one database is moved.
-pg_migrate_defaults:
-  source_port: "{{ postgresql.port | default(5432) }}"
-  target_port: "{{ haproxy.listen_port }}"
-  database: "{{ postgresql.db_name | default('winter') }}"
-  role: "{{ postgresql.db_user | default('winter') }}"
-  # Marker written on the HA primary after a verified migration; makes the stage idempotent.
-  marker_file: /etc/winter/pg-migrated
-  # Staging area for the dump on the control host (deleted after a successful verified restore).
-  dump_dir: /var/tmp/winter-pg-migrate
-  # Per-table row-count comparison; checksums add a full-row hash for the critical tables.
-  verify_checksums: true
-  # Critical tables additionally verified by content hash (business + audit chain).
-  critical_tables:
-    - users
-    - refresh_tokens
-    - regions
-    - azs
-    - clusters
-    - tasks
-    - audit_intents
-    - audit_results
-  # Server services stopped during the maintenance window (no writes to the source).
-  server_service: winter-server
-# ADR-42: operations set pg_migrate_overrides (partial dict); merge to preserve defaults.
-pg_migrate: "{{ pg_migrate_defaults | combine(pg_migrate_overrides | default({}, true), recursive=True) }}"
-
-
-# ADR-42: operation var files set *_overrides (partial dicts). extra-vars @file replaces whole
-# dicts, so merge onto defaults to preserve keys not listed in an operation file.
-pg_scale: "{{ pg_scale_defaults | combine(pg_scale_overrides | default({}, true), recursive=True) }}"
-pg_cluster: "{{ pg_cluster_defaults | combine(pg_cluster_overrides | default({}, true), recursive=True) }}"
-victoriametrics_scale: "{{ victoriametrics_scale_defaults | combine(victoriametrics_scale_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/winter_agent/defaults/main.yml ----
 winter_agent_defaults:
@@ -565,59 +703,34 @@ winter_agent_defaults:
 
 winter_agent: "{{ winter_agent_defaults | combine(winter_agent_overrides | default({}, true), recursive=True) }}"
 
-# ---- consolidated from roles/bootstrap/defaults/main.yml ----
-bootstrap_defaults:
+  # packages: [podman, python3, python3-pip, curl, wget, chrony]
+  # chrony:
+  #   enabled: true
+  #   servers: []              # e.g. [time.corp.local, 10.0.0.1] to add explicit NTP sources
+
+# Managed-node Agent (ADR-35 / ADR-19 / ADR-28), driven by scale-out and scale-in.
+# Prerequisites before scale-out: the winter-agent binary in the internal repo, a CA certificate
+# on the control machine, and Nginx grpc_pass on the documented outbound port 443.
+# TODO: set cert.ca_source to the real signing CA once the Go Agent enrollment work lands.
+winter_agent_overrides:
   enabled: true
+  server_address: "winter.local:443"
+  cert:
+    ca_source: ""
+  sudo:
+    rules:
+      - "winter-agent ALL=(root) NOPASSWD: /usr/bin/ceph -s, /usr/bin/ceph status, /usr/bin/ceph health"
+  scale_in:
+    purge_data: false
+    data_dirs: []
+    remove_user: false
+    revoke_cert: false
 
-  # Base OS packages and clock synchronization were extracted into roles/system-init,
-  # which can run on its own. Configure them with os_init_overrides in group_vars/all.yml.
-
-  # Kernel parameters previously only reported by roles/system-checks.
-  # Off by default during M0 so bootstrap stays non-invasive; set bootstrap_overrides.enforce_kernel: true
-  # (together with prechecks.enforce_kernel) to actually write them.
-  enforce_kernel: false
-  sysctl_file: /etc/sysctl.d/99-winter.conf
-  sysctl:
-    vm.overcommit_memory: 1
-    vm.max_map_count: 262144
-    net.bridge.bridge-nf-call-iptables: 1
-    net.bridge.bridge-nf-call-ip6tables: 1
-
-  # Optional data disk. Both destructive steps are opt-in: nothing is formatted or mounted by default.
-  data_disk:
-    device: ""
-    mount_point: /data
-    filesystem: xfs
-    format_if_empty: false
-    mount: false
-
-bootstrap: "{{ bootstrap_defaults | combine(bootstrap_overrides | default({}, true), recursive=True) }}"
-
-# ---- consolidated from roles/system-init/defaults/main.yml ----
-os_init_defaults:
-  enabled: true
-
-  # Base OS packages. In an offline site these come from the OS installation media,
-  # not from the platform's internal artifact repo (which carries platform artifacts only).
-  packages:
-    - podman
-    - python3
-    - python3-pip
-    - curl
-    - wget
-    - chrony
-
-  chrony:
-    enabled: true
-    service: chronyd
-    config_file: /etc/chrony.conf
-    include_dir: /etc/chrony.d
-    include_file: /etc/chrony.d/winter.conf
-    # Empty keeps the distribution's default time sources. Non-empty appends an include file with
-    # these servers; existing configuration is never overwritten or removed.
-    servers: []
-
-os_init: "{{ os_init_defaults | combine(os_init_overrides | default({}, true), recursive=True) }}"
+# Version upgrade (ADR-17): versions are pinned in group_vars and in artifacts/repo/SHA256SUMS.txt.
+# Pass target_version at runtime with -e; empty by default so an upgrade cannot be run accidentally.
+upgrade:
+  target_version: ""
+  require_checksums: true
 
 # ---- consolidated from roles/uninstall/defaults/main.yml ----
 uninstall_defaults:
@@ -640,164 +753,68 @@ uninstall_defaults:
 
 uninstall: "{{ uninstall_defaults | combine(uninstall_overrides | default({}, true), recursive=True) }}"
 
-# ---- consolidated from roles/nginx/defaults/main.yml ----
-nginx_defaults:
-  # External domain (same as certificate CN); defaults to the platform domain
-  server_name: "{{ platform.domain }}"
-
-  http_port: 80
-  https_port: "{{ platform.https_port }}"
-
-  # Separate directory to avoid mixing with existing sites' (e.g. argus) /var/www
-  doc_root: "{{ platform.data_dir }}/www"
-  tls_dir: "{{ platform.data_dir }}/tls"
-  conf_path: /etc/nginx/conf.d/winter.conf
-
-  # Backend API (this platform's Server).
-  # Note: 8080 may already be occupied by other services on the same host; default to 8081, keep it consistent when deploying the Server.
-  api_upstream: "http://127.0.0.1:8081"
-
-  # Self-signed certificate validity (days)
-  tls_days: 825
-
-nginx: "{{ nginx_defaults | combine(nginx_overrides | default({}, true), recursive=True) }}"
-
-# ---- consolidated from roles/postgresql/defaults/main.yml ----
-postgresql_defaults:
-  # Target major version. Empty = auto-detect (an already-running instance takes priority)
-  major: ""
-
-  # Empty = auto-detect (show data_directory)
-  data_dir: ""
-
-  # Connections and database
-  port: 5432
-  listen_addresses: "127.0.0.1"
-  db_name: winter
-  db_user: winter
-
-  # Whether to force-sync the password when the role already exists (default false: do not touch passwords others may have changed)
-  force_password: false
-
-  # Whether to tune memory parameters. Default false — tuning requires an instance restart, which interrupts other applications on the same machine (e.g. argus)
-  tune: false
-
-  # Effective when tune=true (rule of thumb for a 3GB single machine with co-located ceph; can be raised on a dedicated management node)
-  shared_buffers: 256MB
-  effective_cache_size: 1GB
-  work_mem: 4MB
-  maintenance_work_mem: 64MB
-  max_connections: 100
-
-  # Empty = postgresql-{{ major }}
-  service_name: ""
-
-  # Offline install: fetch the following RPMs from the internal repo (roles/repo-nginx), versions pinned to avoid on-site drift
-  rpm_subdir: rpm/pgdg17
-  # contrib is required: the Server migration creates the pgcrypto extension (0001_business.sql /
-  # 0001_audit.sql) on both single-node and HA databases. Without it a clean HA cluster fails
-  # to start the Server with 'extension pgcrypto is not available'.
-  rpm_packages:
-    - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
-    - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
-    - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
-    - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
-  # contrib links against libperl.so.5.32, which the base OS already provides via perl-libs.
-  # Do NOT pin a perl-libs RPM here: the OS perl package requires an exact perl-libs version
-  # (e.g. 483), and installing a different one from the repo (e.g. 484) causes a dnf conflict.
-  # The local repo still carries perl-libs as a fallback for minimal hosts that lack it.
-  rpm_deps_subdir: rpm/base
-  rpm_deps: []
-  # Local staging directory
-  rpm_stage_dir: /var/tmp/winter-pg17
-
-postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"
-
-# ---- etcd role (DCS for Patroni); all etcd settings live here, not under pg_cluster ----
-# ADR-52: etcd is a standalone role (tag `etcd`), so its ports/dirs/binary are configured here.
-# Override with -e '{"etcd_overrides":{"client_port":...}}' without touching PG settings.
-etcd_defaults:
-  client_port: 2379              # client read/write port
-  peer_port: 2380                # Raft peer communication between members
-  data_dir: /var/lib/etcd        # etcd data (mode 0700)
-  bin_dir: /usr/local/bin        # etcd / etcdctl install directory
-  tarball: etcd-v3.5.17-linux-amd64.tar.gz
-  tarball_subdir: tarball        # subdir under platform.repo_base_url
-  firewall_cidr: "192.168.101.0/24"   # subnet allowed to reach 2379/2380
-etcd: "{{ etcd_defaults | combine(etcd_overrides | default({}, true), recursive=True) }}"
-
-# ---- consolidated from roles/haproxy/defaults/main.yml ----
-haproxy:
-  rpm: haproxy-2.8.14-4.el9.x86_64.rpm
-  rpm_subdir: rpm/base
-  config: /etc/haproxy/haproxy.cfg
-  listen_port: 5434       # applications connect here; always points to current primary
-  check_interval: 2s
-  check_fall: 3
-  check_rise: 2
-
-# ---- consolidated from roles/harbor/defaults/main.yml ----
-
-# ---- consolidated from roles/keepalived/defaults/main.yml ----
-keepalived:
-  config_path: /etc/keepalived/keepalived.conf
-  check_script: /etc/keepalived/check_nginx.sh
-  lvs_check_script: /etc/keepalived/check_lvs.sh
-  service: keepalived
-
-# ---- consolidated from roles/repo-nginx/defaults/main.yml ----
-repo_nginx:
-  # Artifact source (directory on the control machine)
-  src: "{{ playbook_dir }}/artifacts/repo"
-  # Publish directory (Nginx root)
-  root: "{{ platform.data_dir }}/www/repo"
-  listen_port: "{{ repo_nginx_listen_port }}"
-  # Subnet allowed to access (change to the actual internal subnet on site)
-  allow_cidr: "192.168.101.0/24"
-
-# ---- consolidated from roles/victoriametrics/defaults/main.yml ----
-victoriametrics_health_retries: 30
-victoriametrics_health_delay: 2
-
-# ---- consolidated from roles/patroni/defaults/main.yml ----
-patroni:
-  # PG instance + REST ports and data dir (ADR-53: moved from pg_cluster.*)
-  port: 5433                       # PG instance port (same on every node)
-  rest_port: 8008                  # Patroni REST API
-  data_dir: /var/lib/pgsql/17/ha   # separate from system /data
-  # Target PG major version (must match the installed one)
-  pg_major: "17"
-  pg_bin: "/usr/pgsql-17/bin"
-  # Accounts (passwords come from group_vars/all.yml; see the vault_* variables in the templates)
-  superuser: postgres
-  repl_user: replicator
-  # Application database/account (keep consistent with the postgresql role)
-  app_db: "{{ postgresql.db_name }}"
-  app_user: "{{ postgresql.db_user }}"
-  # Whether to disable the system-provided postgresql-<ver> service
-  # - Standalone PG node: true (avoid competing with Patroni for the same instance)
-  # - Another service already uses the system instance (e.g. argus on .194): false
-  disable_standalone_pg: true
-  # Source of pip wheels (internal repo)
-  pip_subdir: pip
-
-# ---- consolidated from roles/realserver/defaults/main.yml ----
-lvs_realserver:
-  sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
-  helper: /usr/local/bin/winter-lvs-vip.sh
-  unit: winter-lvs-vip.service
-  vip: "{{ ha.vip }}"
+# Platform uninstall (ADR-17 destroy stage). Review these paths if any deployment path was customized.
+# purge_data is off by default; an explicit data_dirs list is required to remove anything irreversible.
+uninstall_overrides:
+  services:
+    - winter-server
+    - winter-victoriametrics
+    - winter-vmalert
+    - winter-victorialogs
+    - winter-alertmanager
+    - winter-grafana
+  unit_paths:
+    - /etc/systemd/system/winter-server.service
+    - /etc/systemd/system/winter-victoriametrics.service
+    - /etc/systemd/system/winter-vmalert.service
+    - /etc/systemd/system/winter-victorialogs.service
+    - /etc/systemd/system/winter-alertmanager.service
+    - /etc/systemd/system/winter-grafana.service
+  file_paths:
+    - /etc/nginx/conf.d/winter.conf
+    - /etc/nginx/conf.d/winter-repo.conf
+    - "{{ winter_server.env_file }}"
+    - "{{ winter_server.config_dir }}"
+    - "{{ winter_server.bin_dir }}/{{ winter_server.artifact }}"
+    - "/etc/winter/monitoring"
+    - /usr/local/bin/victoria-metrics-prod
+    - /usr/local/bin/vmalert-prod
+    - /usr/local/bin/victoria-logs-prod
+    - /usr/local/bin/alertmanager
+    - /opt/winter/grafana
+    - /var/tmp/winter-server
+    - /var/tmp/winter-observability
+    - "{{ platform.data_dir }}/www"
+    - "{{ platform.data_dir }}/tls"
+  users:
+    - winter-server
+    - winter-monitor
+  firewall:
+    remove_rule: true
+    cidr: "192.168.101.0/24"
+    port: 8082
+  purge_data: false
+  data_dirs: []
+  remove_users: false
 
 # ---- consolidated from roles/winter-server/defaults/main.yml ----
 
 # ---- Secrets (consolidated from group_vars/all.yml, ADR-45) ----
 # Fill real values on the control machine; this file is gitignored.
 vault_pg_password: "CHANGE_ME_PG_PASSWORD"
+
 vault_jwt_secret: "CHANGE_ME_AT_LEAST_32_CHARACTERS_LONG"
+
 vault_admin_password: "CHANGE_ME_ADMIN_PASSWORD"
+
 vault_grafana_admin_password: "CHANGE_ME_GRAFANA_PASSWORD"
+
 vault_keepalived_auth_pass: "VRRPPASS"
+
 vault_harbor_db_password: "CHANGE_ME_HARBOR_DB_PASSWORD"
+
 vault_harbor_redis_password: "CHANGE_ME_HARBOR_REDIS_PASSWORD"
+
 vault_harbor_admin_password: "CHANGE_ME_HARBOR_ADMIN_PASSWORD"
+
 vault_dns_tsig_secret: "CHANGE_ME_BASE64_TSIG_SECRET"
