@@ -23,11 +23,20 @@ Actions (first argument, becomes winter_ops_action):
   reconfigure   Validate configuration then re-converge
   upgrade       Verify artifacts, converge to pinned versions, re-run acceptance
 
-Targets are selected by -t tags and inventory groups. All available tags:
-  Components:  prechecks os-init podman bootstrap repo-nginx etcd postgresql nginx victoriametrics
-               winter-server harbor keepalived named winter-agent
-  Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
-               victoriametrics-scale-out victoriametrics-scale-in application-ha uninstall
+The action (first argument) selects WHAT to do; -t selects WHICH software/operation.
+-t is Ansible's --tags: it matches tags on plays/roles/tasks in site.yml. Two kinds:
+  Component tags (26, same name as the role) — choose what to deploy/check:
+    system-checks os-init podman bootstrap repo-nginx etcd patroni haproxy postgresql
+    nginx victoriametrics vmalert victorialogs alertmanager grafana winter-server
+    harbor keepalived lvs-director lvs-realserver named winter-agent
+  Operation tags (7, no same-name role) — choose a transactional action:
+    postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
+    victoriametrics-scale-out victoriametrics-scale-in application-ha
+  Lifecycle tags (4, bound to operations plays): verify reconfigure upgrade uninstall
+  Subtags for fine-grained prechecks: system-checks.os / .resources / .time /
+    .kernel / .network / .ports / .artifacts
+  Combine with commas: -t etcd,postgresql. Omit -t to run all component tags
+  (operations are excluded unless explicitly named).
 
 Inventory: one file inventory/hosts.ini. One group per SOFTWARE NAME, IPs listed directly:
   [etcd] [os-init] [postgresql] [nginx] [winter-server] [harbor] [keepalived]
@@ -36,32 +45,65 @@ Inventory: one file inventory/hosts.ini. One group per SOFTWARE NAME, IPs listed
   Group name = software running there. Use -t to select components. See ADR-48/49.
   NOTE: hosts are raw IPs, so Patroni/etcd node names become IPs on HA rebuild.
 
-Examples:
-  ./deploy.sh deploy                                               # default inventory
+Examples (all tags):
+  # --- component tags: deploy one software at a time (order = dependency) ---
+  ./deploy.sh prechecks -t system-checks
+  ./deploy.sh deploy -t os-init
+  ./deploy.sh deploy -t podman
+  ./deploy.sh deploy -t bootstrap
   ./deploy.sh deploy -t repo-nginx
-  ./deploy.sh prechecks -t postgresql
-  ./deploy.sh deploy -t postgresql-scale-out \
-      -e '{"postgresql_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
-  ./deploy.sh deploy -t lvs-director,lvs-realserver \
-      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189","database_endpoint":"haproxy"}}'
+  ./deploy.sh deploy -t etcd
+  ./deploy.sh deploy -t postgresql
+  ./deploy.sh deploy -t patroni
+  ./deploy.sh deploy -t haproxy
+  ./deploy.sh deploy -t nginx
+  ./deploy.sh deploy -t victoriametrics
+  ./deploy.sh deploy -t vmalert
+  ./deploy.sh deploy -t victorialogs
+  ./deploy.sh deploy -t alertmanager
+  ./deploy.sh deploy -t grafana
+  ./deploy.sh deploy -t winter-server
+  ./deploy.sh deploy -t harbor
+  ./deploy.sh deploy -t keepalived
+  ./deploy.sh deploy -t named
+  ./deploy.sh deploy -t winter-agent
+  ./deploy.sh deploy -t lvs-director,lvs-realserver
+  ./deploy.sh deploy -t etcd,postgresql,nginx          # multiple components at once
+  ./deploy.sh prechecks -t system-checks.os            # one precheck subtag
+  # --- operation tags: transactional, must be opted in with -t ---
+  ./deploy.sh deploy -t postgresql-ha
+  ./deploy.sh deploy -t postgresql-ha -e '{"postgresql_cluster_overrides":{"allow_single_node_bootstrap":true}}'
+  ./deploy.sh deploy -t postgresql-scale-out -e '{"postgresql_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
+  ./deploy.sh deploy -t postgresql-scale-in  -e '{"postgresql_scale_overrides":{"removed_nodes":["192.168.101.198"]}}'
+  ./deploy.sh deploy -t postgresql-migrate
+  ./deploy.sh deploy -t victoriametrics-scale-out -e '{"victoriametrics_scale_overrides":{"nodes":["<node>"]}}'
+  ./deploy.sh deploy -t victoriametrics-scale-in  -e '{"victoriametrics_scale_overrides":{"removed_nodes":["<node>"]}}'
   ./deploy.sh deploy -t application-ha \
-      -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189","database_endpoint":"haproxy"}}'
+      -e '{"keepalived_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.198","database_endpoint":"haproxy"}}'
+  # --- lifecycle tags ---
+  ./deploy.sh verify
+  ./deploy.sh reconfigure
+  ./deploy.sh upgrade
+  ./deploy.sh destroy                                  # = deploy -t uninstall
 
-Per-operation variables (pass via -e; all.yml holds only defaults):
-  named              -e '{"named_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
-  postgresql-ha      (single-node bootstrap) -e '{"postgresql_cluster_overrides":{"allow_single_node_bootstrap":true}}'
+Per-operation variables (pass via -e; role defaults hold the baseline):
+  named                 -e '{"named_overrides":{"enabled":true},"keepalived_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
+  postgresql-ha          (single-node bootstrap) -e '{"postgresql_cluster_overrides":{"allow_single_node_bootstrap":true}}'
   postgresql-scale-out  -e '{"postgresql_scale_overrides":{"nodes":["<new-node>",...]}}'
-  postgresql-scale-in  -e '{"postgresql_scale_overrides":{"removed_nodes":["<node>",...]}}'
-  postgresql-migrate (no extra vars; stop-the-world)
+  postgresql-scale-in   -e '{"postgresql_scale_overrides":{"removed_nodes":["<node>",...]}}'
+  postgresql-migrate    (no extra vars; stop-the-world)
   victoriametrics-scale-out -e '{"victoriametrics_scale_overrides":{"nodes":["<node>",...]}}'
   victoriametrics-scale-in  -e '{"victoriametrics_scale_overrides":{"removed_nodes":["<node>",...]}}'
-  application-ha     -e '{"ha_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"winter_server_ha_overrides":{"database_host":"<PG-HA-entry>","database_endpoint":"haproxy"}}'
-  LVS/DR (app-ha)    add "lvs":{"enabled":true,"scheduler":"rr"} inside ha_overrides
+  application-ha        -e '{"keepalived_overrides":{"enabled":true,"vip":"<VIP>","interface":"<NIC>"},"winter_server_ha_overrides":{"database_host":"<PG-HA-entry>","database_endpoint":"haproxy"}}'
+  LVS/DR (app-ha)       add "lvs":{"enabled":true,"scheduler":"rr"} inside keepalived_overrides
+  After HA is up        re-run 'deploy -t winter-server' so Server reconnects to 5434
 
 Notes:
-  - Omit -t to run every play selected by the inventory (careful: operations are included).
-  - Override keys are <section>_overrides; all.yml merges them onto <section>_defaults.
-  - Old stage names (postgresql-ha, application-ha as actions, etc.) are gone — use 'deploy -t <tag>'.
+  - Omit -t: runs ALL component tags (not operations) on hosts selected by inventory groups.
+  - The action maps to winter_ops_action: deploy/converge, prechecks/precheck (read-only), etc.
+    -t and the action are independent: 'prechecks -t etcd' runs etcd's precheck tasks only.
+  - Override keys are <section>_overrides; role defaults hold the baseline (ADR-63).
+  - Old stage names as ACTIONS are gone — use 'deploy -t <tag>' (stage names live on as tags).
 EOF
 }
 

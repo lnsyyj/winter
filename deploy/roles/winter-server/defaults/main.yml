@@ -38,7 +38,7 @@ winter_server_ha_defaults:
   database_host: 127.0.0.1
   audit_database_host: 127.0.0.1
 
-winter_server_ha: "{{ winter_server_ha_defaults | combine(winter_server_keepalived_overrides | default({}, true), recursive=True) }}"
+winter_server_ha: "{{ winter_server_ha_defaults | combine(winter_server_ha_overrides | default({}, true), recursive=True) }}"
 
 # Harbor (ADR-16).
 # mode: builtin  — MVP single node. Harbor's own bundled PostgreSQL, Redis and local data volume.
