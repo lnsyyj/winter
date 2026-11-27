@@ -326,6 +326,10 @@ git reflog                            # 兜底：找回误操作前的 HEAD
   `prechecks_supported_os` 白名单（默认 CentOS Stream 9，遵循 ADR-11），新增系统先走 ADR 修订、
   再往白名单加条目；支持 `-e '{"prechecks_supported_os":[...]}'` 运行时覆盖，且覆盖不得影响
   其他 `prechecks.*` 配置。
+- **三者同名原则（ADR-59）**：每个 role 必须有**同名的 tag 和同名 inventory 组**，
+  三者严格一一对应（26 role = 26 tag = 26 组），不得有概念名别名、也不得有"组无 role / role 无组"。
+  一个软件一个 role；一个软件组对应一个 role。`prechecks` / `destroy` 等 CLI action 名不属于 tag，
+  可以保留，但其映射的 tag 必须等于 role 名。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -613,3 +617,4 @@ trim_trailing_whitespace = false
 | 2026-11-26 | 预检去掉永真组校验与组 gating（ADR-56）：删除 Group validity 断言（play 的 hosts 已保证成员资格），移除 system-checks 内所有 group_names 判断，端口/磁盘检查对所有被检查主机生效 | 本次提交 |
 | 2026-11-26 | OS 基线检查可配置化（ADR-57）：system-checks 的 Verify OS baseline 从写死 CentOS Stream 9 改为 prechecks_supported_os 白名单匹配，支持 -e 覆盖扩展新系统；ADR-11 默认基线不变 | 本次提交 |
 | 2026-11-26 | podman 独立 role（ADR-58）：从 system-checks 的 os.yml 与 os_init.packages 中拆出，新建 roles/podman（安装+检查），site.yml/inventory/deploy.sh/all.yml 同步接入；podman 不再混在基础包里 | 本次提交 |
+| 2026-11-27 | tag/role/inventory 三者强制同名（ADR-59）：26 个 role 各有同名 tag 与同名组；prechecks→system-checks、LVS 组改名、haproxy/patroni 等操作型 role 补入口、监控拆 5 独立 role、删死组 pg-* | 本次提交 |

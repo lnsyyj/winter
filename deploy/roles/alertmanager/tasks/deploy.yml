@@ -12,6 +12,14 @@
     quiet: true
   tags: [alertmanager]
 
+- name: Deploy alertmanager | Ensure service account
+  ansible.builtin.user:
+    name: "{{ victoriametrics.run_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  tags: [alertmanager]
+
 - name: Deploy alertmanager | Ensure service account and directories
   ansible.builtin.file:
     path: "{{ item }}"

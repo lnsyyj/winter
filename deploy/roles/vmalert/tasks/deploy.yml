@@ -12,6 +12,14 @@
     quiet: true
   tags: [vmalert]
 
+- name: Deploy vmalert | Ensure service account
+  ansible.builtin.user:
+    name: "{{ victoriametrics.run_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  tags: [vmalert]
+
 - name: Deploy vmalert | Ensure service account and directories
   ansible.builtin.file:
     path: "{{ item }}"

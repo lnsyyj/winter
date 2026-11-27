@@ -503,7 +503,7 @@ It parses every YAML file, checks handler/notify consistency, enforces the Engli
 
 Available tags: `bootstrap` / `os-init` / `winter_agent` / `agent-scale-out` / `agent-scale-in` / `destroy` / `repo-nginx` / `postgresql` / `nginx` / `victoriametrics` / `harbor` / `keepalived` / `lvs` / `lvs-realserver` / `named` / `etcd` / `patroni` / `haproxy` / `db`.
 
-Precheck tags: `prechecks.os` / `prechecks.resources` / `prechecks.time` / `prechecks.kernel` / `prechecks.network` / `prechecks.ports` / `prechecks.artifacts` / `prechecks.groups` (global), and `precheck.os-init` / `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.named` (per component).
+Precheck tags: `system-checks.os` / `system-checks.resources` / `system-checks.time` / `system-checks.kernel` / `system-checks.network` / `system-checks.ports` / `system-checks.artifacts` (global), and `precheck.os-init` / `precheck.repo` / `precheck.postgresql` / `precheck.nginx` / `precheck.monitoring` / `precheck.server` / `precheck.harbor` / `precheck.keepalived` / `precheck.named` (per component).
 
 ## Design Constraints (Read Before Making Changes)
 

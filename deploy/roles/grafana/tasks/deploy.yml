@@ -12,6 +12,14 @@
     quiet: true
   tags: [grafana]
 
+- name: Deploy grafana | Ensure service account
+  ansible.builtin.user:
+    name: "{{ victoriametrics.run_user }}"
+    system: true
+    shell: /sbin/nologin
+    create_home: false
+  tags: [grafana]
+
 - name: Deploy grafana | Ensure service account and directories
   ansible.builtin.file:
     path: "{{ item }}"
@@ -23,6 +31,10 @@
     - "{{ victoriametrics.data_dir }}"
     - "{{ victoriametrics.config_dir }}"
     - "{{ victoriametrics.config_dir }}/rules"
+    - "{{ victoriametrics.config_dir }}/grafana/provisioning/datasources"
+    - "{{ victoriametrics.data_dir }}/grafana"
+    - "{{ victoriametrics.data_dir }}/grafana/log"
+    - "{{ comp.install_dir }}"
     - /var/tmp/winter-observability/grafana
   tags: [grafana]
 

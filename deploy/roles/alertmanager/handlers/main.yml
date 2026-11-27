@@ -1,5 +1,6 @@
 ---
 - name: restart alertmanager
-  ansible.builtin.systemd:/n    name: winter-alertmanager
+  ansible.builtin.systemd:
+    name: winter-alertmanager
     state: restarted
     daemon_reload: true

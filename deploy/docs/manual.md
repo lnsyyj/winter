@@ -119,8 +119,13 @@ ansible postgresql -m shell -a "sudo -u postgres psql -tAc \"select datname from
 # 2.3 Nginx 接入层（winter.conf、自签证书、8081 upstream）
 ./deploy.sh deploy -t nginx
 
-# 2.4 监控全家桶（VictoriaMetrics / vmalert / VictoriaLogs / Alertmanager / Grafana）
-./deploy.sh deploy -t victoriametrics
+# 2.4 监控 5 软件（各自独立 role/tag/组，ADR-59；可单独部署任一组件）
+./deploy.sh deploy -t victoriametrics     # VictoriaMetrics 本体
+./deploy.sh deploy -t vmalert            # 告警规则评估
+./deploy.sh deploy -t victorialogs       # 日志存储
+./deploy.sh deploy -t alertmanager       # 告警收敛
+./deploy.sh deploy -t grafana            # 可视化
+# 组件配置仍集中在 group_vars/all.yml 的 victoriametrics.components.<name>
 
 # 2.5 管理 Server（Go 二进制 + systemd，连 5432）
 ./deploy.sh deploy -t winter-server
