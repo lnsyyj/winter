@@ -1,0 +1,11 @@
+# {{ ansible_managed | default('managed by ansible') }}
+# Ready to use out of the box: a default datasource pointing to VictoriaMetrics is installed (ADR-18).
+# Single-node runs use the local instance; multi-node scale runs point to victoriametrics_metrics_url.
+apiVersion: 1
+datasources:
+  - name: VictoriaMetrics
+    type: prometheus
+    access: proxy
+    url: http://{{ victoriametrics_metrics_url | default(victoriametrics.listen_addr) }}:{{ victoriametrics.components.victoriametrics.port }}
+    isDefault: true
+    editable: false

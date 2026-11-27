@@ -27,12 +27,12 @@ Targets are selected by -t tags and inventory groups. All available tags:
   Components:  prechecks os-init podman bootstrap repo-nginx etcd postgresql nginx victoriametrics
                winter-server harbor keepalived named winter-agent
   Operations:  postgresql-ha postgresql-scale-out postgresql-scale-in postgresql-migrate
-               victoriametrics-scale-out victoriametrics-scale-in application-ha destroy
+               victoriametrics-scale-out victoriametrics-scale-in application-ha uninstall
 
 Inventory: one file inventory/hosts.ini. One group per SOFTWARE NAME, IPs listed directly:
   [etcd] [os-init] [postgresql] [nginx] [winter-server] [harbor] [keepalived]
   [named] [victoriametrics] [vmalert] [victorialogs] [alertmanager] [grafana] [repo-nginx]
-  [winter-agent] [keepalived-director] [lvs-backend]
+  [winter-agent] [lvs-director] [lvs-realserver]
   Group name = software running there. Use -t to select components. See ADR-48/49.
   NOTE: hosts are raw IPs, so Patroni/etcd node names become IPs on HA rebuild.
 
@@ -95,7 +95,7 @@ esac
 
 # Prechecks and destroy must not trigger the transactional operation playbooks. If the caller did
 # not pass an explicit -t, restrict to the component tags for those actions.
-COMPONENT_TAGS="prechecks,os-init,podman,bootstrap,repo-nginx,etcd,postgresql,nginx,victoriametrics,winter-server,harbor,keepalived,named,winter-agent"
+COMPONENT_TAGS="system-checks,os-init,podman,bootstrap,repo-nginx,etcd,patroni,haproxy,postgresql,nginx,victoriametrics,vmalert,victorialogs,alertmanager,grafana,winter-server,harbor,keepalived,named,winter-agent"
 ACTION_TAGS=""
 case "$ACTION" in
     deploy|prechecks)
@@ -105,7 +105,7 @@ case "$ACTION" in
         ACTION_TAGS="$COMPONENT_TAGS"
         ;;
     destroy)
-        ACTION_TAGS="destroy"
+        ACTION_TAGS="uninstall"
         ;;
     verify|reconfigure|upgrade)
         ACTION_TAGS="$ACTION"

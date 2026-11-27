@@ -1,7 +1,7 @@
 ---
 - name: Assert this host is an LVS Director
   ansible.builtin.assert:
-    that: inventory_hostname in groups['keepalived-director'] | default([])
-    fail_msg: "lvs-director must run on hosts in [keepalived-director]"
+    that: inventory_hostname in groups['lvs-director'] | default([])
+    fail_msg: "lvs-director must run on hosts in [lvs-director]"
     quiet: true
   tags: [lvs, lvs-director]

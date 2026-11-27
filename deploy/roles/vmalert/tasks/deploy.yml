@@ -1,0 +1,110 @@
+---
+# vmalert component (standalone role, ADR-59). Config lives in victoriametrics.components.vmalert.
+- name: Deploy vmalert | Resolve component config
+  ansible.builtin.set_fact:
+    comp_key: vmalert
+    comp: "{{ victoriametrics.components.vmalert }}"
+
+- name: Deploy vmalert | Assert enabled
+  ansible.builtin.assert:
+    that: comp.enabled | bool
+    fail_msg: "victoriametrics.components.vmalert.enabled is false"
+    quiet: true
+  tags: [vmalert]
+
+- name: Deploy vmalert | Ensure service account and directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ victoriametrics.run_user }}"
+    group: "{{ victoriametrics.run_user }}"
+    mode: "0750"
+  loop:
+    - "{{ victoriametrics.data_dir }}"
+    - "{{ victoriametrics.config_dir }}"
+    - "{{ victoriametrics.config_dir }}/rules"
+    - /var/tmp/winter-observability/vmalert
+  tags: [vmalert]
+
+- name: Deploy vmalert | Fetch tarball
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ victoriametrics.tarball_subdir }}/{{ comp.tarball }}"
+    dest: "/var/tmp/winter-observability/{{ comp.tarball }}"
+    mode: "0644"
+    timeout: 180
+  tags: [vmalert]
+
+- name: Deploy vmalert | Extract binary
+  ansible.builtin.unarchive:
+    src: "/var/tmp/winter-observability/{{ comp.tarball }}"
+    dest: /var/tmp/winter-observability/vmalert
+    remote_src: true
+    creates: "/var/tmp/winter-observability/vmalert/.unpacked-{{ comp.tarball }}"
+  tags: [vmalert]
+
+- name: Deploy vmalert | Mark extracted
+  ansible.builtin.copy:
+    content: "{{ comp.tarball }}\n"
+    dest: "/var/tmp/winter-observability/vmalert/.unpacked-{{ comp.tarball }}"
+    mode: "0644"
+  tags: [vmalert]
+
+- name: Deploy vmalert | Install binary if changed
+  ansible.builtin.shell: |
+    set -euo pipefail
+    src=$(find /var/tmp/winter-observability/vmalert -type f -name '{{ comp.binary }}' -print -quit)
+    test -n "$src"
+    dst="{{ victoriametrics.bin_dir }}/{{ comp.binary }}"
+    if [ ! -x "$dst" ] || ! cmp -s "$src" "$dst"; then
+      install -m 0755 "$src" "$dst"
+      echo installed
+    else
+      echo unchanged
+    fi
+  args:
+    executable: /bin/bash
+  register: vmalert_install
+  changed_when: "'installed' in vmalert_install.stdout"
+  tags: [vmalert]
+
+- name: Deploy vmalert | Render alert rules
+  ansible.builtin.template:
+    src: rules.yml.j2
+    dest: "{{ victoriametrics.config_dir }}/rules/platform.yml"
+    owner: "{{ victoriametrics.run_user }}"
+    group: "{{ victoriametrics.run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart vmalert
+  tags: [vmalert]
+
+- name: Deploy vmalert | Render systemd unit
+  ansible.builtin.template:
+    src: unit.service.j2
+    dest: /etc/systemd/system/winter-vmalert.service
+    mode: "0644"
+    backup: true
+  notify: restart vmalert
+  tags: [vmalert]
+
+- name: Deploy vmalert | Apply handlers
+  ansible.builtin.meta: flush_handlers
+  tags: [vmalert]
+
+- name: Deploy vmalert | Start and enable
+  ansible.builtin.systemd:
+    name: winter-vmalert
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [vmalert]
+
+- name: Deploy vmalert | Wait for health
+  ansible.builtin.uri:
+    url: "http://{{ victoriametrics.listen_addr }}:{{ comp.port }}{{ comp.health_path }}"
+    status_code: 200
+  register: vmalert_health
+  until: vmalert_health.status is defined and vmalert_health.status == 200
+  retries: "{{ victoriametrics_health_retries | int }}"
+  delay: "{{ victoriametrics_health_delay | int }}"
+  tags: [vmalert]

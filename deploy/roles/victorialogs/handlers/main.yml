@@ -1,0 +1,5 @@
+---
+- name: restart victorialogs
+  ansible.builtin.systemd:/n    name: winter-victorialogs
+    state: restarted
+    daemon_reload: true

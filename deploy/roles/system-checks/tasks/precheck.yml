@@ -9,28 +9,28 @@
 
 - name: Precheck | OS baseline
   ansible.builtin.import_tasks: os.yml
-  tags: [prechecks, prechecks.os]
+  tags: [system-checks, system-checks.os]
 
 - name: Precheck | Resources and disks
   ansible.builtin.import_tasks: resources.yml
-  tags: [prechecks, prechecks.resources]
+  tags: [system-checks, system-checks.resources]
 
 - name: Precheck | Time synchronization
   ansible.builtin.import_tasks: time.yml
-  tags: [prechecks, prechecks.time]
+  tags: [system-checks, system-checks.time]
 
 - name: Precheck | Kernel parameters
   ansible.builtin.import_tasks: kernel.yml
-  tags: [prechecks, prechecks.kernel]
+  tags: [system-checks, system-checks.kernel]
 
 - name: Precheck | Network and resolution
   ansible.builtin.import_tasks: network.yml
-  tags: [prechecks, prechecks.network]
+  tags: [system-checks, system-checks.network]
 
 - name: Precheck | Port usage
   ansible.builtin.import_tasks: ports.yml
-  tags: [prechecks, prechecks.ports]
+  tags: [system-checks, system-checks.ports]
 
 - name: Precheck | Artifact reachability (optional)
   ansible.builtin.import_tasks: artifacts.yml
-  tags: [prechecks, prechecks.artifacts]
+  tags: [system-checks, system-checks.artifacts]

@@ -1,24 +1,24 @@
 ---
-# LVS Director role (ADR-46): runs on hosts in [keepalived-director].
-# RealServers come from [lvs-backend] and VRRP peers from [keepalived-director] — group
+# LVS Director role (ADR-46): runs on hosts in [lvs-director].
+# RealServers come from [lvs-realserver] and VRRP peers from [lvs-director] — group
 # membership defines the topology, so one unified inventory needs no static group split.
-- name: Discover LVS RealServer addresses from [lvs-backend]
+- name: Discover LVS RealServer addresses from [lvs-realserver]
   ansible.builtin.set_fact:
-    lvs_realservers: "{{ groups['lvs-backend'] | default([]) | map('extract', hostvars, 'inventory_hostname') | list }}"
+    lvs_realservers: "{{ groups['lvs-realserver'] | default([]) | map('extract', hostvars, 'inventory_hostname') | list }}"
   run_once: true
   tags: [lvs, lvs-director]
 
-- name: Discover LVS Directors and VRRP peers from [keepalived-director]
+- name: Discover LVS Directors and VRRP peers from [lvs-director]
   ansible.builtin.set_fact:
-    lvs_directors: "{{ groups['keepalived-director'] | default([]) | map('extract', hostvars, 'inventory_hostname') | list }}"
-    ha_peer_addresses: "{{ groups['keepalived-director'] | default([]) | map('extract', hostvars, 'inventory_hostname') | reject('equalto', inventory_hostname) | list }}"
+    lvs_directors: "{{ groups['lvs-director'] | default([]) | map('extract', hostvars, 'inventory_hostname') | list }}"
+    ha_peer_addresses: "{{ groups['lvs-director'] | default([]) | map('extract', hostvars, 'inventory_hostname') | reject('equalto', inventory_hostname) | list }}"
   run_once: true
   tags: [lvs, lvs-director]
 
 - name: Fail if fewer than two RealServers are configured
   ansible.builtin.assert:
     that: lvs_realservers | length >= 2
-    fail_msg: "LVS/DR needs >=2 hosts in [lvs-backend] in inventory/hosts.ini"
+    fail_msg: "LVS/DR needs >=2 hosts in [lvs-realserver] in inventory/hosts.ini"
     quiet: true
   run_once: true
   tags: [lvs, lvs-director]
@@ -47,7 +47,7 @@
     that:
       - lvs_realservers | length >= 2
       - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
-    fail_msg: "LVS/DR requires at least two hosts in [lvs-backend] and ha.vip"
+    fail_msg: "LVS/DR requires at least two hosts in [lvs-realserver] and ha.vip"
     quiet: true
   when: ha.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]

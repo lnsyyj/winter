@@ -19,10 +19,10 @@
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [prechecks]
+  tags: [system-checks]
   roles:
     - role: system-checks
-      tags: [prechecks]
+      tags: [system-checks]
 
 - name: OS initialization
   hosts: os-init
@@ -85,6 +85,26 @@
     - role: postgresql
       tags: [postgresql]
 
+- name: Patroni (PG HA instances)
+  hosts: patroni
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [patroni]
+  roles:
+    - role: patroni
+      tags: [patroni]
+
+- name: HAProxy (PG HA access point)
+  hosts: haproxy
+  become: true
+  gather_facts: true
+  any_errors_fatal: true
+  tags: [haproxy]
+  roles:
+    - role: haproxy
+      tags: [haproxy]
+
 - name: Nginx access layer
   hosts: nginx
   become: true
@@ -105,6 +125,46 @@
     - role: victoriametrics
       when: victoriametrics.enabled | bool
       tags: [victoriametrics]
+
+- name: vmalert
+  hosts: vmalert
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [vmalert]
+  roles:
+    - role: vmalert
+      tags: [vmalert]
+
+- name: VictoriaLogs
+  hosts: victorialogs
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [victorialogs]
+  roles:
+    - role: victorialogs
+      tags: [victorialogs]
+
+- name: Alertmanager
+  hosts: alertmanager
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [alertmanager]
+  roles:
+    - role: alertmanager
+      tags: [alertmanager]
+
+- name: Grafana
+  hosts: grafana
+  become: true
+  gather_facts: false
+  any_errors_fatal: true
+  tags: [grafana]
+  roles:
+    - role: grafana
+      tags: [grafana]
 
 - name: Management Server
   hosts: winter-server
@@ -270,8 +330,8 @@
       when: ha.enabled | bool
       tags: [application-ha]
 
-- name: LVS director (hosts in [keepalived-director])
-  hosts: keepalived-director
+- name: LVS director (hosts in [lvs-director])
+  hosts: lvs-director
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -280,8 +340,8 @@
     - role: lvs-director
       tags: [lvs-director]
 
-- name: LVS real servers (hosts in [lvs-backend])
-  hosts: lvs-backend
+- name: LVS real servers (hosts in [lvs-realserver])
+  hosts: lvs-realserver
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -369,33 +429,33 @@
       tags: [victoriametrics-scale-in]
 
 - name: Operate destroy - Platform
-  hosts: etcd
+  hosts: uninstall
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [destroy]
+  tags: [uninstall]
   tasks:
     - name: Apply uninstall role (destroy slice)
       ansible.builtin.include_role:
         name: uninstall
         tasks_from: destroy
-      tags: [destroy]
+      tags: [uninstall]
 
 - name: Operate destroy - winter-agents
   hosts: winter-agent
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [destroy]
+  tags: [uninstall]
   tasks:
     - name: Apply winter_agent role (destroy slice)
       ansible.builtin.include_role:
         name: winter-agent
         tasks_from: destroy
-      tags: [destroy]
+      tags: [uninstall]
 
 - name: Deployment acceptance checks
-  hosts: etcd
+  hosts: verify
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -408,7 +468,7 @@
       tags: [verify]
 
 - name: Validate configuration
-  hosts: etcd
+  hosts: reconfigure
   become: true
   gather_facts: true
   any_errors_fatal: true
@@ -421,7 +481,7 @@
       tags: [reconfigure]
 
 - name: Verify artifacts and version plan
-  hosts: etcd
+  hosts: upgrade
   become: true
   gather_facts: true
   any_errors_fatal: true

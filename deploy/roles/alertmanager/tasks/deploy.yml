@@ -1,0 +1,111 @@
+---
+# alertmanager component (standalone role, ADR-59). Config lives in victoriametrics.components.alertmanager.
+- name: Deploy alertmanager | Resolve component config
+  ansible.builtin.set_fact:
+    comp_key: alertmanager
+    comp: "{{ victoriametrics.components.alertmanager }}"
+
+- name: Deploy alertmanager | Assert enabled
+  ansible.builtin.assert:
+    that: comp.enabled | bool
+    fail_msg: "victoriametrics.components.alertmanager.enabled is false"
+    quiet: true
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Ensure service account and directories
+  ansible.builtin.file:
+    path: "{{ item }}"
+    state: directory
+    owner: "{{ victoriametrics.run_user }}"
+    group: "{{ victoriametrics.run_user }}"
+    mode: "0750"
+  loop:
+    - "{{ victoriametrics.data_dir }}"
+    - "{{ victoriametrics.config_dir }}"
+    - "{{ victoriametrics.config_dir }}/rules"
+    - /var/tmp/winter-observability/alertmanager
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Fetch tarball
+  ansible.builtin.get_url:
+    url: "{{ platform.repo_base_url }}/{{ victoriametrics.tarball_subdir }}/{{ comp.tarball }}"
+    dest: "/var/tmp/winter-observability/{{ comp.tarball }}"
+    mode: "0644"
+    timeout: 180
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Extract binary
+  ansible.builtin.unarchive:
+    src: "/var/tmp/winter-observability/{{ comp.tarball }}"
+    dest: /var/tmp/winter-observability/alertmanager
+    remote_src: true
+    creates: "/var/tmp/winter-observability/alertmanager/.unpacked-{{ comp.tarball }}"
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Mark extracted
+  ansible.builtin.copy:
+    content: "{{ comp.tarball }}\n"
+    dest: "/var/tmp/winter-observability/alertmanager/.unpacked-{{ comp.tarball }}"
+    mode: "0644"
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Install binary if changed
+  ansible.builtin.shell: |
+    set -euo pipefail
+    src=$(find /var/tmp/winter-observability/alertmanager -type f -name '{{ comp.binary }}' -print -quit)
+    test -n "$src"
+    dst="{{ victoriametrics.bin_dir }}/{{ comp.binary }}"
+    if [ ! -x "$dst" ] || ! cmp -s "$src" "$dst"; then
+      install -m 0755 "$src" "$dst"
+      echo installed
+    else
+      echo unchanged
+    fi
+  args:
+    executable: /bin/bash
+  register: alertmanager_install
+  changed_when: "'installed' in alertmanager_install.stdout"
+  tags: [alertmanager]
+
+# Alertmanager needs its routing config.
+- name: Deploy alertmanager | Render config
+  ansible.builtin.template:
+    src: alertmanager.yml.j2
+    dest: "{{ victoriametrics.config_dir }}/alertmanager.yml"
+    owner: "{{ victoriametrics.run_user }}"
+    group: "{{ victoriametrics.run_user }}"
+    mode: "0640"
+    backup: true
+  notify: restart alertmanager
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Render systemd unit
+  ansible.builtin.template:
+    src: unit.service.j2
+    dest: /etc/systemd/system/winter-alertmanager.service
+    mode: "0644"
+    backup: true
+  notify: restart alertmanager
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Apply handlers
+  ansible.builtin.meta: flush_handlers
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Start and enable
+  ansible.builtin.systemd:
+    name: winter-alertmanager
+    state: started
+    enabled: true
+    daemon_reload: true
+  tags: [alertmanager]
+
+- name: Deploy alertmanager | Wait for health
+  ansible.builtin.uri:
+    url: "http://{{ victoriametrics.listen_addr }}:{{ comp.port }}{{ comp.health_path }}"
+    status_code: 200
+  register: alertmanager_health
+  until: alertmanager_health.status is defined and alertmanager_health.status == 200
+  retries: "{{ victoriametrics_health_retries | int }}"
+  delay: "{{ victoriametrics_health_delay | int }}"
+  tags: [alertmanager]

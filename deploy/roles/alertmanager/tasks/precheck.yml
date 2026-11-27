@@ -1,0 +1,18 @@
+---
+# Read-only alertmanager prechecks.
+- name: Precheck alertmanager | Probe health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ victoriametrics.listen_addr }}:{{ victoriametrics.components.alertmanager.port }}{{ victoriametrics.components.alertmanager.health_path }}"
+    status_code: 200
+  register: alertmanager_precheck
+  changed_when: false
+  failed_when: false
+  tags: [alertmanager]
+
+- name: Precheck alertmanager | Verify
+  ansible.builtin.assert:
+    that: alertmanager_precheck.status | default(0) == 200
+    fail_msg: "alertmanager health endpoint not responding on {{ victoriametrics.components.alertmanager.port }}"
+    success_msg: "alertmanager healthy"
+    quiet: true
+  tags: [alertmanager]

@@ -15,7 +15,7 @@ Operation plays are named `Operate <action> - <software>`; CLI tags are unchange
 Inventory (ADR-48): one file `inventory/hosts.ini`, **one group per process, IPs listed directly**.
 Group name = software running there, all named after the binary (ADR-49): `[postgresql]`, `[nginx]`,
 `[winter-server]`, `[etcd]` (PG HA nodes), `[victoriametrics]`/`[vmalert]`/`[victorialogs]`/
-`[alertmanager]`/`[grafana]` (monitoring stack), `[keepalived-director]`/`[lvs-backend]` (LVS), etc.
+`[alertmanager]`/`[grafana]` (monitoring stack), `[lvs-director]`/`[lvs-realserver]` (LVS), etc.
 No topology groups, no parent/child layering. Select components with `-t`,
 or narrow hosts with Ansible's `--limit`. Note: hosts are raw IPs, so Patroni/etcd node names become
 IPs if HA is rebuilt — back up PG data before any such rebuild.

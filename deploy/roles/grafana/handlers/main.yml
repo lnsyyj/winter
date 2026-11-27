@@ -1,0 +1,5 @@
+---
+- name: restart grafana
+  ansible.builtin.systemd:/n    name: winter-grafana
+    state: restarted
+    daemon_reload: true

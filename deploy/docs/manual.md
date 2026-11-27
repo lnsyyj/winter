@@ -66,12 +66,12 @@ cd artifacts/repo && sha256sum -c SHA256SUMS.txt | grep -v ': OK' ; cd ../..
 
 ```bash
 for g in etcd os-init postgresql nginx winter-server repo-nginx keepalived \
-         keepalived-director lvs-backend victoriametrics; do
+         lvs-director lvs-realserver victoriametrics; do
   printf '%-22s ' "$g"; ansible -i inventory/hosts.ini "$g" --list-hosts 2>/dev/null | tail -n +2 | tr '\n' ' '; echo
 done
 ```
 
-期望：`etcd/postgresql/nginx/winter-server/keepalived/victoriametrics` 各 3 台；`repo-nginx/keepalived-director` 各 1 台（`.189`）；`lvs-backend` 2 台（`.197/.198`）。
+期望：`etcd/postgresql/nginx/winter-server/keepalived/victoriametrics` 各 3 台；`repo-nginx/lvs-director` 各 1 台（`.189`）；`lvs-realserver` 2 台（`.197/.198`）。
 
 ### 0.5 连通性
 

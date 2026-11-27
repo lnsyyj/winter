@@ -1,0 +1,18 @@
+---
+# Read-only vmalert prechecks.
+- name: Precheck vmalert | Probe health endpoint
+  ansible.builtin.uri:
+    url: "http://{{ victoriametrics.listen_addr }}:{{ victoriametrics.components.vmalert.port }}{{ victoriametrics.components.vmalert.health_path }}"
+    status_code: 200
+  register: vmalert_precheck
+  changed_when: false
+  failed_when: false
+  tags: [vmalert]
+
+- name: Precheck vmalert | Verify
+  ansible.builtin.assert:
+    that: vmalert_precheck.status | default(0) == 200
+    fail_msg: "vmalert health endpoint not responding on {{ victoriametrics.components.vmalert.port }}"
+    success_msg: "vmalert healthy"
+    quiet: true
+  tags: [vmalert]

@@ -1,0 +1,15 @@
+# {{ ansible_managed | default('managed by ansible') }}
+# vmalert's rules directory must contain at least one valid rule file, or the process fails at startup.
+# M0 uses a placeholder rule that is never true; after collection is connected, add per ADR-18
+# the "VictoriaLogs disk watermark" and per ADR-36 the "queue depth / oldest task age" alerts.
+groups:
+  - name: winter.m0
+    interval: 30s
+    rules:
+      - alert: PlatformSelfCheckPlaceholder
+        expr: vector(1) == 0
+        for: 5m
+        labels:
+          severity: info
+        annotations:
+          summary: Placeholder rule, never triggers

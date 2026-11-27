@@ -17,8 +17,10 @@
   tags: [victoriametrics]
 
 - name: Compute enabled components
+  # ADR-59: each monitoring software has its own role. This role deploys only
+  # VictoriaMetrics itself; vmalert/victorialogs/alertmanager/grafana have their own roles.
   ansible.builtin.set_fact:
-    victoriametrics_components: "{{ victoriametrics.components | dict2items | selectattr('value.enabled', 'equalto', true) | list }}"
+    victoriametrics_components: "{{ [{'key': 'victoriametrics', 'value': victoriametrics.components.victoriametrics}] if victoriametrics.components.victoriametrics.enabled | bool else [] }}"
   tags: [victoriametrics]
 
 - name: Create service account (non-root)

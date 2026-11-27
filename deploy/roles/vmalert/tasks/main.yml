@@ -1,0 +1,3 @@
+---
+# ADR-42 dispatcher: winter_ops_action selects the task file at runtime.
+- ansible.builtin.include_tasks: "{{ winter_ops_action | default('deploy') }}.yml"
