@@ -19,10 +19,12 @@
   become: true
   gather_facts: true
   any_errors_fatal: true
-  tags: [system-checks]
+  # Include subtags so `-t system-checks.os` matches the play itself; the task-level
+  # subtags live in roles/system-checks/tasks/precheck.yml.
+  tags: [system-checks, system-checks.os, system-checks.resources, system-checks.time, system-checks.kernel, system-checks.network, system-checks.ports, system-checks.artifacts]
   roles:
     - role: system-checks
-      tags: [system-checks]
+      tags: [system-checks, system-checks.os, system-checks.resources, system-checks.time, system-checks.kernel, system-checks.network, system-checks.ports, system-checks.artifacts]
 
 - name: OS initialization
   hosts: os-init

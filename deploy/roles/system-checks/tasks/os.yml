@@ -8,6 +8,10 @@
 - name: Precheck | Parse os-release
   ansible.builtin.set_fact:
     prechecks_os_release_text: "{{ prechecks_os_release.content | b64decode }}"
+    prechecks_os_pretty: >-
+      {{ (prechecks_os_release.content | b64decode).splitlines()
+         | select('match', '^PRETTY_NAME=') | list | first | default('unknown')
+         | replace('PRETTY_NAME=', '') | replace('"', '') }}
 
 - name: Precheck | Resolve supported OS baselines
   # Support multiple OS baselines via a configurable whitelist (ADR-57).
@@ -41,10 +45,12 @@
     that:
       - (prechecks_supported_os | length) == 0 or (prechecks_os_matches | default([]) | length) > 0
     fail_msg: >-
-      Found {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
-      (PRETTY_NAME: {{ prechecks_os_release_text | regex_search('^PRETTY_NAME=.*$', multiline=True) | default('unknown') }}),
-      which is not in the supported OS whitelist. Add an entry to
-      prechecks_supported_os_defaults in group_vars/all.yml after the new baseline is approved (ADR-57).
+      OS baseline: expected
+      {{ prechecks_supported_os | map(attribute='distribution') | join('/') }}
+      {{ prechecks_supported_os | map(attribute='major_version') | unique | join('/') }},
+      got {{ ansible_facts.distribution }} {{ ansible_facts.distribution_major_version }}
+      (PRETTY_NAME={{ prechecks_os_pretty }}).
+      Fix: add an entry to prechecks_supported_os_defaults after the new baseline is approved (ADR-57).
     success_msg: >-
       OS baseline OK: {{ ansible_facts.distribution }} {{ ansible_facts.distribution_version }}
       (matched {{ (prechecks_os_matches | default([])) | length }} whitelist entry/entries)

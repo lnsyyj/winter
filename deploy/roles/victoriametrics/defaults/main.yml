@@ -42,9 +42,6 @@ victoriametrics_vmalert_notifiers: "{{ victoriametrics_common.vmalert_notifiers 
 # Single-node default keeps the local Alertmanager; monitoring scale playbooks override this with
 # the addresses of all Alertmanager replicas so alerts are de-duplicated by the gossip cluster.
 
-victoriametrics_vmalert_notifiers:
-  - "{{ victoriametrics_listen_addr }}"
-
 victoriametrics_scale_defaults:
   nodes: []                  # scale-out targets, must already be listed in the [victoriametrics] group
   removed_nodes: []          # scale-in targets, kept in [victoriametrics] but excluded from all references

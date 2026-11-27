@@ -21,9 +21,10 @@
     that:
       - prechecks_repo.status | default(0) == 200
     fail_msg: >-
-      Internal repo unreachable: {{ repo_nginx.base_url }}repodata/repomd.xml
-      (status={{ prechecks_repo.status | default('n/a') }}, msg={{ prechecks_repo.msg | default('') }}).
-      First complete phase C1 to bring up the Nginx repo, then confirm the repo subnet is allowed through the firewall on the node and that no global proxy is configured (ADR-15).
+      Internal repo: expected HTTP 200, got {{ prechecks_repo.status | default('no response') }}
+      at {{ repo_nginx.base_url }}repodata/repomd.xml.
+      Fix: deploy the repo Nginx first (`deploy -t repo-nginx`), check firewall allows the repo subnet,
+      and ensure no global HTTP proxy is set (ADR-15).
     success_msg: "Internal repo reachable"
     quiet: true
   when:
@@ -50,9 +51,10 @@
     that:
       - prechecks_registry.status | default(0) in [200, 401]
     fail_msg: >-
-      Harbor unreachable: https://{{ harbor.hostname }}/v2/
-      (status={{ prechecks_registry.status | default('n/a') }}, msg={{ prechecks_registry.msg | default('') }}).
-      Confirm Harbor is started and 443 is allowed through the firewall; this only probes reachability — certificate trust is verified in C4 after ansible distributes the CA.
+      Harbor registry: expected HTTP 200 or 401, got {{ prechecks_registry.status | default('no response') }}
+      at https://{{ harbor.hostname }}/v2/.
+      Fix: start Harbor and allow 443 through the firewall. This only probes reachability —
+      certificate trust is checked later after Ansible distributes the CA.
     success_msg: "Harbor reachable"
     quiet: true
   when:

@@ -10,8 +10,9 @@
     that:
       - (prechecks_route.stdout | default('')) | trim | length > 0
     fail_msg: >-
-      No IPv4 default route. Managed nodes must have **outbound** access to management plane 443 and the internal repo/registry (deployment plan §2),
-      otherwise the Agent cannot register and images cannot be pulled. Check the gateway and NIC configuration.
+      IPv4 default route: expected a route, got none (`ip -4 route show default` returned empty).
+      Fix: configure the gateway / NIC — nodes need outbound access to 443 and the internal repo/registry,
+      otherwise the Agent cannot register and images cannot be pulled.
     success_msg: "Default route exists"
     quiet: true
 
@@ -28,8 +29,9 @@
     that:
       - item.rc | default(1) == 0
     fail_msg: >-
-      Cannot resolve {{ item.item }}. Add it to /etc/hosts or fix DNS;
-      both the registry certificate and the access entry point depend on this name (ADR-16).
+      DNS lookup '{{ item.item }}': expected rc=0, got rc={{ item.rc | default(1) }}
+      (output: {{ item.stdout | default('') | trim | default('empty') }}).
+      Fix: add it to /etc/hosts or fix DNS — the registry certificate and access entry depend on this name.
     success_msg: "Resolution of {{ item.item }} OK"
     quiet: true
   loop: "{{ prechecks_getent.results | default([]) }}"

@@ -12,12 +12,13 @@
       - ansible_facts.memtotal_mb | int >= prechecks.management_min_memory_mb | int
       - (prechecks_root_available_bytes | int) >= (prechecks.management_min_root_free_gb | int) * 1073741824
     fail_msg: >-
-      Insufficient resources on this host: CPU {{ ansible_facts.processor_vcpus }} cores (need ≥{{ prechecks.management_min_vcpus }}),
-      memory {{ ansible_facts.memtotal_mb }} MB (need ≥{{ prechecks.management_min_memory_mb }} MB),
-      root partition free {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB
-      (need ≥{{ prechecks.management_min_root_free_gb }} GB).
-      Tune prechecks.management_min_* in group_vars/all.yml, or set prechecks.strict_resources to false to warn only.
-      See deployment plan §1: Harbor and the victoriametrics stack take the most space, with Harbor's image storage filling up first.
+      Host resources below minimum:
+      CPU expected ≥{{ prechecks.management_min_vcpus }} cores, got {{ ansible_facts.processor_vcpus }};
+      memory expected ≥{{ prechecks.management_min_memory_mb }} MB, got {{ ansible_facts.memtotal_mb }} MB;
+      root free expected ≥{{ prechecks.management_min_root_free_gb }} GB,
+      got {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB.
+      Fix: tune prechecks.management_min_* in group_vars/all.yml, or set prechecks.strict_resources=false
+      to warn only. Harbor images and the monitoring stack take the most disk.
     success_msg: "Host resources meet minimum requirements"
     quiet: true
   when:
@@ -49,10 +50,10 @@
     that:
       - ((prechecks_disks | length) - 1) >= (prechecks.ceph_node_min_data_disks | int)
     fail_msg: >-
-      Detected {{ prechecks_disks | length }} whole disks; after excluding the system disk, about
-      {{ (prechecks_disks | length) - 1 }} are available as extra data disks, need ≥{{ prechecks.ceph_node_min_data_disks }}.
-      This is the legacy Ceph-OSD disk layout check (PRD FR-05); disable it with prechecks.strict_data_disks=false
-      if this host does not need dedicated data disks.
+      Data disks for Ceph OSD: expected ≥{{ prechecks.ceph_node_min_data_disks }},
+      got {{ (prechecks_disks | length) - 1 }} ({{ prechecks_disks | length }} disks minus the system disk).
+      Fix: add data disks, or set prechecks.strict_data_disks=false if this host needs none
+      (legacy Ceph-OSD check, PRD FR-05).
     success_msg: "Data disk count OK ({{ (prechecks_disks | length) - 1 }} available)"
     quiet: true
   when: prechecks.strict_data_disks | bool

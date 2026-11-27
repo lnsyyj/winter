@@ -18,8 +18,8 @@
       - prechecks_chrony.rc | default(1) == 0
       - (prechecks_clock_offset | float) <= (prechecks.max_clock_offset_seconds | float)
     fail_msg: >-
-      chronyd is not ready or the offset is too large (required ≤{{ prechecks.max_clock_offset_seconds }}s,
-      measured {{ prechecks_clock_offset }}s). chronyc output: {{ prechecks_chrony.stdout | default('unavailable') | trim }}.
-      Fix: systemctl enable --now chronyd; confirm the NTP source is reachable; if needed, chronyc makestep.
+      Clock offset: expected ≤{{ prechecks.max_clock_offset_seconds }}s, got {{ prechecks_clock_offset }}s;
+      chronyd probe rc={{ prechecks_chrony.rc | default(1) }} (expected 0).
+      Fix: systemctl enable --now chronyd, check the NTP source, then chronyc makestep if needed.
     success_msg: "Time synchronization OK (offset {{ prechecks_clock_offset }}s)"
     quiet: true

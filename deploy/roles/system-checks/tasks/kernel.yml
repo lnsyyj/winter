@@ -21,8 +21,9 @@
       - (prechecks_sysctl.stdout_lines | default(['0']))[0] == '1'
       - (prechecks_sysctl.stdout_lines | default(['0', '0']))[1] | int >= 262144
     fail_msg: >-
-      Kernel parameters do not meet requirements: need vm.overcommit_memory=1 and vm.max_map_count>=262144.
-      Temporary: sysctl -w vm.overcommit_memory=1 vm.max_map_count=262144
-      Persistent: write to /etc/sysctl.d/99-winter.conf then run sysctl --system
+      vm.overcommit_memory: expected 1, got {{ (prechecks_sysctl.stdout_lines | default(['?']))[0] }};
+      vm.max_map_count: expected >=262144, got {{ (prechecks_sysctl.stdout_lines | default(['?', '?']))[1] }}.
+      Fix: sysctl -w vm.overcommit_memory=1 vm.max_map_count=262144 now,
+      and write both to /etc/sysctl.d/99-winter.conf for persistence.
     success_msg: "Kernel parameters meet requirements"
   when: prechecks.enforce_kernel | bool
