@@ -1,14 +1,14 @@
 ---
-# grafana component (standalone role, ADR-59). Config lives in victoriametrics.components.grafana.
+# grafana component (standalone role, ADR-59). Config lives in grafana.* (ADR-60).
 - name: Deploy grafana | Resolve component config
   ansible.builtin.set_fact:
     comp_key: grafana
-    comp: "{{ victoriametrics.components.grafana }}"
+    comp: "{{ grafana }}"
 
 - name: Deploy grafana | Assert enabled
   ansible.builtin.assert:
     that: comp.enabled | bool
-    fail_msg: "victoriametrics.components.grafana.enabled is false"
+    fail_msg: "grafana.enabled is false"
     quiet: true
   tags: [grafana]
 

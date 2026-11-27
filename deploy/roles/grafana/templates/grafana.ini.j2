@@ -3,7 +3,7 @@
 # direct access to the dashboard bypassing platform RBAC is forbidden (B9).
 [server]
 http_addr = {{ victoriametrics.listen_addr }}
-http_port = {{ victoriametrics.components.grafana.port }}
+http_port = {{ grafana.port }}
 root_url = https://{{ platform.domain }}/grafana/
 serve_from_sub_path = true
 

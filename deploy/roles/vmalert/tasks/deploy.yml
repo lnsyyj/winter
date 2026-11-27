@@ -1,14 +1,14 @@
 ---
-# vmalert component (standalone role, ADR-59). Config lives in victoriametrics.components.vmalert.
+# vmalert component (standalone role, ADR-59). Config lives in vmalert.* (ADR-60).
 - name: Deploy vmalert | Resolve component config
   ansible.builtin.set_fact:
     comp_key: vmalert
-    comp: "{{ victoriametrics.components.vmalert }}"
+    comp: "{{ vmalert }}"
 
 - name: Deploy vmalert | Assert enabled
   ansible.builtin.assert:
     that: comp.enabled | bool
-    fail_msg: "victoriametrics.components.vmalert.enabled is false"
+    fail_msg: "vmalert.enabled is false"
     quiet: true
   tags: [vmalert]
 

@@ -1,14 +1,14 @@
 ---
-# alertmanager component (standalone role, ADR-59). Config lives in victoriametrics.components.alertmanager.
+# alertmanager component (standalone role, ADR-59). Config lives in alertmanager.* (ADR-60).
 - name: Deploy alertmanager | Resolve component config
   ansible.builtin.set_fact:
     comp_key: alertmanager
-    comp: "{{ victoriametrics.components.alertmanager }}"
+    comp: "{{ alertmanager }}"
 
 - name: Deploy alertmanager | Assert enabled
   ansible.builtin.assert:
     that: comp.enabled | bool
-    fail_msg: "victoriametrics.components.alertmanager.enabled is false"
+    fail_msg: "alertmanager.enabled is false"
     quiet: true
   tags: [alertmanager]
 

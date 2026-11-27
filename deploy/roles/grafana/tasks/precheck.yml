@@ -2,7 +2,7 @@
 # Read-only grafana prechecks.
 - name: Precheck grafana | Probe health endpoint
   ansible.builtin.uri:
-    url: "http://{{ victoriametrics.listen_addr }}:{{ victoriametrics.components.grafana.port }}{{ victoriametrics.components.grafana.health_path }}"
+    url: "http://{{ victoriametrics.listen_addr }}:{{ grafana.port }}{{ grafana.health_path }}"
     status_code: 200
   register: grafana_precheck
   changed_when: false
@@ -12,7 +12,7 @@
 - name: Precheck grafana | Verify
   ansible.builtin.assert:
     that: grafana_precheck.status | default(0) == 200
-    fail_msg: "grafana health endpoint not responding on {{ victoriametrics.components.grafana.port }}"
+    fail_msg: "grafana health endpoint not responding on {{ grafana.port }}"
     success_msg: "grafana healthy"
     quiet: true
   tags: [grafana]

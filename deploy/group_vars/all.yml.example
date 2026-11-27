@@ -429,6 +429,8 @@ victoriametrics_listen_addr: 127.0.0.1
 victoriametrics_bind_addr: "{{ victoriametrics_listen_addr }}"
 
 victoriametrics_advertise_addr: "{{ victoriametrics_listen_addr }}"
+victoriametrics_health_retries: 30
+victoriametrics_health_delay: 2
 
 # Monitoring scale-out / scale-in (ADR-18 / ADR-33).
 # Scope: stateless and HA layers only — Alertmanager gossip HA, Grafana replicas behind Nginx,
@@ -450,6 +452,48 @@ victoriametrics_scale_defaults:
 
 victoriametrics_scale: "{{ victoriametrics_scale_defaults | combine(victoriametrics_scale_overrides | default({}, true), recursive=True) }}"
 
+# Monitoring component configs (ADR-60): one dict per software role.
+# Shared paths/runtime stay in victoriametrics.* below; each component owns its own binary/ports/args.
+vmalert: "{{ vmalert_defaults | combine(vmalert_overrides | default({}, true), recursive=True) }}"
+vmalert_defaults:
+  enabled: true
+  tarball: vmalert-linux-amd64-v1.156.0.tar.gz
+  binary: vmalert-prod
+  port: "{{ victoriametrics_ports.vmalert }}"
+  listen_flag: -httpListenAddr
+  health_path: /health
+  args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule={{ victoriametrics.config_dir }}/rules/*.yml -evaluationInterval=15s"
+
+victorialogs: "{{ victorialogs_defaults | combine(victorialogs_overrides | default({}, true), recursive=True) }}"
+victorialogs_defaults:
+  enabled: true
+  tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz
+  binary: victoria-logs-prod
+  port: "{{ victoriametrics_ports.victorialogs }}"
+  listen_flag: -httpListenAddr
+  health_path: /health
+  args: "-storageDataPath={{ victoriametrics.data_dir }}/victorialogs -retentionPeriod={{ victoriametrics.retention_days }}d"
+
+alertmanager: "{{ alertmanager_defaults | combine(alertmanager_overrides | default({}, true), recursive=True) }}"
+alertmanager_defaults:
+  enabled: true
+  tarball: alertmanager-0.35.0.linux-amd64.tar.gz
+  binary: alertmanager
+  port: "{{ victoriametrics_ports.alertmanager }}"
+  listen_flag: --web.listen-address
+  health_path: /-/healthy
+  args: "--config.file={{ victoriametrics.config_dir }}/alertmanager.yml --storage.path={{ victoriametrics.data_dir }}/alertmanager"
+
+grafana: "{{ grafana_defaults | combine(grafana_overrides | default({}, true), recursive=True) }}"
+grafana_defaults:
+  enabled: true
+  mode: directory
+  tarball: grafana-9.5.20.linux-amd64.tar.gz
+  install_dir: /opt/winter/grafana
+  port: "{{ victoriametrics_ports.grafana }}"
+  health_path: /api/health
+
+
 victoriametrics:
   enabled: true
   bin_dir: /usr/local/bin
@@ -459,54 +503,10 @@ victoriametrics:
   run_user: winter-monitor          # run as non-root (similar constraint to ADR-19)
   retention_days: 30
   tarball_subdir: tarball
-  components:
-    victoriametrics:
-      enabled: true
-      tarball: victoria-metrics-linux-amd64-v1.156.0.tar.gz
-      binary: victoria-metrics-prod
-      port: "{{ victoriametrics_ports.victoriametrics }}"
-      listen_flag: -httpListenAddr
-      health_path: /health
-      args: "-storageDataPath=/var/lib/winter/monitoring/victoriametrics -retentionPeriod=30d"
-    vmalert:
-      enabled: true
-      tarball: vmalert-linux-amd64-v1.156.0.tar.gz
-      binary: vmalert-prod
-      port: "{{ victoriametrics_ports.vmalert }}"
-      listen_flag: -httpListenAddr
-      health_path: /health
-      # Single alert-rule chain (ADR-18): M0 uses placeholder rules; replace with disk-usage/task-backlog rules once collection is wired up.
-      # notifier.url is appended from victoriametrics_vmalert_notifiers so the scale playbooks can point at every Alertmanager replica.
-      args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule=/etc/winter/monitoring/rules/*.yml -evaluationInterval=15s"
-    victorialogs:
-      enabled: true
-      tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz
-      binary: victoria-logs-prod
-      port: "{{ victoriametrics_ports.victorialogs }}"
-      listen_flag: -httpListenAddr
-      health_path: /health
-      args: "-storageDataPath=/var/lib/winter/monitoring/victorialogs -retentionPeriod=30d"
-    alertmanager:
-      enabled: true
-      tarball: alertmanager-0.35.0.linux-amd64.tar.gz
-      binary: alertmanager
-      port: "{{ victoriametrics_ports.alertmanager }}"
-      listen_flag: --web.listen-address
-      health_path: /-/healthy
-      args: "--config.file=/etc/winter/monitoring/alertmanager.yml --storage.path=/var/lib/winter/monitoring/alertmanager"
-    grafana:
-      enabled: true
-      mode: directory                # directory-style install (includes frontend static assets), not a single-file binary
-      tarball: grafana-9.5.20.linux-amd64.tar.gz
-      install_dir: /opt/winter/grafana
-      port: "{{ victoriametrics_ports.grafana }}"
-      health_path: /api/health
-
-# ---- consolidated from roles/victoriametrics/defaults/main.yml ----
-victoriametrics_health_retries: 30
-
-victoriametrics_health_delay: 2
-
+  # ADR-60 compatibility view: rebuild the old components dict from the four
+  # standalone software dicts above. Code that iterates all components keeps working;
+  # each component role reads its own <name>.* dict directly.
+  components: "{{ {'victoriametrics': {'enabled': victoriametrics.enabled, 'tarball': victoriametrics.tarball | default('victoria-metrics-linux-amd64-v1.156.0.tar.gz'), 'binary': 'victoria-metrics-prod', 'port': victoriametrics_ports.victoriametrics, 'listen_flag': '-httpListenAddr', 'health_path': '/health', 'args': '-storageDataPath=' ~ victoriametrics.data_dir ~ '/victoriametrics -retentionPeriod=' ~ (victoriametrics.retention_days | string) ~ 'd'}, 'vmalert': vmalert, 'victorialogs': victorialogs, 'alertmanager': alertmanager, 'grafana': grafana} }}"
 # Server (Go single binary + systemd); passwords and secrets live only in group_vars/all.yml, never here
 winter_server:
   enabled: true

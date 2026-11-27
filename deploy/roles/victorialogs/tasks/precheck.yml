@@ -2,7 +2,7 @@
 # Read-only victorialogs prechecks.
 - name: Precheck victorialogs | Probe health endpoint
   ansible.builtin.uri:
-    url: "http://{{ victoriametrics.listen_addr }}:{{ victoriametrics.components.victorialogs.port }}{{ victoriametrics.components.victorialogs.health_path }}"
+    url: "http://{{ victoriametrics.listen_addr }}:{{ victorialogs.port }}{{ victorialogs.health_path }}"
     status_code: 200
   register: victorialogs_precheck
   changed_when: false
@@ -12,7 +12,7 @@
 - name: Precheck victorialogs | Verify
   ansible.builtin.assert:
     that: victorialogs_precheck.status | default(0) == 200
-    fail_msg: "victorialogs health endpoint not responding on {{ victoriametrics.components.victorialogs.port }}"
+    fail_msg: "victorialogs health endpoint not responding on {{ victorialogs.port }}"
     success_msg: "victorialogs healthy"
     quiet: true
   tags: [victorialogs]

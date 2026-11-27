@@ -1,14 +1,14 @@
 ---
-# victorialogs component (standalone role, ADR-59). Config lives in victoriametrics.components.victorialogs.
+# victorialogs component (standalone role, ADR-59). Config lives in victorialogs.* (ADR-60).
 - name: Deploy victorialogs | Resolve component config
   ansible.builtin.set_fact:
     comp_key: victorialogs
-    comp: "{{ victoriametrics.components.victorialogs }}"
+    comp: "{{ victorialogs }}"
 
 - name: Deploy victorialogs | Assert enabled
   ansible.builtin.assert:
     that: comp.enabled | bool
-    fail_msg: "victoriametrics.components.victorialogs.enabled is false"
+    fail_msg: "victorialogs.enabled is false"
     quiet: true
   tags: [victorialogs]
 
