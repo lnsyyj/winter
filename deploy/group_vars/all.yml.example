@@ -66,7 +66,7 @@ prechecks_supported_os_defaults:
 prechecks_supported_os: "{{ prechecks_supported_os_defaults }}"
 
 # Base layer (roles/bootstrap): OS packages and the settings that prechecks only reports.
-# Keep enforce_kernel in sync with prechecks.enforce_kernel above.
+# Kernel parameters are enforced by bootstrap and verified by prechecks (ADR-64).
 # Merge rule: write only differences here; the role combines them with its own defaults.
 
 vault_pg_password: "CHANGE_ME_PG_PASSWORD"

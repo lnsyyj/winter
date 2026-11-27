@@ -8,10 +8,9 @@ bootstrap_defaults:
   # Base OS packages and clock synchronization were extracted into roles/os-init,
   # which can run on its own. Configure them with os_init_overrides in group_vars/all.yml.
 
-  # Kernel parameters previously only reported by roles/system-checks.
-  # Off by default during M0 so bootstrap stays non-invasive; set bootstrap_overrides.enforce_kernel: true
-  # (together with prechecks.enforce_kernel) to actually write them.
-  enforce_kernel: false
+  # ADR-64: prechecks strictly enforce kernel parameters, so bootstrap must write them.
+  # Set bootstrap_overrides.enforce_kernel=false only if the host image already ships them.
+  enforce_kernel: true
   sysctl_file: /etc/sysctl.d/99-winter.conf
   sysctl:
     vm.overcommit_memory: 1
