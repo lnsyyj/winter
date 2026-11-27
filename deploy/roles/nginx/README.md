@@ -20,8 +20,8 @@ Therefore this role's rules are:
 
 | Variable | Default | Description |
 | --- | --- | --- |
-| `nginx.server_name` | `{{ platform.domain }}` | Certificate CN and site domain, default `winter.local` |
-| `nginx.https_port` | `{{ platform.https_port }}` | Default 443 |
+| `nginx.server_name` | `{{ site.domain }}` | Certificate CN and site domain, default `winter.local` |
+| `nginx.https_port` | `{{ site.https_port }}` | Default 443 |
 | `nginx.doc_root` | `/var/lib/winter/www` | Static assets |
 | `nginx.tls_dir` | `/var/lib/winter/tls` | Self-signed certificate (generated on first run, left untouched if present) |
 | `nginx.api_upstream` | `http://127.0.0.1:8081` | Server address; **8080 may be occupied by another service on the same host** |

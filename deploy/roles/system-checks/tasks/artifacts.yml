@@ -1,9 +1,9 @@
 ---
 # Artifact reachability is only meaningful after phase C1 (bring up the internal repo), so it is disabled by default.
-# To enable: set prechecks.check_artifacts: true in group_vars and fill in platform.repo_base_url / registry_host.
+# To enable: set prechecks.check_artifacts: true in group_vars and fill in repo_nginx.base_url / registry_host.
 - name: Precheck | Internal repo repodata
   ansible.builtin.uri:
-    url: "{{ platform.repo_base_url }}repodata/repomd.xml"
+    url: "{{ repo_nginx.base_url }}repodata/repomd.xml"
     method: GET
     status_code: 200
     # Only probe reachability, skip certificate validation; repodata integrity is guaranteed by repomd.xml.asc (ADR-15)
@@ -14,25 +14,25 @@
   failed_when: false
   when:
     - prechecks.check_artifacts | bool
-    - (platform.repo_base_url | default('')) | length > 0
+    - (repo_nginx.base_url | default('')) | length > 0
 
 - name: Precheck | Verify internal repo reachability
   ansible.builtin.assert:
     that:
       - prechecks_repo.status | default(0) == 200
     fail_msg: >-
-      Internal repo unreachable: {{ platform.repo_base_url }}repodata/repomd.xml
+      Internal repo unreachable: {{ repo_nginx.base_url }}repodata/repomd.xml
       (status={{ prechecks_repo.status | default('n/a') }}, msg={{ prechecks_repo.msg | default('') }}).
       First complete phase C1 to bring up the Nginx repo, then confirm the repo subnet is allowed through the firewall on the node and that no global proxy is configured (ADR-15).
     success_msg: "Internal repo reachable"
     quiet: true
   when:
     - prechecks.check_artifacts | bool
-    - (platform.repo_base_url | default('')) | length > 0
+    - (repo_nginx.base_url | default('')) | length > 0
 
 - name: Precheck | Harbor probe
   ansible.builtin.uri:
-    url: "https://{{ platform.registry_host }}/v2/"
+    url: "https://{{ harbor.hostname }}/v2/"
     method: GET
     # 401 = authentication required (registry is alive); 200 = anonymously readable
     status_code: [200, 401]
@@ -43,18 +43,18 @@
   failed_when: false
   when:
     - prechecks.check_artifacts | bool
-    - (platform.registry_host | default('')) | length > 0
+    - (harbor.hostname | default('')) | length > 0
 
 - name: Precheck | Verify Harbor reachability
   ansible.builtin.assert:
     that:
       - prechecks_registry.status | default(0) in [200, 401]
     fail_msg: >-
-      Harbor unreachable: https://{{ platform.registry_host }}/v2/
+      Harbor unreachable: https://{{ harbor.hostname }}/v2/
       (status={{ prechecks_registry.status | default('n/a') }}, msg={{ prechecks_registry.msg | default('') }}).
       Confirm Harbor is started and 443 is allowed through the firewall; this only probes reachability — certificate trust is verified in C4 after ansible distributes the CA.
     success_msg: "Harbor reachable"
     quiet: true
   when:
     - prechecks.check_artifacts | bool
-    - (platform.registry_host | default('')) | length > 0
+    - (harbor.hostname | default('')) | length > 0

@@ -7,10 +7,10 @@ if ! pgrep -x nginx >/dev/null 2>&1; then
     exit 1
 fi
 
-# Use platform.* (always loaded from group_vars) instead of the nginx role-local dict,
+# Use site.* (always loaded from group_vars) instead of the nginx role-local dict,
 # so this script also renders when the keepalived stage runs without the nginx role.
-if ! curl -ksS --max-time 2 -H "Host: {{ platform.domain }}" \
-    "https://127.0.0.1:{{ platform.https_port }}/healthz" >/dev/null 2>&1; then
+if ! curl -ksS --max-time 2 -H "Host: {{ site.domain }}" \
+    "https://127.0.0.1:{{ site.https_port }}/healthz" >/dev/null 2>&1; then
     exit 1
 fi
 

@@ -36,8 +36,8 @@
     # python-etcd is a dependency of the etcd3 implementation in Patroni (without it Patroni only recognizes consul/kubernetes)
     # This package only has an sdist, so --no-build-isolation is required; otherwise pip tries to fetch setuptools online
     pip3 install --no-index --no-build-isolation \
-      --trusted-host $(echo {{ platform.repo_base_url }} | sed -E 's#https?://([^:/]+).*#\1#') \
-      --find-links {{ platform.repo_base_url }}/{{ patroni.pip_subdir }}/ \
+      --trusted-host $(echo {{ repo_nginx.base_url }} | sed -E 's#https?://([^:/]+).*#\1#') \
+      --find-links {{ repo_nginx.base_url }}/{{ patroni.pip_subdir }}/ \
       patroni psycopg2-binary python-etcd 2>&1 | tail -3
   args:
     executable: /bin/bash

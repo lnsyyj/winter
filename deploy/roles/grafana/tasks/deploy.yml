@@ -40,7 +40,7 @@
 
 - name: Deploy grafana | Fetch tarball
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ victoriametrics.tarball_subdir }}/{{ comp.tarball }}"
+    url: "{{ repo_nginx.base_url }}/{{ victoriametrics.tarball_subdir }}/{{ comp.tarball }}"
     dest: "/var/tmp/winter-observability/{{ comp.tarball }}"
     mode: "0644"
     timeout: 180

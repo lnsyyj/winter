@@ -330,6 +330,10 @@ git reflog                            # 兜底：找回误操作前的 HEAD
   三者严格一一对应（26 role = 26 tag = 26 组），不得有概念名别名、也不得有"组无 role / role 无组"。
   一个软件一个 role；一个软件组对应一个 role。`prechecks` / `destroy` 等 CLI action 名不属于 tag，
   可以保留，但其映射的 tag 必须等于 role 名。
+- **配置归位与全局显式原则（ADR-50/53/61）**：每条配置必须收在**所属软件的字典**里
+  （`<软件名>.*`），禁止概念名前缀或寄生在别人的字典下（如 etcd 配置不能放 `pg_cluster.etcd.*`）。
+  真被多个 role 共享的配置（domain/https_port/data_dir/version）放 `site.*` 并注明"无单一 role"，
+  不允许用 `platform` 这类"看起来像 role 却没有 role"的名字兜底。零引用的配置直接删除，不迁移。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -619,3 +623,4 @@ trim_trailing_whitespace = false
 | 2026-11-26 | podman 独立 role（ADR-58）：从 system-checks 的 os.yml 与 os_init.packages 中拆出，新建 roles/podman（安装+检查），site.yml/inventory/deploy.sh/all.yml 同步接入；podman 不再混在基础包里 | 本次提交 |
 | 2026-11-27 | tag/role/inventory 三者强制同名（ADR-59）：26 个 role 各有同名 tag 与同名组；prechecks→system-checks、LVS 组改名、haproxy/patroni 等操作型 role 补入口、监控拆 5 独立 role、删死组 pg-* | 本次提交 |
 | 2026-11-27 | 监控组件配置拆到各自软件字典（ADR-60）：vmalert/victorialogs/alertmanager/grafana 各有 <name>_defaults/<name> 字典，victoriametrics.components 保留为兼容视图；补齐 example 缺键、修字典自引用递归 | 本次提交 |
+| 2026-11-27 | platform 配置块拆分归位（ADR-61）：repo_base_url→repo_nginx.*、registry_*→harbor.*、retention→winter_server.*，零引用死配置 auth 删除；真全局 domain/https_port/data_dir/version 建 site.* 块；全仓 87 处引用同步 | 本次提交 |

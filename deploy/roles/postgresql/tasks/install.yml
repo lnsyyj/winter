@@ -22,7 +22,7 @@
 
 - name: Fetch RPMs from internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ postgresql.rpm_subdir }}/{{ item }}"
+    url: "{{ repo_nginx.base_url }}/{{ postgresql.rpm_subdir }}/{{ item }}"
     dest: "{{ postgresql.rpm_stage_dir }}/{{ item }}"
     mode: "0644"
     timeout: 60
@@ -32,7 +32,7 @@
 
 - name: Fetch extra dependencies from internal repo (e.g. perl-libs, often missing on minimal systems)
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ postgresql.rpm_deps_subdir }}/{{ item }}"
+    url: "{{ repo_nginx.base_url }}/{{ postgresql.rpm_deps_subdir }}/{{ item }}"
     dest: "{{ postgresql.rpm_stage_dir }}/{{ item }}"
     mode: "0644"
     timeout: 60

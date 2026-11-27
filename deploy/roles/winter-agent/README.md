@@ -11,7 +11,7 @@ Pre-installs and removes the Agent on managed nodes (ADR-35). Used by the `agent
 
 ## Prerequisites (must exist before scale-out)
 
-1. `winter-agent` binary published at `{{ platform.repo_base_url }}/bin/winter-agent` (produced by the Go Agent work).
+1. `winter-agent` binary published at `{{ repo_nginx.base_url }}/bin/winter-agent` (produced by the Go Agent work).
 2. CA certificate available on the control machine and configured as `winter_agent_overrides.cert.ca_source`.
 3. Nginx `grpc_pass` for the Agent service on the documented outbound port 443 (the Agent connects out; no inbound ports are opened on the node).
 

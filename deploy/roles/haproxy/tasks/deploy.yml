@@ -9,7 +9,7 @@
 
 - name: Fetch RPM from internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ haproxy.rpm_subdir }}/{{ haproxy.rpm }}"
+    url: "{{ repo_nginx.base_url }}/{{ haproxy.rpm_subdir }}/{{ haproxy.rpm }}"
     dest: /var/tmp/{{ haproxy.rpm }}
     mode: "0644"
     timeout: 60

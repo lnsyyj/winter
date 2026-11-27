@@ -11,7 +11,7 @@
 
 - name: Fetch etcd static package from internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ etcd.tarball_subdir }}/{{ etcd.tarball }}"
+    url: "{{ repo_nginx.base_url }}/{{ etcd.tarball_subdir }}/{{ etcd.tarball }}"
     dest: /var/tmp/winter-etcd/{{ etcd.tarball }}
     mode: "0644"
     timeout: 60

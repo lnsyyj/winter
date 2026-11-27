@@ -29,7 +29,7 @@ WorkingDirectory={{ comp.install_dir }}
 Environment=HOME={{ victoriametrics.data_dir }}/grafana
 Environment=GF_SERVER_HTTP_ADDR={{ bind_addr }}
 Environment=GF_SERVER_HTTP_PORT={{ comp.port }}
-Environment=GF_SERVER_ROOT_URL=https://{{ platform.domain }}/grafana/
+Environment=GF_SERVER_ROOT_URL=https://{{ site.domain }}/grafana/
 Environment=GF_SERVER_SERVE_FROM_SUB_PATH=true
 Environment=GF_PATHS_DATA={{ victoriametrics.data_dir }}/grafana
 Environment=GF_PATHS_LOGS={{ victoriametrics.data_dir }}/grafana/log

@@ -117,7 +117,7 @@
 
 - name: Download BIND 9 RPMs from the internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ named.rpm_subdir }}/{{ item }}"
+    url: "{{ repo_nginx.base_url }}/{{ named.rpm_subdir }}/{{ item }}"
     dest: "/var/tmp/winter-dns/{{ item }}"
     mode: '0644'
   loop: "{{ named.rpm_files }}"

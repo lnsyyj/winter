@@ -23,14 +23,14 @@
 
 - name: Record pre-upgrade manifest
   ansible.builtin.slurp:
-    src: "{{ platform.data_dir }}/deployment-manifest.yml"
+    src: "{{ site.data_dir }}/deployment-manifest.yml"
   register: upgrade_previous_manifest
   failed_when: false
   tags: [upgrade]
 
 - name: Save pre-upgrade manifest for rollback reference
   ansible.builtin.copy:
-    dest: "{{ platform.data_dir }}/deployment-manifest.pre-upgrade.yml"
+    dest: "{{ site.data_dir }}/deployment-manifest.pre-upgrade.yml"
     content: "{{ upgrade_previous_manifest.content | default('') | b64decode }}"
     mode: "0644"
   when: upgrade_previous_manifest.content is defined

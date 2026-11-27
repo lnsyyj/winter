@@ -109,7 +109,7 @@
 
 - name: Fetch the Harbor offline installer from the internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ harbor.tarball_subdir }}/{{ harbor.tarball }}"
+    url: "{{ repo_nginx.base_url }}/{{ harbor.tarball_subdir }}/{{ harbor.tarball }}"
     dest: "{{ harbor.staging_dir }}/{{ harbor.tarball }}"
     mode: "0644"
     timeout: 600

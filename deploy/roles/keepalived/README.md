@@ -1,7 +1,7 @@
 # role: keepalived
 
 VRRP high availability for the Nginx access layer (ADR-16). Two or more `[keepalived]` nodes share a
-floating VIP; the node holding the VIP serves `https://<platform.domain>/`. If the local Nginx
+floating VIP; the node holding the VIP serves `https://<site.domain>/`. If the local Nginx
 health check fails, the VIP moves to a peer.
 
 ## Configuration

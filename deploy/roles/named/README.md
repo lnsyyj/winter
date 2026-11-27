@@ -12,7 +12,7 @@ enterprise standard on RHEL, supports standard round-robin A records and master/
 | Key | Meaning |
 | --- | --- |
 | `named.enabled` | Enables the role; `false` keeps DNS out of the deployment |
-| `named.domain` | Zone name, defaults to `platform.domain` |
+| `named.domain` | Zone name, defaults to `site.domain` |
 | `named.vips` | A records for the domain; empty falls back to `ha.vips`, then `ha.vip` |
 | `named.master_addresses` / `named.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
 | `named.forwarders` | Upstream resolvers for external names; empty means authoritative-only |

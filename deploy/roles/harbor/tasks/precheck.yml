@@ -20,7 +20,7 @@
     that:
       - harbor.hostname | default('') | length > 0
       - harbor.http_port | int > 0
-    fail_msg: "Harbor requires a hostname (platform.registry_host) and a positive http_port."
+    fail_msg: "Harbor requires a hostname (harbor.hostname) and a positive http_port."
     success_msg: "Harbor common configuration is present"
     quiet: true
 

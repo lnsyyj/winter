@@ -24,9 +24,9 @@
 
 - name: Precheck PostgreSQL | Internal repo base URL is configured
   ansible.builtin.assert:
-    that: platform.repo_base_url | default('') | length > 0
-    fail_msg: "platform.repo_base_url is empty. A fresh machine installs PostgreSQL only from the internal repo (ADR-15)."
-    success_msg: "Internal repo base URL: {{ platform.repo_base_url }}"
+    that: repo_nginx.base_url | default('') | length > 0
+    fail_msg: "repo_nginx.base_url is empty. A fresh machine installs PostgreSQL only from the internal repo (ADR-15)."
+    success_msg: "Internal repo base URL: {{ repo_nginx.base_url }}"
     quiet: true
 
 - name: Precheck PostgreSQL | Offline RPMs exist on the control machine

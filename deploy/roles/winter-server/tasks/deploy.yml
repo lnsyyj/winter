@@ -85,7 +85,7 @@
 
 - name: Fetch Server binary from internal repo
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ winter_server.bin_subdir }}/{{ winter_server.artifact }}"
+    url: "{{ repo_nginx.base_url }}/{{ winter_server.bin_subdir }}/{{ winter_server.artifact }}"
     dest: "/var/tmp/winter-server/winter-server.new"
     mode: "0755"
     timeout: 120

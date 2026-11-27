@@ -72,7 +72,7 @@
 
 - name: Fetch static packages from internal repo (ADR-15 install channel)
   ansible.builtin.get_url:
-    url: "{{ platform.repo_base_url }}/{{ victoriametrics.tarball_subdir }}/{{ item.value.tarball }}"
+    url: "{{ repo_nginx.base_url }}/{{ victoriametrics.tarball_subdir }}/{{ item.value.tarball }}"
     dest: "/var/tmp/winter-observability/{{ item.value.tarball }}"
     mode: "0644"
     timeout: 180
@@ -230,6 +230,6 @@
   ansible.builtin.debug:
     msg:
       - "Observability stack: {{ victoriametrics_components | map(attribute='key') | join(', ') }}"
-      - "All listen only on {{ victoriametrics.listen_addr }}; Grafana external entry point https://{{ platform.domain }}/grafana/"
+      - "All listen only on {{ victoriametrics.listen_addr }}; Grafana external entry point https://{{ site.domain }}/grafana/"
       - "Metrics/logs retained for {{ victoriametrics.retention_days }} days; single alert pipeline (vmalert → Alertmanager)"
   tags: [victoriametrics]

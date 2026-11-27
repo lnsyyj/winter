@@ -146,7 +146,7 @@ deploy/artifacts/repo/
 | Build packages with internet access | `sh deploy/scripts/fetch-artifacts.sh` (reproducible; `GHPROXY=` for a direct connection, `GHPROXY=https://ghproxy.net` via mirror) |
 | Transfer verification | Artifacts are transferred with git; on site, verify each item with `sha256sum -c` (ADR-14, second section) |
 | Publish | `./deploy.sh deploy --tags repo`: copy to `/var/lib/winter/www/repo`; Nginx serves plain HTTP on **8082**, and the firewall allows only the internal subnet |
-| Pull | Roles use `get_url {{ platform.repo_base_url }}/...`; RPMs are installed locally with `dnf --disablerepo='*'`, **without refreshing any remote repository metadata** |
+| Pull | Roles use `get_url {{ repo_nginx.base_url }}/...`; RPMs are installed locally with `dnf --disablerepo='*'`, **without refreshing any remote repository metadata** |
 
 ### Observability Stack Artifacts (versions pinned, no latest)
 
@@ -211,7 +211,7 @@ Prerequisites for `agent-scale-out` (the role fails with an actionable message w
 
 | Prerequisite | Configuration |
 | --- | --- |
-| `winter-agent` binary in the internal repo | `platform.repo_base_url` + `winter_agent_overrides.artifact` |
+| `winter-agent` binary in the internal repo | `repo_nginx.base_url` + `winter_agent_overrides.artifact` |
 | CA certificate on the control machine | `winter_agent_overrides.cert.ca_source` |
 | Nginx `grpc_pass` for the Agent service on outbound 443 | infrastructure outside this role |
 
@@ -352,7 +352,7 @@ while `/api/v2.0/`, `/v2/`, `/service/` and `/harbor/` are routed to Harbor.
 ./deploy.sh named -i inventory/multinode --tags precheck.named   # checks only
 ```
 
-`named` is the authoritative internal DNS for `platform.domain`. It publishes one A record per
+`named` is the authoritative internal DNS for `site.domain`. It publishes one A record per
 active-active VIP, resolved in this order: `named.vips` → `ha.vips` → `[ha.vip]`. BIND rotates the
 answer order, so clients spread across Directors. A VIP failover does not change its address, so
 the record stays valid. This completes the multi-VIP design: DNS spreads clients across Directors,
@@ -361,7 +361,7 @@ and LVS/DR spreads them across Nginx backends.
 | Key | Meaning |
 | --- | --- |
 | `named.enabled` | Enables the role; `false` keeps DNS out of the deployment |
-| `named.domain` | Zone name, defaults to `platform.domain` |
+| `named.domain` | Zone name, defaults to `site.domain` |
 | `named.vips` | Explicit A records; empty falls back to the `ha.*` VIPs |
 | `named.master_addresses` / `named.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
 | `named.forwarders` | Upstream resolvers for external names; empty means authoritative-only |

@@ -33,60 +33,14 @@
 #   upgrade.* / reconfigure       upgrade / reconfigure operations
 #   uninstall*, uninstall.*       uninstall role            (operations: destroy)
 #   vault_*                       secrets consumed by whichever role needs them
-platform:
-  # Platform external domain name (certificates and access entry point)
-  domain: winter.local
-  # Management plane API listen port (the only externally open port, see deployment plan §2)
-  https_port: 443
+# Site-wide globals (ADR-61): genuinely cross-role settings with no single owning role.
+# Everything else lives in the owning software dict; only these four are shared by many roles.
+site:
+  domain: winter.local                  # external domain (certificates + access entry)
+  https_port: 443                       # the only externally open port
+  data_dir: /var/lib/winter             # shared data root (excluded from upgrades)
+  version: unspecified                  # deployment manifest version (verify records it)
 
-  # Internal software repo (ADR-15): provided by Nginx on the management node (published by roles/repo-nginx)
-  # When the site has no internet access, all RPMs / wheels / binaries are fetched from here.
-  # Derived from the first [repo-nginx] host so it follows the environment instead of a hardcoded site IP;
-  # override platform.repo_base_url in a site-specific vars file if the repo is published elsewhere.
-  repo_base_url: "http://{{ hostvars[groups['repo-nginx'][0]]['ansible_host'] | default(hostvars[groups['repo-nginx'][0]]['inventory_hostname']) }}:{{ repo_nginx_listen_port }}"
-
-  # Image registry (ADR-16): self-hosted Harbor, all images are pulled through it
-  registry_host: ""
-  registry_ca_path: ""
-
-  # Data directory: data volumes and offline packages are stored separately to avoid being cleaned up during upgrades
-  data_dir: /var/lib/winter
-
-  # Authentication (ADR-22): local accounts enabled by default; if the customer has a directory service, fill in ldap and set enabled: true
-  # Constraints: TLS required; any group not matched by role_map has no permissions (default_role: none);
-  #             the local administrator is always kept (break-glass); a directory service outage does not affect their login
-  auth:
-    providers: [local, ldap]
-    # Sessions (ADR-34): short access, long refresh; cache_ttl determines the eviction delay (0 = immediate but queries the DB on every request)
-    session:
-      access_ttl_minutes: 15
-      refresh_ttl_days: 7
-      cache_ttl_seconds: 30
-    ldap:
-      enabled: false
-      url: ""                          # e.g.: ldaps://dc01.corp.local:636
-      starttls: false                  # must be true when url is ldap://
-      tls_verify: true
-      bind_dn: ""                      # service account used for searches; password goes in group_vars/all.yml (vault_ldap_bind_password)
-      base_dn: ""                      # e.g.: ou=people,dc=corp,dc=local
-      # Placeholders {login} / {user_dn} are substituted by the platform at login time; they are **not Ansible variables** (do not write them as {{ }})
-      user_filter: "(sAMAccountName={login})"
-      group_base_dn: ""
-      group_filter: "(member={user_dn})"
-      role_map: {}                     # LDAP group DN -> platform role, e.g. {"CN=ceph-admins,OU=groups,DC=corp,DC=local": admin}
-      default_role: none               # no matching mapping = no permissions
-      timeout_seconds: 5
-      group_cache_ttl_seconds: 300
-
-  # Data retention (ADR-32): configurable, but 180 days for audits is a hard floor (the platform refuses to start below it)
-  # Three reference profiles: minimal 7/15/30/180 · standard 30/30/90/180 · long-retention 90/90/365/730
-  # Before increasing, check the capacity estimate printed by reconfigure, or the disk will fill up in a few months
-  retention:
-    logs_days: 30
-    metrics_days: 30
-    tasks_days: 90
-    audit_online_days: 180
-    sessions_days: 7
 
 # Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the victoriametrics stack dominate)
 # All thresholds below are configurable: tune them to the target host and set strict_* switches to false
@@ -200,10 +154,13 @@ repo_nginx_listen_port: 8082
 
 # ---- consolidated from roles/repo-nginx/defaults/main.yml ----
 repo_nginx:
+  # Internal artifact repo base URL (ADR-15/61): derived from the first [repo-nginx] host.
+  # Consumed by all roles that download tarballs/RPMs from the internal repo.
+  base_url: "http://{{ hostvars[groups['repo-nginx'][0]]['ansible_host'] | default(hostvars[groups['repo-nginx'][0]]['inventory_hostname']) }}:{{ repo_nginx_listen_port }}"
   # Artifact source (directory on the control machine)
   src: "{{ playbook_dir }}/artifacts/repo"
   # Publish directory (Nginx root)
-  root: "{{ platform.data_dir }}/www/repo"
+  root: "{{ site.data_dir }}/www/repo"
   listen_port: "{{ repo_nginx_listen_port }}"
   # Subnet allowed to access (change to the actual internal subnet on site)
   allow_cidr: "192.168.101.0/24"
@@ -217,7 +174,7 @@ etcd_defaults:
   data_dir: /var/lib/etcd        # etcd data (mode 0700)
   bin_dir: /usr/local/bin        # etcd / etcdctl install directory
   tarball: etcd-v3.5.17-linux-amd64.tar.gz
-  tarball_subdir: tarball        # subdir under platform.repo_base_url
+  tarball_subdir: tarball        # subdir under repo_nginx.base_url
   firewall_cidr: "192.168.101.0/24"   # subnet allowed to reach 2379/2380
 
 etcd: "{{ etcd_defaults | combine(etcd_overrides | default({}, true), recursive=True) }}"
@@ -380,14 +337,14 @@ pg_migrate: "{{ pg_migrate_defaults | combine(pg_migrate_overrides | default({},
 # ---- consolidated from roles/nginx/defaults/main.yml ----
 nginx_defaults:
   # External domain (same as certificate CN); defaults to the platform domain
-  server_name: "{{ platform.domain }}"
+  server_name: "{{ site.domain }}"
 
   http_port: 80
-  https_port: "{{ platform.https_port }}"
+  https_port: "{{ site.https_port }}"
 
   # Separate directory to avoid mixing with existing sites' (e.g. argus) /var/www
-  doc_root: "{{ platform.data_dir }}/www"
-  tls_dir: "{{ platform.data_dir }}/tls"
+  doc_root: "{{ site.data_dir }}/www"
+  tls_dir: "{{ site.data_dir }}/tls"
   conf_path: /etc/nginx/conf.d/winter.conf
 
   # Backend API (this platform's Server).
@@ -402,7 +359,7 @@ nginx: "{{ nginx_defaults | combine(nginx_overrides | default({}, true), recursi
 # Access layer (additive: does not modify nginx.conf or take over default_server)
 # Same as above: use nginx_overrides and write only differences
 nginx_overrides:
-  server_name: "{{ platform.domain }}"
+  server_name: "{{ site.domain }}"
   # Port 8080 may be occupied by another service on the same host (argus here); the platform API uses 8081 by default
   api_upstream: "http://127.0.0.1:8081"
   tls_days: 825
@@ -519,6 +476,14 @@ winter_server:
   admin_user: admin
   artifact: winter-server
   bin_subdir: bin
+  # Data retention (ADR-32): 180d audit is a hard floor; reconfigure refuses to start below it.
+  # Profiles: minimal 7/15/30/180 · standard 30/30/90/180 · long 90/90/365/730
+  retention:
+    logs_days: 30
+    metrics_days: 30
+    tasks_days: 90
+    audit_online_days: 180
+    sessions_days: 7
 
 # Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
 # Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with
@@ -549,7 +514,8 @@ harbor:
   tarball_subdir: tarball
   install_dir: /opt/winter/harbor
   data_dir: /var/lib/winter/harbor
-  hostname: "{{ platform.registry_host }}"
+  hostname: ""                           # registry host (Harbor FQDN); required when harbor.enabled
+  registry_ca_path: ""                    # CA bundle path for HTTPS registry
   bind_addr: 127.0.0.1
   http_port: 80
   # Local data volume used in builtin mode (bundled PG/Redis data lives here too).
@@ -605,7 +571,7 @@ ha_defaults:
     persistence_timeout: 0                # seconds, 0 = no session affinity
     health_interval: 6
     connect_timeout: 3
-    real_server_port: "{{ platform.https_port }}"
+    real_server_port: "{{ site.https_port }}"
     real_servers: []                      # computed by application-ha from [nginx]
 
 # ADR-42: operations set ha_overrides (partial dict); extra-vars @file replaces whole dicts, so
@@ -639,7 +605,7 @@ named_defaults:
   forwarders: []                       # upstream resolvers for external names
   recursion: false
   dnssec: false
-  domain: "{{ platform.domain }}"
+  domain: "{{ site.domain }}"
   ttl: 60
   admin_mailbox: hostmaster
   vips: []                             # empty falls back to ha.vips, then ha.vip
@@ -653,7 +619,7 @@ named_defaults:
   check_interval: 60                   # local resolution check retry window (seconds)
 
 # ADR-42: operation files set named_overrides (partial dict); extra-vars @file replaces whole dicts,
-# so merge onto defaults to preserve lazy keys such as domain ({{ platform.domain }}).
+# so merge onto defaults to preserve lazy keys such as domain ({{ site.domain }}).
 named: "{{ named_defaults | combine(named_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/winter_agent/defaults/main.yml ----
@@ -803,8 +769,8 @@ uninstall_overrides:
     - /opt/winter/grafana
     - /var/tmp/winter-server
     - /var/tmp/winter-observability
-    - "{{ platform.data_dir }}/www"
-    - "{{ platform.data_dir }}/tls"
+    - "{{ site.data_dir }}/www"
+    - "{{ site.data_dir }}/tls"
   users:
     - winter-server
     - winter-monitor
