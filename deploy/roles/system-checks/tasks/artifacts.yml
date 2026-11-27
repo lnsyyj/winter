@@ -1,62 +1,41 @@
 ---
-# Artifact reachability is only meaningful after phase C1 (bring up the internal repo), so it is disabled by default.
-# To enable: set prechecks.check_artifacts: true in group_vars and fill in repo_nginx.base_url / registry_host.
-- name: Precheck | Internal repo repodata
-  ansible.builtin.uri:
-    url: "{{ repo_nginx.base_url }}repodata/repomd.xml"
-    method: GET
-    status_code: 200
-    # Only probe reachability, skip certificate validation; repodata integrity is guaranteed by repomd.xml.asc (ADR-15)
-    validate_certs: false
-    timeout: 10
-  register: prechecks_repo
-  changed_when: false
-  failed_when: false
-  when:
-    - prechecks.check_artifacts | bool
-    - (repo_nginx.base_url | default('')) | length > 0
-
-- name: Precheck | Verify internal repo reachability
+# ADR-64: artifact reachability is mandatory. Every configured target is checked;
+# any unreachable endpoint aborts the run. Targets are configured in
+# prechecks.artifact_targets (no warn-only mode).
+- name: Precheck | Assert artifact targets configured
   ansible.builtin.assert:
     that:
-      - prechecks_repo.status | default(0) == 200
+      - (prechecks.artifact_targets | default({}) | length) > 0
     fail_msg: >-
-      Internal repo: expected HTTP 200, got {{ prechecks_repo.status | default('no response') }}
-      at {{ repo_nginx.base_url }}repodata/repomd.xml.
-      Fix: deploy the repo Nginx first (`deploy -t repo-nginx`), check firewall allows the repo subnet,
-      and ensure no global HTTP proxy is set (ADR-15).
-    success_msg: "Internal repo reachable"
+      No artifact targets configured: expected at least one URL, got none.
+      Fix: set prechecks.artifact_targets in group_vars/all.yml.
+    success_msg: "Artifact targets configured"
     quiet: true
-  when:
-    - prechecks.check_artifacts | bool
-    - (repo_nginx.base_url | default('')) | length > 0
 
-- name: Precheck | Harbor probe
+- name: Precheck | Probe artifact target
   ansible.builtin.uri:
-    url: "https://{{ harbor.hostname }}/v2/"
+    url: "{{ item.value }}"
     method: GET
-    # 401 = authentication required (registry is alive); 200 = anonymously readable
     status_code: [200, 401]
     validate_certs: false
     timeout: 10
-  register: prechecks_registry
+  register: prechecks_artifacts
   changed_when: false
   failed_when: false
-  when:
-    - prechecks.check_artifacts | bool
-    - (harbor.hostname | default('')) | length > 0
+  loop: "{{ prechecks.artifact_targets | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
 
-- name: Precheck | Verify Harbor reachability
+- name: Precheck | Verify artifact reachability
   ansible.builtin.assert:
     that:
-      - prechecks_registry.status | default(0) in [200, 401]
+      - item.status | default(0) in [200, 401]
     fail_msg: >-
-      Harbor registry: expected HTTP 200 or 401, got {{ prechecks_registry.status | default('no response') }}
-      at https://{{ harbor.hostname }}/v2/.
-      Fix: start Harbor and allow 443 through the firewall. This only probes reachability —
-      certificate trust is checked later after Ansible distributes the CA.
-    success_msg: "Harbor reachable"
+      Artifact '{{ item.item.key }}' at {{ item.item.value }}:
+      expected HTTP 200 or 401, got {{ item.status | default('no response') }}.
+      Fix: deploy the owning component (repo-nginx / harbor) and check firewall + proxy settings.
+    success_msg: "Artifact {{ item.item.key }} reachable"
     quiet: true
-  when:
-    - prechecks.check_artifacts | bool
-    - (harbor.hostname | default('')) | length > 0
+  loop: "{{ prechecks_artifacts.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.key }}"

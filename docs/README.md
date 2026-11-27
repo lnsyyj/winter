@@ -174,3 +174,4 @@ graph LR
 | 63 | [ADR-61-platform配置块拆分归位.md](./02-研发线/04-架构师/ADR-61-platform配置块拆分归位.md) | 架构师 ④ | **已确认** · 2026-11-27 | 删除无 role 的 platform 块：repo/harbor/retention 归各自字典，死配置 auth 删除，真全局 domain/https_port/data_dir/version 建 site.* 块；87 处引用同步 |
 | 64 | [ADR-62-剩余role变量归位到软件字典.md](./02-研发线/04-架构师/ADR-62-剩余role变量归位到软件字典.md) | 架构师 ④ | **已确认** · 2026-11-27 | 逐项检查74个顶层配置：ha→keepalived、pg_*→postgresql_*、victoriametrics散落项→common字典、repo_nginx_listen_port→字典内；两次自引用陷阱 |
 | 65 | [ADR-63-恢复role自带defaults与分层.md](./02-研发线/04-架构师/ADR-63-恢复role自带defaults与分层.md) | 架构师 ④ | **已确认** · 2026-11-27 | 恢复 22 个 role 的 defaults/main.yml（取代 ADR-45 的 role 无 defaults）；生成脚本聚合进 all.yml 标记块解决单 tag 跨 role 可见性；配置分层真相源 |
+| 66 | [ADR-64-预检全部严格失败即停.md](./02-研发线/04-架构师/ADR-64-预检全部严格失败即停.md) | 架构师 ④ | **已确认** · 2026-11-27 | 删除 5 个 strict_/enforce_/check_ 开关与 3 个 report-only 告警分支，所有检查无条件 assert；阈值留在 prechecks.* 可配；失败即全局中止 |

@@ -338,6 +338,10 @@ git reflog                            # 兜底：找回误操作前的 HEAD
   站点覆盖（`*_overrides`）与密码（`vault_*`）归 `group_vars/all.yml`（不入库），全局共享归 `site.*`。
   因 Ansible 单 tag 只加载当前 play 的 role defaults，改完 defaults 必须跑
   `python3 scripts/build-role-defaults.py` 把默认值聚合进 all.yml 的标记块，否则部署读不到新值。
+- **预检严格原则（ADR-64）**：所有 precheck 必须无条件 `assert`——禁止 `strict_*` 开关、
+  禁止 report-only/WARN 分支、禁止"配置为空就跳过"。任何检查失败必须中止（play 带 `any_errors_fatal`）。
+  环境差异只通过**阈值**（`prechecks.management_min_*`、`artifact_targets`、`expected_vm_*` 等）配置，
+  不允许通过开关把检查降级成告警。fail_msg 必须含期望值、实际值和修复提示。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -630,3 +634,4 @@ trim_trailing_whitespace = false
 | 2026-11-27 | platform 配置块拆分归位（ADR-61）：repo_base_url→repo_nginx.*、registry_*→harbor.*、retention→winter_server.*，零引用死配置 auth 删除；真全局 domain/https_port/data_dir/version 建 site.* 块；全仓 87 处引用同步 | 本次提交 |
 | 2026-11-27 | 剩余 role 变量归位（ADR-62）：ha.*→keepalived.*（合并字典）、pg_*→postgresql_*、victoriametrics 散落项→common 字典+兼容别名、repo_nginx_listen_port→字典内；两次 ADR-60 自引用陷阱 | 本次提交 |
 | 2026-11-27 | 恢复 role 自带 defaults（ADR-63，取代 ADR-45 的 role 无 defaults）：22 个 role 建 defaults/main.yml 为真相源，build-role-defaults.py 聚合进 all.yml 标记块保证单 tag 跨 role 可见；site 字面值内联；73 键守恒 | 本次提交 |
+| 2026-11-27 | 预检全部严格（ADR-64）：删除 strict_resources/ports/data_disks/enforce_kernel/check_artifacts 开关与全部 report-only 分支，所有检查无条件 assert、失败即停；阈值留在 prechecks.* 可配；DNS/artifacts 目标非空强制 | 本次提交 |

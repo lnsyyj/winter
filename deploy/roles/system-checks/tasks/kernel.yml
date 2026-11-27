@@ -1,29 +1,24 @@
 ---
-# Kernel parameters are written by the bootstrap-servers phase (not implemented yet), so they are reported only by default.
-# In the M0 manual phase, confirm them yourself following the prompts; for production delivery, set prechecks.enforce_kernel to true.
+# ADR-64: kernel parameter checks are mandatory; any failure aborts the run.
+# Expected values are configurable in group_vars/all.yml (no warn-only mode).
 - name: Precheck | Read kernel parameters
   ansible.builtin.command: sysctl -n vm.overcommit_memory vm.max_map_count
   register: prechecks_sysctl
   changed_when: false
   failed_when: false
 
-- name: Precheck | Report kernel parameters
-  ansible.builtin.debug:
-    msg: >-
-      Kernel parameters: vm.overcommit_memory={{ (prechecks_sysctl.stdout_lines | default(['?']))[0] }},
-      vm.max_map_count={{ (prechecks_sysctl.stdout_lines | default(['?', '?']))[1] }}.
-      Recommended: overcommit_memory=1 (required by Harbor's bundled Redis), max_map_count>=262144.
-    verbosity: 0
-
 - name: Precheck | Enforce kernel parameters
   ansible.builtin.assert:
     that:
-      - (prechecks_sysctl.stdout_lines | default(['0']))[0] == '1'
-      - (prechecks_sysctl.stdout_lines | default(['0', '0']))[1] | int >= 262144
+      - (prechecks_sysctl.stdout_lines | default(['?']))[0] | string == (prechecks.expected_vm_overcommit_memory | string)
+      - ((prechecks_sysctl.stdout_lines | default(['?', '?']))[1] | int) >= (prechecks.expected_vm_max_map_count | int)
     fail_msg: >-
-      vm.overcommit_memory: expected 1, got {{ (prechecks_sysctl.stdout_lines | default(['?']))[0] }};
-      vm.max_map_count: expected >=262144, got {{ (prechecks_sysctl.stdout_lines | default(['?', '?']))[1] }}.
-      Fix: sysctl -w vm.overcommit_memory=1 vm.max_map_count=262144 now,
+      vm.overcommit_memory: expected {{ prechecks.expected_vm_overcommit_memory }},
+      got {{ (prechecks_sysctl.stdout_lines | default(['?']))[0] }};
+      vm.max_map_count: expected ≥{{ prechecks.expected_vm_max_map_count }},
+      got {{ (prechecks_sysctl.stdout_lines | default(['?', '?']))[1] }}.
+      Fix: sysctl -w vm.overcommit_memory={{ prechecks.expected_vm_overcommit_memory }}
+      vm.max_map_count={{ prechecks.expected_vm_max_map_count }} now,
       and write both to /etc/sysctl.d/99-winter.conf for persistence.
     success_msg: "Kernel parameters meet requirements"
-  when: prechecks.enforce_kernel | bool
+    quiet: true

@@ -16,13 +16,22 @@
     success_msg: "Default route exists"
     quiet: true
 
+- name: Precheck | Required hostnames are configured
+  ansible.builtin.assert:
+    that:
+      - (prechecks.required_hosts | default([]) | length) > 0
+    fail_msg: >-
+      No hostnames configured for DNS resolution check: expected at least one entry, got none.
+      Fix: set prechecks.required_hosts in group_vars/all.yml (defaults to site.domain).
+    success_msg: "Required hostnames configured"
+    quiet: true
+
 - name: Precheck | DNS resolution
   ansible.builtin.command: "getent hosts {{ item }}"
   register: prechecks_getent
   changed_when: false
   failed_when: false
   loop: "{{ prechecks.required_hosts }}"
-  when: prechecks.required_hosts | length > 0
 
 - name: Precheck | Verify resolution results
   ansible.builtin.assert:
@@ -35,7 +44,6 @@
     success_msg: "Resolution of {{ item.item }} OK"
     quiet: true
   loop: "{{ prechecks_getent.results | default([]) }}"
-  when: prechecks.required_hosts | length > 0
 
 - name: Precheck | SELinux status (report only)
   ansible.builtin.debug:

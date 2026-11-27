@@ -24,29 +24,33 @@ site:
 
 
 # Precheck thresholds (aligned with the resource estimates in deployment plan §1; Harbor and the victoriametrics stack dominate)
-# All thresholds below are configurable: tune them to the target host and set strict_* switches to false
-# to downgrade a hard failure into a warning (useful for lab / small test machines).
+# All thresholds below are configurable; every check is mandatory and any failure aborts
+# the run (ADR-64). Tune thresholds for the target host, but there is no warn-only mode.
 
 prechecks:
   # Management-plane minimum resources. Adjust to fit the deployment target.
   management_min_vcpus: 15               # minimum CPU cores
   management_min_memory_mb: 24576        # minimum RAM in MB (24G)
   management_min_root_free_gb: 350       # minimum free root space in GB (Harbor image storage and audit DB dominate)
-  strict_resources: true                 # true: fail below thresholds; false: warn only and continue
-  strict_ports: true                     # true: fail if a required port is busy; false: warn only (idempotent re-runs)
-  ceph_node_min_data_disks: 3
-  strict_data_disks: false               # true: fail on too few OSD disks; false: warn only
-  # Kernel parameters are set by bootstrap-servers; during the M0 manual phase, only report
-  enforce_kernel: false
+  # ADR-64: all checks are mandatory. No strict_*/warn-only switches — every check
+  # asserts and any failure aborts the run (any_errors_fatal on every play).
+  ceph_node_min_data_disks: 3            # extra data disks expected (production baseline)
   max_clock_offset_seconds: 1.0
-  # Hostnames that must resolve (certificates / registry / repo); leave empty to skip
-  required_hosts: []
+  # Kernel parameters verified on every host; thresholds configurable here.
+  expected_vm_overcommit_memory: 1
+  expected_vm_max_map_count: 262144
+  # Hostnames that must resolve (certificates / registry / repo); must be non-empty (ADR-64)
+  required_hosts:
+    - "{{ site.domain }}"
   # Ports that must be free on the management node before deployment
   required_free_ports:
     - 80
     - 443
-  # Set to true only after stage C1 brings up the internal repo, to check repo and Harbor reachability
-  check_artifacts: false
+  # Artifact endpoints checked unconditionally (ADR-64). Remove an entry only if
+  # that component is truly not part of the deployment.
+  artifact_targets:
+    repo: "{{ repo_nginx.base_url }}repodata/repomd.xml"
+    registry: "https://{{ harbor.hostname }}/v2/"
 
 # Supported OS baselines (ADR-57). A host passes when its distribution +
 # major version match any entry; `pretty_name_contains` optionally narrows it.

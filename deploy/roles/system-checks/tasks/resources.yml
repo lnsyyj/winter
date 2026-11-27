@@ -1,11 +1,13 @@
 ---
+# ADR-64: all resource checks are mandatory; any failure aborts the run.
+# Thresholds stay configurable in group_vars/all.yml, but there is no warn-only mode.
 - name: Precheck | Read available root partition space
   ansible.builtin.set_fact:
     prechecks_root_available_bytes: >-
       {{ (ansible_facts.mounts | selectattr('mount', 'equalto', '/')
           | map(attribute='size_available') | list | first | default(0)) | int }}
 
-- name: Precheck | Host minimum requirements (strict mode)
+- name: Precheck | Host minimum requirements
   ansible.builtin.assert:
     that:
       - ansible_facts.processor_vcpus | int >= prechecks.management_min_vcpus | int
@@ -17,23 +19,10 @@
       memory expected ≥{{ prechecks.management_min_memory_mb }} MB, got {{ ansible_facts.memtotal_mb }} MB;
       root free expected ≥{{ prechecks.management_min_root_free_gb }} GB,
       got {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB.
-      Fix: tune prechecks.management_min_* in group_vars/all.yml, or set prechecks.strict_resources=false
-      to warn only. Harbor images and the monitoring stack take the most disk.
+      Fix: add resources or tune prechecks.management_min_* in group_vars/all.yml.
+      Harbor images and the monitoring stack take the most disk.
     success_msg: "Host resources meet minimum requirements"
     quiet: true
-  when:
-    - (prechecks_strict_resources | default(prechecks.strict_resources)) | bool
-
-- name: Precheck | Host minimum requirements (report-only mode)
-  ansible.builtin.debug:
-    msg: >-
-      WARN host resources below configured thresholds: CPU {{ ansible_facts.processor_vcpus }} cores (need ≥{{ prechecks.management_min_vcpus }}),
-      memory {{ ansible_facts.memtotal_mb }} MB (need ≥{{ prechecks.management_min_memory_mb }} MB),
-      root partition free {{ (prechecks_root_available_bytes | int / 1073741824) | round(1) }} GB
-      (need ≥{{ prechecks.management_min_root_free_gb }} GB).
-      Running in report-only mode (prechecks.strict_resources=false); tune the thresholds in group_vars/all.yml for production.
-  when:
-    - not ((prechecks_strict_resources | default(prechecks.strict_resources)) | bool)
 
 - name: Precheck | List whole disks
   ansible.builtin.command: lsblk -dn -o NAME,TYPE,SIZE
@@ -45,23 +34,13 @@
   ansible.builtin.set_fact:
     prechecks_disks: "{{ (prechecks_lsblk.stdout_lines | default([])) | select('search', ' disk ') | list }}"
 
-- name: Precheck | Data disk count (strict mode)
+- name: Precheck | Data disk count
   ansible.builtin.assert:
     that:
       - ((prechecks_disks | length) - 1) >= (prechecks.ceph_node_min_data_disks | int)
     fail_msg: >-
-      Data disks for Ceph OSD: expected ≥{{ prechecks.ceph_node_min_data_disks }},
+      Data disks: expected ≥{{ prechecks.ceph_node_min_data_disks }},
       got {{ (prechecks_disks | length) - 1 }} ({{ prechecks_disks | length }} disks minus the system disk).
-      Fix: add data disks, or set prechecks.strict_data_disks=false if this host needs none
-      (legacy Ceph-OSD check, PRD FR-05).
+      Fix: add data disks, or lower prechecks.ceph_node_min_data_disks if this host needs none.
     success_msg: "Data disk count OK ({{ (prechecks_disks | length) - 1 }} available)"
     quiet: true
-  when: prechecks.strict_data_disks | bool
-
-- name: Precheck | Data disk count (report-only mode)
-  ansible.builtin.debug:
-    msg: >-
-      WARN detected {{ prechecks_disks | length }} whole disks (about
-      {{ (prechecks_disks | length) - 1 }} extra data disks after excluding the system disk, required ≥{{ prechecks.ceph_node_min_data_disks }}).
-      Legacy Ceph-OSD check, report-only (prechecks.strict_data_disks=false); set to true only if this host needs dedicated data disks.
-  when: not (prechecks.strict_data_disks | bool)

@@ -1,5 +1,5 @@
 ---
-# Before deployment, the external ports must be free on every host being checked.
+# ADR-64: port checks are mandatory. Any occupied port aborts the run.
 # The System checks play already targets the operators' chosen hosts; no further
 # group gating here (a host may join any number of software groups for hyper-converged deployment).
 - name: Precheck | Read listening ports
@@ -8,26 +8,14 @@
   changed_when: false
   failed_when: false
 
-- name: Precheck | Access layer ports free (strict mode)
+- name: Precheck | Access layer ports free
   ansible.builtin.assert:
     that:
       - "prechecks_ss.stdout is not search(':' ~ (item | string) ~ '\\s')"
     fail_msg: >-
       Port {{ item }}: expected free, but it is in use.
       Listener: {{ (prechecks_ss.stdout_lines | select('search', ':' ~ (item | string) ~ ' ') | list | join('; ')) | default('unknown') }}.
-      Fix: stop the existing service or pick another port. On an idempotent re-run you may set
-      prechecks.strict_ports=false to downgrade this to a warning.
+      Fix: stop the existing service or pick another port.
     success_msg: "Port {{ item }} available"
     quiet: true
   loop: "{{ prechecks.required_free_ports }}"
-  when: (prechecks_strict_ports | default(prechecks.strict_ports)) | bool
-
-- name: Precheck | Access layer ports free (report-only mode)
-  ansible.builtin.debug:
-    msg: >-
-      WARN port {{ item }} is in use (see: ss -ltnp 'sport = :{{ item }}').
-      Running in report-only mode (prechecks.strict_ports=false); a fresh deployment needs this port free.
-  loop: "{{ prechecks.required_free_ports }}"
-  when:
-    - prechecks_ss.stdout is search(':' ~ (item | string) ~ '\\s')
-    - not ((prechecks_strict_ports | default(prechecks.strict_ports)) | bool)

@@ -92,9 +92,9 @@ ansible all -i inventory/hosts.ini -m ping
 ## 1. 系统检查与初始化
 
 ```bash
-# 1.1 只读预检（资源阈值按当前机器；不通过也能看清楚缺什么）
-./deploy.sh prechecks -t os-init,postgresql \
-  -e '{"prechecks_strict_resources":false,"prechecks_strict_ports":false}'
+# 1.1 只读预检（ADR-64：全部严格检查，任何失败立即中止；阈值在 all.yml 的 prechecks 块按环境配置）
+./deploy.sh prechecks -t system-checks
+# 失败信息含期望值与实际值，按提示修复或调整 all.yml 里的 prechecks.* 阈值后重跑
 
 # 1.2 系统初始化（基础工具 + chrony，不含 podman）
 ./deploy.sh deploy -t os-init
@@ -344,7 +344,7 @@ done
 ```bash
 cd /root/github/winter/deploy
 # 0 准备：设密码、校验产物、ping（见正文）
-./deploy.sh prechecks -t os-init,postgresql -e '{"prechecks_strict_resources":false,"prechecks_strict_ports":false}'
+./deploy.sh prechecks -t system-checks            # 严格预检：失败即停，阈值见 all.yml prechecks.*
 ./deploy.sh deploy -t os-init
 ./deploy.sh deploy -t podman                 # 容器运行时独立 role
 ./deploy.sh deploy -t bootstrap
