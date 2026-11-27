@@ -1,5 +1,5 @@
 ---
-# ADR-44 (Plan X): migrated verbatim from roles/application-ha/tasks/keepalived.yml.
+# ADR-44 (Plan X): migrated verbatim from roles/application-ha/tasks/ha.yml.
 # Application HA convergence (migrated from application-ha.yml, ADR-43). Split per host group; site.yml attaches each slice via tasks_from.
 # Play 4: Configure the Keepalived Director with LVS load balancing (hosts: keepalived)
 
@@ -7,7 +7,7 @@
 
 - name: Reject overlapping Director and real server roles
   ansible.builtin.assert:
-    that: (not (ha.lvs.enabled | bool)) or (groups['keepalived'] | intersect(groups['nginx']) | length == 0)
+    that: (not (keepalived.lvs.enabled | bool)) or (groups['keepalived'] | intersect(groups['nginx']) | length == 0)
     fail_msg: "LVS/DR requires [keepalived] and [nginx] to be disjoint; otherwise the Director and a real server share the same VIP"
     quiet: true
   tags: [application-ha]
@@ -22,7 +22,7 @@
 
 - name: Inject LVS real servers into the Keepalived configuration
   ansible.builtin.set_fact:
-    ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
+    ha: "{{ ha | combine({'lvs': keepalived.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
   tags: [application-ha]
 
 
@@ -33,12 +33,12 @@
       - "Server upstream: {{ server_upstreams | join(', ') }}"
       - "Harbor upstream: {{ harbor_upstreams | default([]) | join(', ') }}"
       - "LVS/DR backends: {{ nginx_lvs_backends | default([]) | join(', ') }}"
-      - "Keepalived VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
+      - "Keepalived VIPs: {{ ((keepalived.vips | default([]) | length > 0) | ternary(keepalived.vips, [keepalived.vip])) | join(', ') }} on {{ keepalived.interface }}"
   tags: [application-ha]
 
 # ---- roles ----
 - name: Apply role keepalived
   ansible.builtin.include_role:
     name: keepalived
-  when: ha.enabled | bool
+  when: keepalived.enabled | bool
   tags: [application-ha]

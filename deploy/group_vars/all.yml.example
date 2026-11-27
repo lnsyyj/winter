@@ -19,8 +19,8 @@
 #   bootstrap*, bootstrap.*       bootstrap role            (play: Base dependencies, hosts: all)
 #   repo_nginx*, repo_nginx.*     repo-nginx role           (play: Nginx artifact repository)
 #   etcd*, etcd.*                 etcd role                 (play: etcd cluster)
-#   postgresql*, pg_cluster*,     postgresql role           (play: PostgreSQL single instance / HA /
-#   pg_scale*, pg_migrate*        postgresql-scale-* / postgresql-migrate)
+#   postgresql*, postgresql_cluster*,     postgresql role           (play: PostgreSQL single instance / HA /
+#   postgresql_scale*, postgresql_migrate*        postgresql-scale-* / postgresql-migrate)
 #   patroni.*, haproxy.*         patroni / haproxy roles   (via postgresql-ha)
 #   nginx*, nginx.*               nginx role                (play: Nginx access layer / application-ha)
 #   victoriametrics*              victoriametrics role      (play: VictoriaMetrics stack / *-scale-*)
@@ -148,24 +148,21 @@ bootstrap_overrides:
     format_if_empty: false
     mount: false
 
-# Port used by the internal artifact repository Nginx site (roles/repo-nginx) and referenced by
-# reconfigure's port-uniqueness check. Single source of truth; adjust here if 8082 is unavailable.
-repo_nginx_listen_port: 8082
 
 # ---- consolidated from roles/repo-nginx/defaults/main.yml ----
 repo_nginx:
   # Internal artifact repo base URL (ADR-15/61): derived from the first [repo-nginx] host.
   # Consumed by all roles that download tarballs/RPMs from the internal repo.
-  base_url: "http://{{ hostvars[groups['repo-nginx'][0]]['ansible_host'] | default(hostvars[groups['repo-nginx'][0]]['inventory_hostname']) }}:{{ repo_nginx_listen_port }}"
+  base_url: "http://{{ hostvars[groups['repo-nginx'][0]]['ansible_host'] | default(hostvars[groups['repo-nginx'][0]]['inventory_hostname']) }}:8082"   # keep in sync with listen_port (ADR-62: literal avoids dict self-ref)
   # Artifact source (directory on the control machine)
   src: "{{ playbook_dir }}/artifacts/repo"
   # Publish directory (Nginx root)
   root: "{{ site.data_dir }}/www/repo"
-  listen_port: "{{ repo_nginx_listen_port }}"
+  listen_port: 8082                      # internal repo port (single source of truth, ADR-62)
   # Subnet allowed to access (change to the actual internal subnet on site)
   allow_cidr: "192.168.101.0/24"
 
-# ---- etcd role (DCS for Patroni); all etcd settings live here, not under pg_cluster ----
+# ---- etcd role (DCS for Patroni); all etcd settings live here, not under postgresql_cluster ----
 # ADR-52: etcd is a standalone role (tag `etcd`), so its ports/dirs/binary are configured here.
 # Override with -e '{"etcd_overrides":{"client_port":...}}' without touching PG settings.
 etcd_defaults:
@@ -250,7 +247,7 @@ postgresql_overrides:
 
 # PostgreSQL high availability cluster (etcd + Patroni + HAProxy)
 # All ports are configurable; the 5433 default avoids port 5432, already occupied by argus on .194
-pg_cluster_defaults:
+postgresql_cluster_defaults:
   scope: winter-pg          # Patroni cluster scope (DCS key prefix)
   # Single-node HA bootstrap (1-member etcd + single Patroni + HAProxy) is technically valid but
   # offers no fault tolerance. Opt in explicitly for a 1 -> 3 online growth path; keep false for
@@ -258,11 +255,11 @@ pg_cluster_defaults:
   allow_single_node_bootstrap: false
   vip_iface_cidr: "192.168.101.0/24"   # subnet shared by pg_hba and all component firewalls
 
-pg_cluster: "{{ pg_cluster_defaults | combine(pg_cluster_overrides | default({}, true), recursive=True) }}"
+postgresql_cluster: "{{ postgresql_cluster_defaults | combine(postgresql_cluster_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/patroni/defaults/main.yml ----
 patroni:
-  # PG instance + REST ports and data dir (ADR-53: moved from pg_cluster.*)
+  # PG instance + REST ports and data dir (ADR-53: moved from postgresql_cluster.*)
   port: 5433                       # PG instance port (same on every node)
   rest_port: 8008                  # Patroni REST API
   data_dir: /var/lib/pgsql/17/ha   # separate from system /data
@@ -294,7 +291,7 @@ haproxy:
 
 # PostgreSQL HA membership changes (ADR-17 / ADR-37). Nodes must already be in [etcd] in inventory/hosts.ini.
 # The final etcd member count must stay odd and >= 3. Data is preserved unless purge_data is set.
-pg_scale_defaults:
+postgresql_scale_defaults:
   nodes: []            # scale-out targets, e.g. [pg-d, pg-e]
   removed_nodes: []    # scale-in targets, e.g. [pg-e]
   purge_data: false
@@ -302,12 +299,12 @@ pg_scale_defaults:
 
 # ADR-42: operation var files set *_overrides (partial dicts). extra-vars @file replaces whole
 # dicts, so merge onto defaults to preserve keys not listed in an operation file.
-pg_scale: "{{ pg_scale_defaults | combine(pg_scale_overrides | default({}, true), recursive=True) }}"
+postgresql_scale: "{{ postgresql_scale_defaults | combine(postgresql_scale_overrides | default({}, true), recursive=True) }}"
 
 # Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
 # instance (postgresql.port); the target is the HA entry point (haproxy.listen_port).
 # Both use the same database / role names, so only one database is moved.
-pg_migrate_defaults:
+postgresql_migrate_defaults:
   source_port: "{{ postgresql.port | default(5432) }}"
   target_port: "{{ haproxy.listen_port }}"
   database: "{{ postgresql.db_name | default('winter') }}"
@@ -331,8 +328,8 @@ pg_migrate_defaults:
   # Server services stopped during the maintenance window (no writes to the source).
   server_service: winter-server
 
-# ADR-42: operations set pg_migrate_overrides (partial dict); merge to preserve defaults.
-pg_migrate: "{{ pg_migrate_defaults | combine(pg_migrate_overrides | default({}, true), recursive=True) }}"
+# ADR-42: operations set postgresql_migrate_overrides (partial dict); merge to preserve defaults.
+postgresql_migrate: "{{ postgresql_migrate_defaults | combine(postgresql_migrate_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/nginx/defaults/main.yml ----
 nginx_defaults:
@@ -365,29 +362,28 @@ nginx_overrides:
   tls_days: 825
 
 # NOTE (ADR-53): Patroni's port/rest_port/data_dir moved to patroni.*; HAProxy's
-# listen_port/check_* moved to haproxy.*. pg_cluster keeps only cluster-wide policy/network.
+# listen_port/check_* moved to haproxy.*. postgresql_cluster keeps only cluster-wide policy/network.
 
 # Observability stack (ADR-18 / ADR-33): all components installed by default, single node, all listening only on localhost
 # Ports, versions and retention may only be changed here; roles do not hardcode ports.
 # Grafana is reverse-proxied via Nginx /grafana/ (ADR-09); port 3000 is not exposed directly.
-victoriametrics_ports:
-  victoriametrics: 8428
-  vmalert: 8880
-  victorialogs: 9428
-  alertmanager: 9093
-  grafana: 3000
+# ---- victoriametrics stack shared config (ADR-62) ----
+# Genuinely shared by all 5 monitoring roles. One dict; flat names below are compat aliases.
+victoriametrics_common:
+  ports:
+    victoriametrics: 8428
+    vmalert: 8880
+    victorialogs: 9428
+    alertmanager: 9093
+    grafana: 3000
+  listen_addr: 127.0.0.1
+  bind_addr: 127.0.0.1
+  advertise_addr: 127.0.0.1
+  health_retries: 30
+  health_delay: 2
+  vmalert_notifiers:
+    - "127.0.0.1"
 
-victoriametrics_listen_addr: 127.0.0.1
-
-# Single-node mode: bind and advertise both follow victoriametrics_listen_addr, so the existing
-# localhost-only behaviour is preserved. The scale playbooks override these per host:
-#   victoriametrics_bind_addr      -> 0.0.0.0              (accept internal traffic)
-#   victoriametrics_advertise_addr -> the node internal IP (used by peers and reverse proxies)
-victoriametrics_bind_addr: "{{ victoriametrics_listen_addr }}"
-
-victoriametrics_advertise_addr: "{{ victoriametrics_listen_addr }}"
-victoriametrics_health_retries: 30
-victoriametrics_health_delay: 2
 
 # Monitoring scale-out / scale-in (ADR-18 / ADR-33).
 # Scope: stateless and HA layers only — Alertmanager gossip HA, Grafana replicas behind Nginx,
@@ -396,6 +392,15 @@ victoriametrics_health_delay: 2
 # additional replicas into a central VictoriaMetrics, but the playbooks never do that implicitly.
 # Single-node default keeps the local Alertmanager; monitoring scale playbooks override this with
 # the addresses of all Alertmanager replicas so alerts are de-duplicated by the gossip cluster.
+# Compat aliases -> victoriametrics_common (ADR-62). Roles may use either form.
+victoriametrics_ports: "{{ victoriametrics_common.ports }}"
+victoriametrics_listen_addr: "127.0.0.1"
+victoriametrics_bind_addr: "{{ victoriametrics_common.bind_addr }}"
+victoriametrics_advertise_addr: "{{ victoriametrics_common.advertise_addr }}"
+victoriametrics_health_retries: "{{ victoriametrics_common.health_retries }}"
+victoriametrics_health_delay: "{{ victoriametrics_common.health_delay }}"
+victoriametrics_vmalert_notifiers: "{{ victoriametrics_common.vmalert_notifiers }}"
+
 victoriametrics_vmalert_notifiers:
   - "{{ victoriametrics_listen_addr }}"
 
@@ -496,7 +501,7 @@ winter_server_ha_defaults:
   database_host: 127.0.0.1
   audit_database_host: 127.0.0.1
 
-winter_server_ha: "{{ winter_server_ha_defaults | combine(winter_server_ha_overrides | default({}, true), recursive=True) }}"
+winter_server_ha: "{{ winter_server_ha_defaults | combine(winter_server_keepalived_overrides | default({}, true), recursive=True) }}"
 
 # Harbor (ADR-16).
 # mode: builtin  — MVP single node. Harbor's own bundled PostgreSQL, Redis and local data volume.
@@ -539,22 +544,19 @@ harbor:
 # ---- consolidated from roles/harbor/defaults/main.yml ----
 
 # ---- consolidated from roles/keepalived/defaults/main.yml ----
-keepalived:
+# ---- keepalived role (ADR-62): VIP/VRRP/LVS + local paths, one dict ----
+keepalived_defaults:
   config_path: /etc/keepalived/keepalived.conf
   check_script: /etc/keepalived/check_nginx.sh
   lvs_check_script: /etc/keepalived/check_lvs.sh
   service: keepalived
-
-# High availability (ADR-16 / ADR-35): stateless Server replicas and Harbor replicas sit behind
-# Nginx, with Keepalived providing a floating VIP on the [keepalived] nodes. Single-node inventories keep
-# everything on etcd and leave ha.enabled=false.
-ha_defaults:
+  # VIP/VRRP and LVS/DR settings (merged from legacy ha.*, ADR-62)
   enabled: false
   interface: eth0                         # NIC that carries the VIP
   vip: ""                                 # single VIP (active-standby)
   # Multiple VIPs enable active-active Directors: each [keepalived] node owns one VIP as MASTER and
   # backs up the rest. Publish every VIP as an A record for the platform domain so clients
-  # spread across Directors. Empty falls back to the single ha.vip.
+  # spread across Directors. Empty falls back to the single keepalived.vip.
   vips: []                                # e.g. [10.0.0.100, 10.0.0.101]
   virtual_router_id: 51                   # base VRRP ID; each extra VIP increments it
   priority: 100                           # override per host for master/backup (e.g. 100 / 90)
@@ -573,21 +575,19 @@ ha_defaults:
     connect_timeout: 3
     real_server_port: "{{ site.https_port }}"
     real_servers: []                      # computed by application-ha from [nginx]
+keepalived: "{{ keepalived_defaults | combine(keepalived_overrides | default({}, true), recursive=True) }}"
 
-# ADR-42: operations set ha_overrides (partial dict); extra-vars @file replaces whole dicts, so
-# merging is required or ha.lvs / ha.virtual_router_id disappear during an operation run.
-ha: "{{ ha_defaults | combine(ha_overrides | default({}, true), recursive=True) }}"
 
 # ---- consolidated from roles/realserver/defaults/main.yml ----
 lvs_realserver:
   sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
   helper: /usr/local/bin/winter-lvs-vip.sh
   unit: winter-lvs-vip.service
-  vip: "{{ ha.vip }}"
+  vip: "{{ keepalived.vip }}"
 
 # DNS (BIND 9): authoritative internal DNS for the platform domain (ADR-16 / ADR-17).
 # Publishes one A record per active-active Director VIP so DNS round-robin spreads clients
-# across Directors; the record set is derived from named.vips -> ha.vips -> ha.vip.
+# across Directors; the record set is derived from named.vips -> keepalived.vips -> keepalived.vip.
 # Deploy independently with: ./deploy.sh named -i inventory/multinode
 named_defaults:
   enabled: false
@@ -608,7 +608,7 @@ named_defaults:
   domain: "{{ site.domain }}"
   ttl: 60
   admin_mailbox: hostmaster
-  vips: []                             # empty falls back to ha.vips, then ha.vip
+  vips: []                             # empty falls back to keepalived.vips, then keepalived.vip
   master_addresses: []                 # empty derives from [dns_masters] or [named] minus [dns_slaves]
   slave_addresses: []                  # empty derives from [dns_slaves]
   tsig_key_name: winter-dns            # secret is vault_dns_tsig_secret in group_vars/all.yml

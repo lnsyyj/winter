@@ -24,7 +24,7 @@ backend winter_pg_primary
     option httpchk GET /primary
     http-check expect status 200
     default-server inter {{ haproxy.check_interval }} fall {{ haproxy.check_fall }} rise {{ haproxy.check_rise }}
-{% for h in groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) %}
+{% for h in groups['etcd'] | difference((postgresql_scale | default({})).removed_nodes | default([])) %}
     server {{ h }} {{ hostvars[h]['inventory_hostname'] }}:{{ patroni.port }} check port {{ patroni.rest_port }}
 {% endfor %}
 

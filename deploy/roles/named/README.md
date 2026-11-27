@@ -13,7 +13,7 @@ enterprise standard on RHEL, supports standard round-robin A records and master/
 | --- | --- |
 | `named.enabled` | Enables the role; `false` keeps DNS out of the deployment |
 | `named.domain` | Zone name, defaults to `site.domain` |
-| `named.vips` | A records for the domain; empty falls back to `ha.vips`, then `ha.vip` |
+| `named.vips` | A records for the domain; empty falls back to `keepalived.vips`, then `keepalived.vip` |
 | `named.master_addresses` / `named.slave_addresses` | Explicit overrides; empty derives addresses from inventory groups |
 | `named.forwarders` | Upstream resolvers for external names; empty means authoritative-only |
 | `named.recursion` / `named.dnssec` | Resolver behaviour; off by default for an authoritative internal zone |
@@ -48,7 +48,7 @@ no `[dns_slaves]` group the single DNS node is the master — the default single
 
 ## Active-active VIP round-robin
 
-`dns_vips` is resolved in this order: `named.vips` → `ha.vips` → `[ha.vip]`. Every address becomes
+`dns_vips` is resolved in this order: `named.vips` → `keepalived.vips` → `[keepalived.vip]`. Every address becomes
 an `@ IN A` record in the zone, so a client resolving the platform domain receives all VIPs and
 BIND rotates the answer order. This completes the multi-VIP Director design: DNS spreads clients
 across Directors, LVS/DR spreads them across Nginx backends. When a VIP fails over, its address

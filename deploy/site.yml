@@ -12,7 +12,7 @@
 #   ./deploy.sh deploy    -t repo-nginx
 #   ./deploy.sh prechecks -t postgresql
 #   ./deploy.sh deploy    -t postgresql-scale-out \
-#       -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
+#       -e '{"postgresql_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
 
 - name: System checks
   hosts: system-checks
@@ -196,7 +196,7 @@
   tags: [keepalived]
   roles:
     - role: keepalived
-      when: ha.enabled | bool
+      when: keepalived.enabled | bool
       tags: [keepalived]
 
 - name: BIND 9 DNS
@@ -327,7 +327,7 @@
       ansible.builtin.include_role:
         name: keepalived
         tasks_from: ha
-      when: ha.enabled | bool
+      when: keepalived.enabled | bool
       tags: [application-ha]
 
 - name: LVS director (hosts in [lvs-director])

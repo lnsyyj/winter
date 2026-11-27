@@ -41,7 +41,7 @@ Examples:
   ./deploy.sh deploy -t repo-nginx
   ./deploy.sh prechecks -t postgresql
   ./deploy.sh deploy -t postgresql-scale-out \
-      -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
+      -e '{"postgresql_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
   ./deploy.sh deploy -t lvs-director,lvs-realserver \
       -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189","database_endpoint":"haproxy"}}'
   ./deploy.sh deploy -t application-ha \
@@ -49,9 +49,9 @@ Examples:
 
 Per-operation variables (pass via -e; all.yml holds only defaults):
   named              -e '{"named_overrides":{"enabled":true},"ha_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
-  postgresql-ha      (single-node bootstrap) -e '{"pg_cluster_overrides":{"allow_single_node_bootstrap":true}}'
-  postgresql-scale-out  -e '{"pg_scale_overrides":{"nodes":["<new-node>",...]}}'
-  postgresql-scale-in  -e '{"pg_scale_overrides":{"removed_nodes":["<node>",...]}}'
+  postgresql-ha      (single-node bootstrap) -e '{"postgresql_cluster_overrides":{"allow_single_node_bootstrap":true}}'
+  postgresql-scale-out  -e '{"postgresql_scale_overrides":{"nodes":["<new-node>",...]}}'
+  postgresql-scale-in  -e '{"postgresql_scale_overrides":{"removed_nodes":["<node>",...]}}'
   postgresql-migrate (no extra vars; stop-the-world)
   victoriametrics-scale-out -e '{"victoriametrics_scale_overrides":{"nodes":["<node>",...]}}'
   victoriametrics-scale-in  -e '{"victoriametrics_scale_overrides":{"removed_nodes":["<node>",...]}}'

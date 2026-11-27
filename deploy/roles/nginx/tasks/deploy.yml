@@ -49,7 +49,7 @@
 - name: Allow HTTP and HTTPS entry ports through firewall (cluster subnet only)
   ansible.builtin.shell: |
     set -o pipefail
-    cidr="{{ pg_cluster.vip_iface_cidr | default('192.168.0.0/16') }}"
+    cidr="{{ postgresql_cluster.vip_iface_cidr | default('192.168.0.0/16') }}"
     for p in {{ nginx.http_port }} {{ nginx.https_port }}; do
       firewall-cmd --permanent --add-rich-rule="rule family=ipv4 source address=$cidr port port=$p protocol=tcp accept" >/dev/null 2>&1 || true
     done

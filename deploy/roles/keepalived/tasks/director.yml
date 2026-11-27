@@ -1,6 +1,6 @@
 ---
 # ADR-44 (Plan X): migrated verbatim from roles/keepalived-operations/tasks/director.yml.
-# Keepalived Director + LVS real servers (migrated from keepalived.yml, ADR-43). Split per host group.
+# Keepalived Director + LVS real servers (migrated from ha.yml, ADR-43). Split per host group.
 # Play 1: Configure the Keepalived Director (hosts: keepalived)
 
 # ---- pre_tasks ----
@@ -13,7 +13,7 @@
 
 - name: Inject LVS real servers into the Keepalived configuration
   ansible.builtin.set_fact:
-    ha: "{{ ha | combine({'lvs': ha.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
+    ha: "{{ ha | combine({'lvs': keepalived.lvs | combine({'real_servers': nginx_lvs_backends})}) }}"
   tags: [always]
 
 - name: Run Keepalived prechecks
@@ -27,7 +27,7 @@
 - name: Summarize Keepalived deployment
   ansible.builtin.debug:
     msg:
-      - "VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
+      - "VIPs: {{ ((keepalived.vips | default([]) | length > 0) | ternary(keepalived.vips, [keepalived.vip])) | join(', ') }} on {{ keepalived.interface }}"
       - "LVS/DR backends: {{ nginx_lvs_backends | default([]) | join(', ') }}"
   tags: [always]
 
@@ -36,5 +36,5 @@
 - name: Apply role keepalived
   ansible.builtin.include_role:
     name: keepalived
-  when: ha.enabled | bool
+  when: keepalived.enabled | bool
   tags: [ha, keepalived, lvs]

@@ -28,7 +28,7 @@ IPs if HA is rebuilt — back up PG data before any such rebuild.
 ./deploy.sh deploy -t repo-nginx                                        # one component
 ./deploy.sh prechecks -t postgresql                                     # one role's prechecks
 ./deploy.sh deploy -t postgresql-scale-out \
-    -e '{"pg_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'  # transactional op
+    -e '{"postgresql_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'  # transactional op
 ./deploy.sh deploy -t postgresql-ha                                     # PG HA bootstrap
 ./deploy.sh deploy -t lvs-director,lvs-realserver \
     -e '{"ha_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.189","database_endpoint":"haproxy"}}'
@@ -64,8 +64,8 @@ stage commands were removed in ADR-42 — use the action + tag form above.
 | Converge deployment | `./deploy.sh deploy -i inventory/multinode` | ✅ **Implemented** (internal repo + PostgreSQL + Nginx + victoriametrics stack + Server) |
 | Converge victoriametrics stack/Server only | `./deploy.sh deploy --tags victoriametrics,server` | ✅ **Implemented** (automatically includes the internal repo) |
 | PG high availability | `./deploy.sh postgresql-ha -i inventory/pgha` | ✅ **Implemented** (etcd + Patroni + HAProxy, three nodes) |
-| PG HA scale out | `./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
-| PG HA scale in | `./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
+| PG HA scale out | `./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"postgresql_scale":{"nodes":["pg-d","pg-e"]}}'` | ✅ **Implemented** (etcd member add + replica join + HAProxy update) |
+| PG HA scale in | `./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"postgresql_scale":{"removed_nodes":["pg-e"]}}'` | ✅ **Implemented** (replica only, data preserved by default) |
 | Monitoring scale out | `./deploy.sh victoriametrics-scale-out -i inventory/multinode -e '{"victoriametrics_scale":{"nodes":["mon02"]}}'` | ✅ **Implemented** (Alertmanager gossip HA + Grafana replicas + vmalert notifiers; targets must be in `[victoriametrics]`) |
 | Monitoring scale in | `./deploy.sh victoriametrics-scale-in -i inventory/multinode -e '{"victoriametrics_scale":{"removed_nodes":["mon02"]}}'` | ✅ **Implemented** (references rewired first, then teardown; data preserved by default) |
 | HA converged deployment | `./deploy.sh application-ha -i inventory/multinode` | ✅ **Implemented** (Server/Harbor replicas + Nginx upstreams + Keepalived VIP; prerequisites asserted) |
@@ -228,7 +228,7 @@ Safety: the service account is non-root with an explicit sudoers whitelist (abso
 ./deploy.sh postgresql-ha -i inventory/pgha --tags haproxy   # entry point only
 ```
 
-| Component | Role | Port (`group_vars.pg_cluster`) |
+| Component | Role | Port (`group_vars.postgresql_cluster`) |
 | --- | --- | --- |
 | etcd ×3 | Stores cluster state, Raft leader election (must be odd) | 2379 / 2380 |
 | Patroni ×3 | Manages the PG process, replication, switchover/failover, rewind | REST 8008 |
@@ -236,7 +236,7 @@ Safety: the service account is non-root with an explicit sudoers whitelist (abso
 | HAProxy ×3 | Single application entry point, follows Patroni `/primary` for leader election | **5434** |
 
 > 5433/5434 instead of 5432: on `.194`, port 5432 is already used by an existing service (argus); change ports only in
-> `pg_cluster` under `group_vars`; roles do not hardcode them.
+> `postgresql_cluster` under `group_vars`; roles do not hardcode them.
 
 ### Verified Results (2026-11-15, three nodes)
 
@@ -260,10 +260,10 @@ Add the new hosts to `[management]` in `inventory/pgha` first; topology is alway
 
 ```bash
 # 3 -> 5: add two nodes at once so the etcd member count stays odd
-./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"pg_scale":{"nodes":["pg-d","pg-e"]}}'
+./deploy.sh postgresql-scale-out -i inventory/pgha -e '{"postgresql_scale":{"nodes":["pg-d","pg-e"]}}'
 
 # 5 -> 3: remove a replica (never the leader); PG and etcd data is preserved
-./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"pg_scale":{"removed_nodes":["pg-e"]}}'
+./deploy.sh postgresql-scale-in -i inventory/pgha -e '{"postgresql_scale":{"removed_nodes":["pg-e"]}}'
 ```
 
 Safety rules enforced by the playbooks:
@@ -272,7 +272,7 @@ Safety rules enforced by the playbooks:
 - Scale-in verifies the target answers `/replica` (200) before touching it — the leader can never be removed.
 - New etcd members are registered with `etcdctl member add` and join with `initial-cluster-state=existing`; the templates are membership-aware, so a plain `postgresql-ha` rerun still renders the static bootstrap cluster.
 - `serial: 1` during scale-in prevents a simultaneous DCS restart.
-- Data is never deleted implicitly: `pg_scale.purge_data: true` requires an explicit `pg_scale.data_dirs` list.
+- Data is never deleted implicitly: `postgresql_scale.purge_data: true` requires an explicit `postgresql_scale.data_dirs` list.
 
 After a successful scale-in, remove the hosts from `[management]` in the inventory so future runs match the real topology.
 
@@ -308,7 +308,7 @@ Server is stateless and Harbor is shared-storage based, so both are deployed as 
 behind Nginx, with Keepalived providing a floating VIP on the `[keepalived]` nodes.
 
 **VRRP alone is failover, not load balancing**: the VIP lives on one node at a time, so every
-connection reaches the same Nginx. Enable `ha.lvs.enabled: true` to use Keepalived's native LVS in
+connection reaches the same Nginx. Enable `keepalived.lvs.enabled: true` to use Keepalived's native LVS in
 DR mode. The VIP still moves with VRRP, but connections are scheduled across all `[nginx]`
 backends and real servers answer directly with the VIP as source, bypassing the Director.
 
@@ -321,16 +321,16 @@ Inventory groups: `[keepalived]` (LVS Director + Keepalived), `[nginx]` (real Ng
 `management` in the shipped inventories, so single-node runs are unchanged. With LVS enabled,
 `[keepalived]` and `[nginx]` must be disjoint and share an L2 network — the stage refuses an overlap.
 
-To avoid an idle standby Director, set `ha.vips` to one address per `[keepalived]` node. Each Director then
+To avoid an idle standby Director, set `keepalived.vips` to one address per `[keepalived]` node. Each Director then
 owns one VIP as MASTER and backs up the others (active-active). Publish **all** VIPs as A records
 for the platform domain so clients spread across Directors — the `named` stage (BIND 9) does this
-automatically, otherwise use an external DNS. A single `ha.vip` keeps the original active-standby behaviour.
+automatically, otherwise use an external DNS. A single `keepalived.vip` keeps the original active-standby behaviour.
 
 Configuration in `group_vars/all.yml`:
 
-- `ha.vip`, `ha.interface`, `ha.priority` — VRRP address and election; the shared
+- `keepalived.vip`, `keepalived.interface`, `keepalived.priority` — VRRP address and election; the shared
   `vault_keepalived_auth_pass` comes from `group_vars/all.yml`. Priority descends across `[keepalived]`.
-- `ha.lvs.enabled: true` and `ha.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`) — four-layer load
+- `keepalived.lvs.enabled: true` and `keepalived.lvs.scheduler` (`rr` / `wrr` / `lc` / `wlc`) — four-layer load
   balancing; requires at least two `[nginx]`. The `lvs-realserver` role puts the VIP on `lo`
   with ARP suppression on each backend, and persists it with a oneshot systemd unit.
 - `winter_server_ha.database_host` / `audit_database_host` — must point at the PG HA access point once
@@ -353,7 +353,7 @@ while `/api/v2.0/`, `/v2/`, `/service/` and `/harbor/` are routed to Harbor.
 ```
 
 `named` is the authoritative internal DNS for `site.domain`. It publishes one A record per
-active-active VIP, resolved in this order: `named.vips` → `ha.vips` → `[ha.vip]`. BIND rotates the
+active-active VIP, resolved in this order: `named.vips` → `keepalived.vips` → `[keepalived.vip]`. BIND rotates the
 answer order, so clients spread across Directors. A VIP failover does not change its address, so
 the record stays valid. This completes the multi-VIP design: DNS spreads clients across Directors,
 and LVS/DR spreads them across Nginx backends.

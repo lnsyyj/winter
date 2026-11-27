@@ -624,3 +624,4 @@ trim_trailing_whitespace = false
 | 2026-11-27 | tag/role/inventory 三者强制同名（ADR-59）：26 个 role 各有同名 tag 与同名组；prechecks→system-checks、LVS 组改名、haproxy/patroni 等操作型 role 补入口、监控拆 5 独立 role、删死组 pg-* | 本次提交 |
 | 2026-11-27 | 监控组件配置拆到各自软件字典（ADR-60）：vmalert/victorialogs/alertmanager/grafana 各有 <name>_defaults/<name> 字典，victoriametrics.components 保留为兼容视图；补齐 example 缺键、修字典自引用递归 | 本次提交 |
 | 2026-11-27 | platform 配置块拆分归位（ADR-61）：repo_base_url→repo_nginx.*、registry_*→harbor.*、retention→winter_server.*，零引用死配置 auth 删除；真全局 domain/https_port/data_dir/version 建 site.* 块；全仓 87 处引用同步 | 本次提交 |
+| 2026-11-27 | 剩余 role 变量归位（ADR-62）：ha.*→keepalived.*（合并字典）、pg_*→postgresql_*、victoriametrics 散落项→common 字典+兼容别名、repo_nginx_listen_port→字典内；两次 ADR-60 自引用陷阱 | 本次提交 |

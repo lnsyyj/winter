@@ -96,7 +96,7 @@
 
 - name: Allow entry port through firewall (cluster subnet and localhost only)
   ansible.builtin.shell: |
-    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ pg_cluster.vip_iface_cidr }} port port={{ haproxy.listen_port }} protocol=tcp accept' >/dev/null 2>&1
+    firewall-cmd --permanent --add-rich-rule='rule family=ipv4 source address={{ postgresql_cluster.vip_iface_cidr }} port port={{ haproxy.listen_port }} protocol=tcp accept' >/dev/null 2>&1
     firewall-cmd --reload >/dev/null 2>&1
     echo done
   changed_when: false

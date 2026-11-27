@@ -5,21 +5,21 @@
 - name: Validate Keepalived configuration
   ansible.builtin.assert:
     that:
-      - ha.enabled | bool
-      - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
+      - keepalived.enabled | bool
+      - (keepalived.vips | default([]) | length > 0) or (keepalived.vip | default('') | length > 0)
       - vault_keepalived_auth_pass is defined and vault_keepalived_auth_pass | length > 0
-    fail_msg: "ha.enabled=true requires ha.vip or ha.vips, plus vault_keepalived_auth_pass (see group_vars/all.yml.example)"
+    fail_msg: "keepalived.enabled=true requires keepalived.vip or keepalived.vips, plus vault_keepalived_auth_pass (see group_vars/all.yml.example)"
     quiet: true
   tags: [ha, keepalived]
 
 - name: Validate LVS load balancing configuration
   ansible.builtin.assert:
     that:
-      - ha.lvs.real_servers | default([]) | length >= 2
-      - (ha.vips | default([]) | length > 0) or (ha.vip | default('') | length > 0)
-    fail_msg: "ha.lvs.enabled requires at least two [nginx] and ha.vip or ha.vips"
+      - keepalived.lvs.real_servers | default([]) | length >= 2
+      - (keepalived.vips | default([]) | length > 0) or (keepalived.vip | default('') | length > 0)
+    fail_msg: "keepalived.lvs.enabled requires at least two [nginx] and keepalived.vip or keepalived.vips"
     quiet: true
-  when: ha.lvs.enabled | default(false) | bool
+  when: keepalived.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]
 
 # modprobe was removed from ansible-core; use command guarded by a /sys/module check.
@@ -28,13 +28,13 @@
     path: /sys/module/ip_vs
   register: keepalived_ip_vs_loaded
   changed_when: false
-  when: ha.lvs.enabled | default(false) | bool
+  when: keepalived.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]
 
 - name: Load the ip_vs kernel module
   ansible.builtin.command: modprobe ip_vs
   when:
-    - ha.lvs.enabled | default(false) | bool
+    - keepalived.lvs.enabled | default(false) | bool
     - not keepalived_ip_vs_loaded.stat.exists
   tags: [ha, keepalived, lvs]
 
@@ -73,7 +73,7 @@
     dest: "{{ keepalived.lvs_check_script }}"
     mode: "0755"
   notify: restart keepalived
-  when: ha.lvs.enabled | default(false) | bool
+  when: keepalived.lvs.enabled | default(false) | bool
   tags: [ha, keepalived, lvs]
 
 - name: Render keepalived configuration
@@ -100,6 +100,6 @@
 - name: Print Keepalived summary
   ansible.builtin.debug:
     msg:
-      - "Keepalived VIPs: {{ ((ha.vips | default([]) | length > 0) | ternary(ha.vips, [ha.vip])) | join(', ') }} on {{ ha.interface }}"
+      - "Keepalived VIPs: {{ ((keepalived.vips | default([]) | length > 0) | ternary(keepalived.vips, [keepalived.vip])) | join(', ') }} on {{ keepalived.interface }}"
       - "The VIP is released when the local health check fails"
   tags: [ha, keepalived]

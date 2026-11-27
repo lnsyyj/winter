@@ -9,14 +9,14 @@
 - name: Validate scale-out plan
   ansible.builtin.assert:
     that:
-      - pg_scale.nodes | length > 0
-      - pg_scale.nodes | unique | length == pg_scale.nodes | length
-      - pg_scale.nodes | difference(groups['etcd']) | length == 0
+      - postgresql_scale.nodes | length > 0
+      - postgresql_scale.nodes | unique | length == postgresql_scale.nodes | length
+      - postgresql_scale.nodes | difference(groups['etcd']) | length == 0
       - (groups['etcd'] | length) % 2 == 1
-      - (groups['etcd'] | difference(pg_scale.nodes) | length) >= 1
-      - (groups['etcd'] | difference(pg_scale.nodes) | length) != 2
+      - (groups['etcd'] | difference(postgresql_scale.nodes) | length) >= 1
+      - (groups['etcd'] | difference(postgresql_scale.nodes) | length) != 2
     fail_msg: >-
-      pg_scale.nodes must be unique hosts already in [etcd], at least one existing member
+      postgresql_scale.nodes must be unique hosts already in [etcd], at least one existing member
       must remain, the existing member count must be odd (1 or >=3), and the final count odd.
     quiet: true
   run_once: true
@@ -24,11 +24,11 @@
 
 - name: Record existing and expected member counts
   ansible.builtin.set_fact:
-    pg_existing_members: "{{ groups['etcd'] | difference(pg_scale.nodes) | length }}"
+    pg_existing_members: "{{ groups['etcd'] | difference(postgresql_scale.nodes) | length }}"
     pg_expected_members: "{{ groups['etcd'] | length }}"
-    pg_existing_endpoint: "{{ hostvars[groups['etcd'] | difference(pg_scale.nodes) | first]['inventory_hostname'] }}"
+    pg_existing_endpoint: "{{ hostvars[groups['etcd'] | difference(postgresql_scale.nodes) | first]['inventory_hostname'] }}"
     # Learner mode is required only when bootstrapping from a single-member cluster.
-    pg_use_learner: "{{ (groups['etcd'] | difference(pg_scale.nodes) | length) == 1 }}"
+    pg_use_learner: "{{ (groups['etcd'] | difference(postgresql_scale.nodes) | length) == 1 }}"
   tags: [postgresql-scale-out]
 
 
@@ -37,7 +37,7 @@
 # Serial is enforced by the loop with run_once; each iteration fully converges one node.
 - name: Add and converge each new cluster member sequentially
   ansible.builtin.include_tasks: "{{ role_path }}/tasks/scale-out-member.yml"
-  loop: "{{ pg_scale.nodes }}"
+  loop: "{{ postgresql_scale.nodes }}"
   loop_control:
     loop_var: pg_join_node
     index_var: pg_join_index
@@ -56,14 +56,14 @@
   ansible.builtin.uri:
     url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ patroni.rest_port }}/replica"
     status_code: 200
-  loop: "{{ pg_scale.nodes }}"
-  delegate_to: "{{ groups['etcd'] | difference(pg_scale.nodes) | first }}"
+  loop: "{{ postgresql_scale.nodes }}"
+  delegate_to: "{{ groups['etcd'] | difference(postgresql_scale.nodes) | first }}"
   tags: [postgresql-scale-out]
 
 - name: Report scale-out result
   ansible.builtin.debug:
     msg:
-      - "Added {{ pg_scale.nodes | join(', ') }}; etcd members: {{ pg_expected_members }}"
+      - "Added {{ postgresql_scale.nodes | join(', ') }}; etcd members: {{ pg_expected_members }}"
       - "Learner mode used: {{ pg_use_learner }} (single-member bootstrap path)"
   run_once: true
   tags: [postgresql-scale-out]

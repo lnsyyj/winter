@@ -2,18 +2,18 @@
 # Configure an LVS/DR real server (ADR-16): bind the VIP to loopback and suppress ARP so the
 # Director can deliver client frames without this node advertising the VIP itself.
 # Invoked explicitly via -t lvs-realserver, so LVS mode is implied — force it like lvs-director
-# rather than gating on ha.lvs.enabled (which callers may not set).
+# rather than gating on keepalived.lvs.enabled (which callers may not set).
 
 - name: Force LVS mode for this RealServer
   ansible.builtin.set_fact:
-    ha: "{{ ha | combine({'lvs': ha.lvs | combine({'enabled': true})}) }}"
+    ha: "{{ ha | combine({'lvs': keepalived.lvs | combine({'enabled': true})}) }}"
   tags: [lvs, lvs-realserver]
 
 - name: Validate LVS real server configuration
   ansible.builtin.assert:
     that:
-      - ha.vip | default('') | length > 0
-    fail_msg: "lvs-realserver requires ha.vip in group_vars/all.yml"
+      - keepalived.vip | default('') | length > 0
+    fail_msg: "lvs-realserver requires keepalived.vip in group_vars/all.yml"
     quiet: true
   tags: [lvs, lvs-realserver]
 

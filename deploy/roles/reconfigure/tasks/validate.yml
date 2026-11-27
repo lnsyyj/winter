@@ -18,7 +18,7 @@
     quiet: true
   vars:
     # The internal repo port is the single source of truth in group_vars/all.yml.
-    repo_port: "{{ repo_nginx_listen_port }}"
+    repo_port: "{{ repo_nginx.listen_port }}"
     candidate_ports: "{{ [site.https_port, winter_server.port, patroni.port, patroni.rest_port, haproxy.listen_port, repo_port] + victoriametrics_ports.values() | list }}"
   tags: [reconfigure]
 

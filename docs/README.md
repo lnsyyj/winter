@@ -172,3 +172,4 @@ graph LR
 | 61 | [ADR-59-tag-role-inventory三者同名.md](./02-研发线/04-架构师/ADR-59-tag-role-inventory三者同名.md) | 架构师 ④ | **已确认** · 2026-11-27 | 强制 26 role = 26 tag = 26 inventory 组：修 prechecks/LVS 组名不一致，补 haproxy/patroni 等操作入口，监控拆 5 独立 role，删死组 |
 | 62 | [ADR-60-监控组件配置拆到各自软件字典.md](./02-研发线/04-架构师/ADR-60-监控组件配置拆到各自软件字典.md) | 架构师 ④ | **已确认** · 2026-11-27 | vmalert/victorialogs/alertmanager/grafana 各有独立配置字典，components 改为兼容视图；修字典自引用递归与 example 缺键 |
 | 63 | [ADR-61-platform配置块拆分归位.md](./02-研发线/04-架构师/ADR-61-platform配置块拆分归位.md) | 架构师 ④ | **已确认** · 2026-11-27 | 删除无 role 的 platform 块：repo/harbor/retention 归各自字典，死配置 auth 删除，真全局 domain/https_port/data_dir/version 建 site.* 块；87 处引用同步 |
+| 64 | [ADR-62-剩余role变量归位到软件字典.md](./02-研发线/04-架构师/ADR-62-剩余role变量归位到软件字典.md) | 架构师 ④ | **已确认** · 2026-11-27 | 逐项检查74个顶层配置：ha→keepalived、pg_*→postgresql_*、victoriametrics散落项→common字典、repo_nginx_listen_port→字典内；两次自引用陷阱 |

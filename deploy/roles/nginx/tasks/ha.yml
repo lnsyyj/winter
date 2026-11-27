@@ -28,7 +28,7 @@
 - name: Apply role lvs-realserver
   ansible.builtin.include_role:
     name: lvs-realserver
-  when: ha.lvs.enabled | bool
+  when: keepalived.lvs.enabled | bool
   tags: [application-ha]
 - name: Apply role nginx
   ansible.builtin.include_role:

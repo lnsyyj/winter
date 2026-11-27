@@ -4,15 +4,15 @@
 # the others (active-active), so no Director is idle. With LVS/DR each VIP dispatches across
 # every [nginx] backend and real servers answer directly, bypassing the Director.
 
-{% if ha.vips | default([]) | length > 0 %}
-{% set vips = ha.vips %}
+{% if keepalived.vips | default([]) | length > 0 %}
+{% set vips = keepalived.vips %}
 {% else %}
-{% set vips = [ha.vip] %}
+{% set vips = [keepalived.vip] %}
 {% endif %}
 {% set lb_nodes = groups['keepalived'] | default([]) %}
 {% set lb_count = lb_nodes | length if lb_nodes | length > 0 else 1 %}
 {% set node_index = lb_nodes.index(inventory_hostname) if inventory_hostname in lb_nodes else 0 %}
-{% set lvs_on = ha.lvs.enabled | default(false) | bool %}
+{% set lvs_on = keepalived.lvs.enabled | default(false) | bool %}
 
 global_defs {
     router_id winter-{{ inventory_hostname }}
@@ -23,7 +23,7 @@ global_defs {
 {% if lvs_on %}
 vrrp_script chk_lvs {
     script "{{ keepalived.lvs_check_script }}"
-    interval {{ ha.nginx_check_interval }}
+    interval {{ keepalived.nginx_check_interval }}
     timeout 2
     rise 2
     fall 3
@@ -31,7 +31,7 @@ vrrp_script chk_lvs {
 {% else %}
 vrrp_script chk_nginx {
     script "{{ keepalived.check_script }}"
-    interval {{ ha.nginx_check_interval }}
+    interval {{ keepalived.nginx_check_interval }}
     timeout 2
     rise 2
     fall 3
@@ -42,14 +42,14 @@ vrrp_script chk_nginx {
 {% set master_index = loop.index0 % lb_count %}
 vrrp_instance WINTER_{{ loop.index }} {
     state BACKUP
-    interface {{ ha.interface }}
-    virtual_router_id {{ (ha.virtual_router_id | int) + loop.index0 }}
-    priority {{ (ha.priority | int) if node_index == master_index else ((ha.priority | int) - 10) }}
-    advert_int {{ ha.advertise_interval }}
-    preempt {% if ha.preempt | default(true) %}true{% else %}false{% endif %}
+    interface {{ keepalived.interface }}
+    virtual_router_id {{ (keepalived.virtual_router_id | int) + loop.index0 }}
+    priority {{ (keepalived.priority | int) if node_index == master_index else ((keepalived.priority | int) - 10) }}
+    advert_int {{ keepalived.advertise_interval }}
+    preempt {% if keepalived.preempt | default(true) %}true{% else %}false{% endif %}
 
     authentication {
-        auth_type {{ ha.auth_type }}
+        auth_type {{ keepalived.auth_type }}
         auth_pass {{ vault_keepalived_auth_pass }}
     }
 
@@ -64,7 +64,7 @@ vrrp_instance WINTER_{{ loop.index }} {
         chk_nginx
 {% endif %}
     }
-{% set peers = ha_peer_addresses | default(ha.peer_addresses | default([])) %}
+{% set peers = ha_peer_addresses | default(keepalived.peer_addresses | default([])) %}
 {% if peers | length > 0 %}
     unicast_peer {
 {% for peer in peers %}
@@ -78,19 +78,19 @@ vrrp_instance WINTER_{{ loop.index }} {
 
 {% for vip in vips %}
 # LVS/DR for VIP {{ vip }}: connections are scheduled across every real Nginx backend.
-virtual_server {{ vip }} {{ ha.lvs.real_server_port }} {
-    delay_loop {{ ha.lvs.health_interval }}
-    lb_algo {{ ha.lvs.scheduler }}
+virtual_server {{ vip }} {{ keepalived.lvs.real_server_port }} {
+    delay_loop {{ keepalived.lvs.health_interval }}
+    lb_algo {{ keepalived.lvs.scheduler }}
     lb_kind DR
-    persistence_timeout {{ ha.lvs.persistence_timeout }}
+    persistence_timeout {{ keepalived.lvs.persistence_timeout }}
     protocol TCP
 
-{% for rs in ha.lvs.real_servers | default([]) %}
-    real_server {{ rs }} {{ ha.lvs.real_server_port }} {
+{% for rs in keepalived.lvs.real_servers | default([]) %}
+    real_server {{ rs }} {{ keepalived.lvs.real_server_port }} {
         weight 1
         TCP_CHECK {
-            connect_timeout {{ ha.lvs.connect_timeout }}
-            connect_port {{ ha.lvs.real_server_port }}
+            connect_timeout {{ keepalived.lvs.connect_timeout }}
+            connect_port {{ keepalived.lvs.real_server_port }}
         }
     }
 {% endfor %}

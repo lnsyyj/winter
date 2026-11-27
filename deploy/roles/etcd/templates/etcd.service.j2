@@ -17,7 +17,7 @@ ExecStart={{ etcd.bin_dir }}/etcd \
   --advertise-client-urls http://{{ ansible_host }}:{{ etcd.client_port }} \
   --listen-peer-urls http://{{ ansible_host }}:{{ etcd.peer_port }} \
   --initial-advertise-peer-urls http://{{ ansible_host }}:{{ etcd.peer_port }} \
-  --initial-cluster {% if etcd_joining | default(false) and etcd_initial_cluster is defined %}{{ etcd_initial_cluster }}{% else %}{% set members = groups['etcd'] | difference((pg_scale | default({})).removed_nodes | default([])) %}{% for h in members %}{{ h }}=http://{{ hostvars[h]['inventory_hostname'] }}:{{ etcd.peer_port }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %} \
+  --initial-cluster {% if etcd_joining | default(false) and etcd_initial_cluster is defined %}{{ etcd_initial_cluster }}{% else %}{% set members = groups['etcd'] | difference((postgresql_scale | default({})).removed_nodes | default([])) %}{% for h in members %}{{ h }}=http://{{ hostvars[h]['inventory_hostname'] }}:{{ etcd.peer_port }}{% if not loop.last %},{% endif %}{% endfor %}{% endif %} \
   --initial-cluster-token winter-etcd \
   --initial-cluster-state {% if etcd_joining | default(false) and etcd_initial_cluster is defined %}existing{% else %}new{% endif %} \
   --heartbeat-interval 1000 \

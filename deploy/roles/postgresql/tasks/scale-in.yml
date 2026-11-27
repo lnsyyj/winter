@@ -7,12 +7,12 @@
 - name: Validate scale-in plan
   ansible.builtin.assert:
     that:
-      - pg_scale.removed_nodes | length > 0
-      - pg_scale.removed_nodes | unique | length == pg_scale.removed_nodes | length
-      - pg_scale.removed_nodes | difference(groups['etcd']) | length == 0
-      - (groups['etcd'] | length - pg_scale.removed_nodes | length) % 2 == 1
-      - (groups['etcd'] | length - pg_scale.removed_nodes | length) >= 3
-      - not (pg_scale.purge_data | bool) or (pg_scale.data_dirs | default([]) | length > 0)
+      - postgresql_scale.removed_nodes | length > 0
+      - postgresql_scale.removed_nodes | unique | length == postgresql_scale.removed_nodes | length
+      - postgresql_scale.removed_nodes | difference(groups['etcd']) | length == 0
+      - (groups['etcd'] | length - postgresql_scale.removed_nodes | length) % 2 == 1
+      - (groups['etcd'] | length - postgresql_scale.removed_nodes | length) >= 3
+      - not (postgresql_scale.purge_data | bool) or (postgresql_scale.data_dirs | default([]) | length > 0)
     fail_msg: "Removed nodes must be in [etcd], leave an odd count >= 3, and purge_data requires an explicit data_dirs list"
     quiet: true
   run_once: true
@@ -20,7 +20,7 @@
 
 - name: Record the expected member count after removal
   ansible.builtin.set_fact:
-    pg_expected_members: "{{ groups['etcd'] | length - pg_scale.removed_nodes | length }}"
+    pg_expected_members: "{{ groups['etcd'] | length - postgresql_scale.removed_nodes | length }}"
   tags: [postgresql-scale-in]
 
 
@@ -29,21 +29,21 @@
   ansible.builtin.uri:
     url: "http://{{ hostvars[item]['inventory_hostname'] }}:{{ patroni.rest_port }}/replica"
     status_code: 200
-  loop: "{{ pg_scale.removed_nodes }}"
-  delegate_to: "{{ groups['etcd'] | difference(pg_scale.removed_nodes) | first }}"
+  loop: "{{ postgresql_scale.removed_nodes }}"
+  delegate_to: "{{ groups['etcd'] | difference(postgresql_scale.removed_nodes) | first }}"
   tags: [postgresql-scale-in]
 
 - name: Resolve etcd member IDs for removed nodes
   ansible.builtin.shell: |
     set -o pipefail
     {{ etcd.bin_dir }}/etcdctl \
-      --endpoints=http://{{ hostvars[groups['etcd'] | difference(pg_scale.removed_nodes) | first]['inventory_hostname'] }}:{{ etcd.client_port }} \
+      --endpoints=http://{{ hostvars[groups['etcd'] | difference(postgresql_scale.removed_nodes) | first]['inventory_hostname'] }}:{{ etcd.client_port }} \
       member list -w table \
     | awk -F'|' -v n="{{ item }}" '$3 ~ n {gsub(/^[ \t]+|[ \t]+$/, "", $2); print $2}'
   args:
     executable: /bin/bash
-  loop: "{{ pg_scale.removed_nodes }}"
-  delegate_to: "{{ groups['etcd'] | difference(pg_scale.removed_nodes) | first }}"
+  loop: "{{ postgresql_scale.removed_nodes }}"
+  delegate_to: "{{ groups['etcd'] | difference(postgresql_scale.removed_nodes) | first }}"
   register: pg_etcd_member_ids
   changed_when: false
   tags: [postgresql-scale-in]
@@ -51,11 +51,11 @@
 - name: Remove etcd members
   ansible.builtin.command: >-
     {{ etcd.bin_dir }}/etcdctl
-    --endpoints=http://{{ hostvars[groups['etcd'] | difference(pg_scale.removed_nodes) | first]['inventory_hostname'] }}:{{ etcd.client_port }}
+    --endpoints=http://{{ hostvars[groups['etcd'] | difference(postgresql_scale.removed_nodes) | first]['inventory_hostname'] }}:{{ etcd.client_port }}
     member remove {{ item.stdout | trim }}
   loop: "{{ pg_etcd_member_ids.results }}"
   when: item.stdout | trim | length > 0
-  delegate_to: "{{ groups['etcd'] | difference(pg_scale.removed_nodes) | first }}"
+  delegate_to: "{{ groups['etcd'] | difference(postgresql_scale.removed_nodes) | first }}"
   run_once: true
   changed_when: true
   tags: [postgresql-scale-in]
@@ -66,15 +66,15 @@
     state: stopped
     enabled: false
   loop: [etcd, patroni]
-  when: inventory_hostname in pg_scale.removed_nodes
+  when: inventory_hostname in postgresql_scale.removed_nodes
   tags: [postgresql-scale-in]
 
 - name: Purge explicitly listed data directories (opt-in)
   ansible.builtin.file:
     path: "{{ item }}"
     state: absent
-  loop: "{{ pg_scale.data_dirs | default([]) }}"
-  when: inventory_hostname in pg_scale.removed_nodes and pg_scale.purge_data | bool
+  loop: "{{ postgresql_scale.data_dirs | default([]) }}"
+  when: inventory_hostname in postgresql_scale.removed_nodes and postgresql_scale.purge_data | bool
   tags: [postgresql-scale-in]
 
 
@@ -82,8 +82,8 @@
 - name: Report scale-in result
   ansible.builtin.debug:
     msg:
-      - "Removed {{ pg_scale.removed_nodes | join(', ') }}; remaining etcd members: {{ pg_expected_members }}"
-      - "Data preserved: {{ not (pg_scale.purge_data | bool) }}. Remove the hosts from [etcd] in inventory when ready"
+      - "Removed {{ postgresql_scale.removed_nodes | join(', ') }}; remaining etcd members: {{ pg_expected_members }}"
+      - "Data preserved: {{ not (postgresql_scale.purge_data | bool) }}. Remove the hosts from [etcd] in inventory when ready"
   run_once: true
   tags: [postgresql-scale-in]
 
@@ -91,20 +91,20 @@
 - name: Apply role postgresql
   ansible.builtin.include_role:
     name: postgresql
-  when: inventory_hostname not in pg_scale.removed_nodes
+  when: inventory_hostname not in postgresql_scale.removed_nodes
   tags: [postgresql-scale-in]
 - name: Apply role etcd
   ansible.builtin.include_role:
     name: etcd
-  when: inventory_hostname not in pg_scale.removed_nodes
+  when: inventory_hostname not in postgresql_scale.removed_nodes
   tags: [postgresql-scale-in]
 - name: Apply role patroni
   ansible.builtin.include_role:
     name: patroni
-  when: inventory_hostname not in pg_scale.removed_nodes
+  when: inventory_hostname not in postgresql_scale.removed_nodes
   tags: [postgresql-scale-in]
 - name: Apply role haproxy
   ansible.builtin.include_role:
     name: haproxy
-  when: inventory_hostname not in pg_scale.removed_nodes
+  when: inventory_hostname not in postgresql_scale.removed_nodes
   tags: [postgresql-scale-in]

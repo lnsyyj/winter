@@ -5,8 +5,8 @@
   ansible.builtin.set_fact:
     dns_check_vips: >-
       {{ named.vips | default([]) if (named.vips | default([]) | length > 0)
-         else (ha.vips | default([]) if (ha.vips | default([]) | length > 0)
-         else ([ha.vip] if (ha.vip | default('') | length > 0) else [])) }}
+         else (keepalived.vips | default([]) if (keepalived.vips | default([]) | length > 0)
+         else ([keepalived.vip] if (keepalived.vip | default('') | length > 0) else [])) }}
 
 - name: Precheck DNS | Validate basic configuration
   ansible.builtin.assert:
@@ -19,7 +19,7 @@
     fail_msg: >-
       Invalid DNS configuration: enabled={{ named.enabled }}, domain={{ named.domain | default('') }},
       listen_port={{ named.listen_port }}, install_method={{ named.install_method }},
-      vips={{ dns_check_vips | default([]) }}. Set named.domain and either named.vips, ha.vips or ha.vip
+      vips={{ dns_check_vips | default([]) }}. Set named.domain and either named.vips, keepalived.vips or keepalived.vip
       in group_vars/all.yml; supported install methods are package and repo.
     success_msg: "DNS configuration is valid: domain={{ named.domain }}, vips={{ dns_check_vips | join(',') }}"
     quiet: true
