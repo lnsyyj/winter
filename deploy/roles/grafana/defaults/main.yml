@@ -1,0 +1,13 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+grafana: "{{ grafana_defaults | combine(grafana_overrides | default({}, true), recursive=True) }}"
+
+grafana_defaults:
+  enabled: true
+  mode: directory
+  tarball: grafana-9.5.20.linux-amd64.tar.gz
+  install_dir: /opt/winter/grafana
+  port: "{{ victoriametrics_ports.grafana }}"
+  health_path: /api/health

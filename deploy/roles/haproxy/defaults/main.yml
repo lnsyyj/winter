@@ -1,0 +1,17 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+haproxy:
+  rpm: haproxy-2.8.14-4.el9.x86_64.rpm
+  rpm_subdir: rpm/base
+  config: /etc/haproxy/haproxy.cfg
+  listen_port: 5434       # applications connect here; always points to current primary
+  check_interval: 2s
+  check_fall: 3
+  check_rise: 2
+
+# ---- consolidated from roles/harbor/defaults/main.yml ----
+
+# ---- consolidated from roles/keepalived/defaults/main.yml ----
+# ---- keepalived role (ADR-62): VIP/VRRP/LVS + local paths, one dict ----

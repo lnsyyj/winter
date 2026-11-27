@@ -1,0 +1,14 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+lvs_realserver:
+  sysctl_path: /etc/sysctl.d/99-winter-lvs.conf
+  helper: /usr/local/bin/winter-lvs-vip.sh
+  unit: winter-lvs-vip.service
+  vip: "{{ keepalived.vip }}"
+
+# ---- consolidated from roles/winter-server/defaults/main.yml ----
+
+# ---- Secrets (consolidated from group_vars/all.yml, ADR-45) ----
+# Fill real values on the control machine; this file is gitignored.

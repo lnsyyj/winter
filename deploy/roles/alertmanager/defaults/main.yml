@@ -1,0 +1,14 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+alertmanager: "{{ alertmanager_defaults | combine(alertmanager_overrides | default({}, true), recursive=True) }}"
+
+alertmanager_defaults:
+  enabled: true
+  tarball: alertmanager-0.35.0.linux-amd64.tar.gz
+  binary: alertmanager
+  port: "{{ victoriametrics_ports.alertmanager }}"
+  listen_flag: --web.listen-address
+  health_path: /-/healthy
+  args: "--config.file=/etc/winter/monitoring/alertmanager.yml --storage.path=/var/lib/winter/monitoring/alertmanager"

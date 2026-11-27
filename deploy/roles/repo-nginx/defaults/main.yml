@@ -1,0 +1,18 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+repo_nginx:
+  # Internal artifact repo base URL (ADR-15/61): derived from the first [repo-nginx] host.
+  # Consumed by all roles that download tarballs/RPMs from the internal repo.
+  base_url: "http://{{ hostvars[groups['repo-nginx'][0]]['ansible_host'] | default(hostvars[groups['repo-nginx'][0]]['inventory_hostname']) }}:8082"   # keep in sync with listen_port (ADR-62: literal avoids dict self-ref)
+  # Artifact source (directory on the control machine)
+  src: "{{ playbook_dir }}/artifacts/repo"
+  # Publish directory (Nginx root)
+  root: "/var/lib/winter/www/repo"
+  listen_port: 8082                      # internal repo port (single source of truth, ADR-62)
+  # Subnet allowed to access (change to the actual internal subnet on site)
+  allow_cidr: "192.168.101.0/24"
+
+
+# ---- consolidated from roles/patroni/defaults/main.yml ----

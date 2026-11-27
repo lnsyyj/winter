@@ -1,0 +1,16 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+etcd_defaults:
+  client_port: 2379              # client read/write port
+  peer_port: 2380                # Raft peer communication between members
+  data_dir: /var/lib/etcd        # etcd data (mode 0700)
+  bin_dir: /usr/local/bin        # etcd / etcdctl install directory
+  tarball: etcd-v3.5.17-linux-amd64.tar.gz
+  tarball_subdir: tarball        # subdir under repo_nginx.base_url
+  firewall_cidr: "192.168.101.0/24"   # subnet allowed to reach 2379/2380
+
+etcd: "{{ etcd_defaults | combine(etcd_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/haproxy/defaults/main.yml ----

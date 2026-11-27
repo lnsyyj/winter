@@ -1,0 +1,50 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+winter_server:
+  enabled: true
+  run_user: winter-server
+  health_retries: 20
+  health_delay: 2
+  bin_dir: /usr/local/bin
+  config_dir: /etc/winter
+  env_file: /etc/winter/server.env
+  listen_addr: 127.0.0.1
+  port: 8081                        # keep in sync with nginx.api_upstream
+  app_env: prod
+  admin_user: admin
+  artifact: winter-server
+  bin_subdir: bin
+  # Data retention (ADR-32): 180d audit is a hard floor; reconfigure refuses to start below it.
+  # Profiles: minimal 7/15/30/180 · standard 30/30/90/180 · long 90/90/365/730
+  retention:
+    logs_days: 30
+    metrics_days: 30
+    tasks_days: 90
+    audit_online_days: 180
+    sessions_days: 7
+
+
+# Server replicas (ADR-34): the binary is stateless, sessions and tokens live in PostgreSQL.
+# Single-node defaults keep localhost; the HA playbook overrides winter_server.listen_addr with
+# each replica's internal address. database_host must point at the PG HA access point (HAProxy/VIP)
+# once replicas are spread across nodes.
+
+winter_server_ha_defaults:
+  # DB endpoint mode: auto (detect HAProxy config on host, fall back to node count) | direct (local
+  # 5432 system PG) | haproxy (winter_server_ha.database_host:5434). Most deployments leave this on auto.
+  database_endpoint: auto
+  database_host: 127.0.0.1
+  audit_database_host: 127.0.0.1
+
+winter_server_ha: "{{ winter_server_ha_defaults | combine(winter_server_keepalived_overrides | default({}, true), recursive=True) }}"
+
+# Harbor (ADR-16).
+# mode: builtin  — MVP single node. Harbor's own bundled PostgreSQL, Redis and local data volume.
+#                 No external PG / Redis / NFS required. This is the default and matches the
+#                 ADR-16 MVP decision (Harbor's bundled PG or a standalone instance;
+#                 multi-replica + external dependencies are V1).
+# mode: external — V1 HA. Multiple replicas share an external PostgreSQL (the platform PG HA
+#                 entry point), an external Redis and an NFS share. All three are site
+#                 prerequisites; this framework never deploys a Redis or NFS server on its own.

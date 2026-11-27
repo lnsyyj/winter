@@ -1,0 +1,14 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+victorialogs: "{{ victorialogs_defaults | combine(victorialogs_overrides | default({}, true), recursive=True) }}"
+
+victorialogs_defaults:
+  enabled: true
+  tarball: victoria-logs-linux-amd64-v1.54.0.tar.gz
+  binary: victoria-logs-prod
+  port: "{{ victoriametrics_ports.victorialogs }}"
+  listen_flag: -httpListenAddr
+  health_path: /health
+  args: "-storageDataPath=/var/lib/winter/monitoring/victorialogs -retentionPeriod=30d"

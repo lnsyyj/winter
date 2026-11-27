@@ -334,6 +334,10 @@ git reflog                            # 兜底：找回误操作前的 HEAD
   （`<软件名>.*`），禁止概念名前缀或寄生在别人的字典下（如 etcd 配置不能放 `pg_cluster.etcd.*`）。
   真被多个 role 共享的配置（domain/https_port/data_dir/version）放 `site.*` 并注明"无单一 role"，
   不允许用 `platform` 这类"看起来像 role 却没有 role"的名字兜底。零引用的配置直接删除，不迁移。
+- **配置分层原则（ADR-63）**：每个 role 的默认值归 `roles/<role>/defaults/main.yml`（真相源、入库），
+  站点覆盖（`*_overrides`）与密码（`vault_*`）归 `group_vars/all.yml`（不入库），全局共享归 `site.*`。
+  因 Ansible 单 tag 只加载当前 play 的 role defaults，改完 defaults 必须跑
+  `python3 scripts/build-role-defaults.py` 把默认值聚合进 all.yml 的标记块，否则部署读不到新值。
 
 > 验证方式：部署后 `systemctl status <名>`、`pgrep -x <名>`、`journalctl -u <名>` 三者指向同一进程；不满足即视为未完成。
 
@@ -625,3 +629,4 @@ trim_trailing_whitespace = false
 | 2026-11-27 | 监控组件配置拆到各自软件字典（ADR-60）：vmalert/victorialogs/alertmanager/grafana 各有 <name>_defaults/<name> 字典，victoriametrics.components 保留为兼容视图；补齐 example 缺键、修字典自引用递归 | 本次提交 |
 | 2026-11-27 | platform 配置块拆分归位（ADR-61）：repo_base_url→repo_nginx.*、registry_*→harbor.*、retention→winter_server.*，零引用死配置 auth 删除；真全局 domain/https_port/data_dir/version 建 site.* 块；全仓 87 处引用同步 | 本次提交 |
 | 2026-11-27 | 剩余 role 变量归位（ADR-62）：ha.*→keepalived.*（合并字典）、pg_*→postgresql_*、victoriametrics 散落项→common 字典+兼容别名、repo_nginx_listen_port→字典内；两次 ADR-60 自引用陷阱 | 本次提交 |
+| 2026-11-27 | 恢复 role 自带 defaults（ADR-63，取代 ADR-45 的 role 无 defaults）：22 个 role 建 defaults/main.yml 为真相源，build-role-defaults.py 聚合进 all.yml 标记块保证单 tag 跨 role 可见；site 字面值内联；73 键守恒 | 本次提交 |

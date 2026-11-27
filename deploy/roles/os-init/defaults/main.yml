@@ -1,0 +1,31 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+os_init_defaults:
+  enabled: true
+
+  # Base OS packages. In an offline site these come from the OS installation media,
+  # not from the platform's internal artifact repo (which carries platform artifacts only).
+  # podman is installed by the dedicated podman role (ADR-58), not here.
+  packages:
+    - python3
+    - python3-pip
+    - curl
+    - wget
+    - chrony
+
+  chrony:
+    enabled: true
+    service: chronyd
+    config_file: /etc/chrony.conf
+    include_dir: /etc/chrony.d
+    include_file: /etc/chrony.d/winter.conf
+    # Empty keeps the distribution's default time sources. Non-empty appends an include file with
+    # these servers; existing configuration is never overwritten or removed.
+    servers: []
+
+os_init: "{{ os_init_defaults | combine(os_init_overrides | default({}, true), recursive=True) }}"
+
+# ---- podman role (container runtime, ADR-11 / ADR-58) ----
+# podman is a standalone role, not a package inside os_init.packages.

@@ -1,0 +1,38 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+keepalived_defaults:
+  config_path: /etc/keepalived/keepalived.conf
+  check_script: /etc/keepalived/check_nginx.sh
+  lvs_check_script: /etc/keepalived/check_lvs.sh
+  service: keepalived
+  # VIP/VRRP and LVS/DR settings (merged from legacy ha.*, ADR-62)
+  enabled: false
+  interface: eth0                         # NIC that carries the VIP
+  vip: ""                                 # single VIP (active-standby)
+  # Multiple VIPs enable active-active Directors: each [keepalived] node owns one VIP as MASTER and
+  # backs up the rest. Publish every VIP as an A record for the platform domain so clients
+  # spread across Directors. Empty falls back to the single keepalived.vip.
+  vips: []                                # e.g. [10.0.0.100, 10.0.0.101]
+  virtual_router_id: 51                   # base VRRP ID; each extra VIP increments it
+  priority: 100                           # override per host for master/backup (e.g. 100 / 90)
+  advertise_interval: 1
+  preempt: true
+  auth_type: PASS
+  nginx_check_interval: 2                 # health-check script interval in seconds
+  peer_addresses: []                      # other [keepalived] addresses; computed by the playbook when empty
+  # LVS/DR four-layer load balancing (Keepalived native). Without it the VIP only provides
+  # failover and every connection lands on the single node holding the VIP.
+  lvs:
+    enabled: false                        # requires at least two [nginx]
+    scheduler: rr                         # rr / wrr / lc / wlc
+    persistence_timeout: 0                # seconds, 0 = no session affinity
+    health_interval: 6
+    connect_timeout: 3
+    real_server_port: "443"
+    real_servers: []                      # computed by application-ha from [nginx]
+
+keepalived: "{{ keepalived_defaults | combine(keepalived_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/repo-nginx/defaults/main.yml ----

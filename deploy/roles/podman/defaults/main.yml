@@ -1,0 +1,12 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+podman_defaults:
+  enabled: true
+  package: podman
+  disablerepo: []        # e.g. ['pgdg*'] when third-party repos are unreachable
+
+podman: "{{ podman_defaults | combine(podman_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/uninstall/defaults/main.yml ----

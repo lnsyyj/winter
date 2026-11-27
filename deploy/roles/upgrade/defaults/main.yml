@@ -1,0 +1,10 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+upgrade:
+  target_version: ""
+  require_checksums: true
+
+# Platform uninstall (ADR-17 destroy stage). Review these paths if any deployment path was customized.
+# purge_data is off by default; an explicit data_dirs list is required to remove anything irreversible.

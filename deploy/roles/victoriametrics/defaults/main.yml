@@ -1,0 +1,76 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+victoriametrics_common:
+  ports:
+    victoriametrics: 8428
+    vmalert: 8880
+    victorialogs: 9428
+    alertmanager: 9093
+    grafana: 3000
+  listen_addr: 127.0.0.1
+  bind_addr: 127.0.0.1
+  advertise_addr: 127.0.0.1
+  health_retries: 30
+  health_delay: 2
+  vmalert_notifiers:
+    - "127.0.0.1"
+
+# Compat aliases -> victoriametrics_common (ADR-62). Roles may use either form.
+
+victoriametrics_ports: "{{ victoriametrics_common.ports }}"
+
+victoriametrics_listen_addr: "127.0.0.1"
+
+victoriametrics_bind_addr: "{{ victoriametrics_common.bind_addr }}"
+
+victoriametrics_advertise_addr: "{{ victoriametrics_common.advertise_addr }}"
+
+victoriametrics_health_retries: "{{ victoriametrics_common.health_retries }}"
+
+victoriametrics_health_delay: "{{ victoriametrics_common.health_delay }}"
+
+victoriametrics_vmalert_notifiers: "{{ victoriametrics_common.vmalert_notifiers }}"
+
+
+# Monitoring scale-out / scale-in (ADR-18 / ADR-33).
+# Scope: stateless and HA layers only — Alertmanager gossip HA, Grafana replicas behind Nginx,
+# and vmalert instances. VictoriaMetrics / VictoriaLogs use the single-node binaries with local
+# storage and therefore stay one authoritative replica; set remote_write_url to aggregate
+# additional replicas into a central VictoriaMetrics, but the playbooks never do that implicitly.
+# Single-node default keeps the local Alertmanager; monitoring scale playbooks override this with
+# the addresses of all Alertmanager replicas so alerts are de-duplicated by the gossip cluster.
+
+victoriametrics_vmalert_notifiers:
+  - "{{ victoriametrics_listen_addr }}"
+
+victoriametrics_scale_defaults:
+  nodes: []                  # scale-out targets, must already be listed in the [victoriametrics] group
+  removed_nodes: []          # scale-in targets, kept in [victoriametrics] but excluded from all references
+  purge_data: false          # never remove monitoring data unless explicitly requested
+  data_dirs: []              # required and non-empty when purge_data is true
+  cluster_port: 9094         # Alertmanager gossip port
+  metrics_query_url: ""      # Grafana datasource target; empty resolves to the first active monitor node
+
+# Monitoring component configs (ADR-60): one dict per software role.
+# Shared paths/runtime stay in victoriametrics.* below; each component owns its own binary/ports/args.
+
+victoriametrics:
+  enabled: true
+  bin_dir: /usr/local/bin
+  data_dir: /var/lib/winter/monitoring
+  config_dir: /etc/winter/monitoring
+  listen_addr: "{{ victoriametrics_listen_addr }}"
+  run_user: winter-monitor          # run as non-root (similar constraint to ADR-19)
+  retention_days: 30
+  tarball_subdir: tarball
+  # ADR-60 compatibility view: rebuild the old components dict from the four
+  # standalone software dicts above. Code that iterates all components keeps working;
+  # each component role reads its own <name>.* dict directly.
+  components: "{{ {'victoriametrics': {'enabled': true, 'tarball': 'victoria-metrics-linux-amd64-v1.156.0.tar.gz', 'binary': 'victoria-metrics-prod', 'port': victoriametrics_ports.victoriametrics, 'listen_flag': '-httpListenAddr', 'health_path': '/health', 'args': '-storageDataPath=/var/lib/winter/monitoring/victoriametrics -retentionPeriod=30d'}, 'vmalert': vmalert, 'victorialogs': victorialogs, 'alertmanager': alertmanager, 'grafana': grafana} }}"
+# Server (Go single binary + systemd); passwords and secrets live only in group_vars/all.yml, never here
+
+victoriametrics_scale: "{{ victoriametrics_scale_defaults | combine(victoriametrics_scale_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/winter_agent/defaults/main.yml ----

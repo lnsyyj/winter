@@ -1,0 +1,26 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+nginx_defaults:
+  # External domain (same as certificate CN); defaults to the platform domain
+  server_name: "winter.local"
+
+  http_port: 80
+  https_port: "443"
+
+  # Separate directory to avoid mixing with existing sites' (e.g. argus) /var/www
+  doc_root: "/var/lib/winter/www"
+  tls_dir: "/var/lib/winter/tls"
+  conf_path: /etc/nginx/conf.d/winter.conf
+
+  # Backend API (this platform's Server).
+  # Note: 8080 may already be occupied by other services on the same host; default to 8081, keep it consistent when deploying the Server.
+  api_upstream: "http://127.0.0.1:8081"
+
+  # Self-signed certificate validity (days)
+  tls_days: 825
+
+nginx: "{{ nginx_defaults | combine(nginx_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/postgresql/defaults/main.yml ----

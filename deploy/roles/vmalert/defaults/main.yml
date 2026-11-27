@@ -1,0 +1,14 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+vmalert: "{{ vmalert_defaults | combine(vmalert_overrides | default({}, true), recursive=True) }}"
+
+vmalert_defaults:
+  enabled: true
+  tarball: vmalert-linux-amd64-v1.156.0.tar.gz
+  binary: vmalert-prod
+  port: "{{ victoriametrics_ports.vmalert }}"
+  listen_flag: -httpListenAddr
+  health_path: /health
+  args: "-datasource.url=http://{{ victoriametrics_metrics_url | default(victoriametrics_listen_addr) }}:{{ victoriametrics_ports.victoriametrics }} -rule=/etc/winter/monitoring/rules/*.yml -evaluationInterval=15s"

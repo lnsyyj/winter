@@ -1,0 +1,25 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+uninstall_defaults:
+  enabled: true
+
+  # Destructive options are off by default. purge_data requires an explicit non-empty data_dirs list.
+  purge_data: false
+  data_dirs: []
+  remove_users: false
+
+  services: []
+  unit_paths: []
+  file_paths: []
+  users: []
+
+  firewall:
+    remove_rule: false
+    cidr: ""
+    port: 0
+
+uninstall: "{{ uninstall_defaults | combine(uninstall_overrides | default({}, true), recursive=True) }}"
+
+# ---- consolidated from roles/nginx/defaults/main.yml ----

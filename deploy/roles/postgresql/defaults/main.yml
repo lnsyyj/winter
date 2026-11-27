@@ -1,0 +1,117 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+postgresql_scale_defaults:
+  nodes: []            # scale-out targets, e.g. [pg-d, pg-e]
+  removed_nodes: []    # scale-in targets, e.g. [pg-e]
+  purge_data: false
+  data_dirs: []
+
+# Version upgrade (ADR-17): versions are pinned in group_vars and in artifacts/repo/SHA256SUMS.txt.
+# Pass target_version at runtime with -e; empty by default so an upgrade cannot be run accidentally.
+
+postgresql_cluster_defaults:
+  scope: winter-pg          # Patroni cluster scope (DCS key prefix)
+  # Single-node HA bootstrap (1-member etcd + single Patroni + HAProxy) is technically valid but
+  # offers no fault tolerance. Opt in explicitly for a 1 -> 3 online growth path; keep false for
+  # production so an undersized [etcd] is never deployed by accident.
+  allow_single_node_bootstrap: false
+  vip_iface_cidr: "192.168.101.0/24"   # subnet shared by pg_hba and all component firewalls
+# NOTE (ADR-53): Patroni's port/rest_port/data_dir moved to patroni.*; HAProxy's
+# listen_port/check_* moved to haproxy.*. postgresql_cluster keeps only cluster-wide policy/network.
+
+# Observability stack (ADR-18 / ADR-33): all components installed by default, single node, all listening only on localhost
+# Ports, versions and retention may only be changed here; roles do not hardcode ports.
+# Grafana is reverse-proxied via Nginx /grafana/ (ADR-09); port 3000 is not exposed directly.
+# ---- victoriametrics stack shared config (ADR-62) ----
+# Genuinely shared by all 5 monitoring roles. One dict; flat names below are compat aliases.
+
+postgresql_migrate_defaults:
+  source_port: "{{ postgresql.port | default(5432) }}"
+  target_port: "{{ haproxy.listen_port }}"
+  database: "{{ postgresql.db_name | default('winter') }}"
+  role: "{{ postgresql.db_user | default('winter') }}"
+  # Marker written on the HA primary after a verified migration; makes the stage idempotent.
+  marker_file: /etc/winter/pg-migrated
+  # Staging area for the dump on the control host (deleted after a successful verified restore).
+  dump_dir: /var/tmp/winter-pg-migrate
+  # Per-table row-count comparison; checksums add a full-row hash for the critical tables.
+  verify_checksums: true
+  # Critical tables additionally verified by content hash (business + audit chain).
+  critical_tables:
+    - users
+    - refresh_tokens
+    - regions
+    - azs
+    - clusters
+    - tasks
+    - audit_intents
+    - audit_results
+  # Server services stopped during the maintenance window (no writes to the source).
+  server_service: winter-server
+# ADR-42: operations set postgresql_migrate_overrides (partial dict); merge to preserve defaults.
+
+postgresql_migrate: "{{ postgresql_migrate_defaults | combine(postgresql_migrate_overrides | default({}, true), recursive=True) }}"
+
+
+# ADR-42: operation var files set *_overrides (partial dicts). extra-vars @file replaces whole
+# dicts, so merge onto defaults to preserve keys not listed in an operation file.
+
+postgresql_scale: "{{ postgresql_scale_defaults | combine(postgresql_scale_overrides | default({}, true), recursive=True) }}"
+
+postgresql_cluster: "{{ postgresql_cluster_defaults | combine(postgresql_cluster_overrides | default({}, true), recursive=True) }}"
+
+postgresql_defaults:
+  # Target major version. Empty = auto-detect (an already-running instance takes priority)
+  major: ""
+
+  # Empty = auto-detect (show data_directory)
+  data_dir: ""
+
+  # Connections and database
+  port: 5432
+  listen_addresses: "127.0.0.1"
+  db_name: winter
+  db_user: winter
+
+  # Whether to force-sync the password when the role already exists (default false: do not touch passwords others may have changed)
+  force_password: false
+
+  # Whether to tune memory parameters. Default false — tuning requires an instance restart, which interrupts other applications on the same machine (e.g. argus)
+  tune: false
+
+  # Effective when tune=true (rule of thumb for a 3GB single machine with co-located ceph; can be raised on a dedicated management node)
+  shared_buffers: 256MB
+  effective_cache_size: 1GB
+  work_mem: 4MB
+  maintenance_work_mem: 64MB
+  max_connections: 100
+
+  # Empty = postgresql-{{ major }}
+  service_name: ""
+
+  # Offline install: fetch the following RPMs from the internal repo (roles/repo-nginx), versions pinned to avoid on-site drift
+  rpm_subdir: rpm/pgdg17
+  # contrib is required: the Server migration creates the pgcrypto extension (0001_business.sql /
+  # 0001_audit.sql) on both single-node and HA databases. Without it a clean HA cluster fails
+  # to start the Server with 'extension pgcrypto is not available'.
+  rpm_packages:
+    - postgresql17-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-libs-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-server-17.11-1PGDG.rhel9.8.x86_64.rpm
+    - postgresql17-contrib-17.11-1PGDG.rhel9.8.x86_64.rpm
+  # contrib links against libperl.so.5.32, which the base OS already provides via perl-libs.
+  # Do NOT pin a perl-libs RPM here: the OS perl package requires an exact perl-libs version
+  # (e.g. 483), and installing a different one from the repo (e.g. 484) causes a dnf conflict.
+  # The local repo still carries perl-libs as a fallback for minimal hosts that lack it.
+  rpm_deps_subdir: rpm/base
+  rpm_deps: []
+  # Local staging directory
+  rpm_stage_dir: /var/tmp/winter-pg17
+
+postgresql: "{{ postgresql_defaults | combine(postgresql_overrides | default({}, true), recursive=True) }}"
+
+# ---- etcd role (DCS for Patroni); all etcd settings live here, not under postgresql_cluster ----
+# ADR-52: etcd is a standalone role (tag `etcd`), so its ports/dirs/binary are configured here.
+# Override with -e '{"etcd_overrides":{"client_port":...}}' without touching PG settings.

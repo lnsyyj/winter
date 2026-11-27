@@ -1,0 +1,40 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+harbor:
+  enabled: false
+  compose_command: docker-compose
+  staging_dir: /var/tmp/winter-harbor
+  mode: builtin                           # builtin | external
+  version: v2.11.0
+  tarball: harbor-offline-installer-v2.11.0.tgz
+  tarball_subdir: tarball
+  install_dir: /opt/winter/harbor
+  data_dir: /var/lib/winter/harbor
+  hostname: ""                           # registry host (Harbor FQDN); required when harbor.enabled
+  registry_ca_path: ""                    # CA bundle path for HTTPS registry
+  bind_addr: 127.0.0.1
+  http_port: 80
+  # Local data volume used in builtin mode (bundled PG/Redis data lives here too).
+  local_volume: /var/lib/winter/harbor/data
+  database:
+    host: ""                              # external PostgreSQL address, required in external mode
+    port: "{{ haproxy.listen_port }}"
+    name: registry
+    user: harbor
+  redis:
+    host: ""                              # external Redis address, required in external mode
+    port: 6379
+    db: 0
+  storage:
+    nfs_server: ""                        # NFS server address, required in external mode
+    nfs_path: ""                          # exported share path, required in external mode
+    mount_point: /var/lib/winter/harbor/shared
+    options: "vers=4.1,rw"
+  health_path: /api/v2.0/health
+
+# DNS (BIND 9): authoritative internal DNS for the platform domain (ADR-16 / ADR-17).
+# Publishes one A record per active-active Director VIP so DNS round-robin spreads clients
+# across Directors; the record set is derived from named.vips -> keepalived.vips -> keepalived.vip.
+# Deploy independently with: ./deploy.sh named -i inventory/multinode

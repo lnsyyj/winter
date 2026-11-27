@@ -48,6 +48,12 @@ git -C /root/github/winter rev-parse --short HEAD   # 期望 ec3fbbc 或更新
 grep -c 'CHANGE_ME' group_vars/all.yml   # 期望 0（或仅剩不启用组件的占位）
 ```
 
+**配置分层（ADR-63）**：每个软件的配置默认值在 `roles/<role>/defaults/main.yml`（入库），
+`group_vars/all.yml` 里 `>>> generated role defaults` 标记块是这些默认值的聚合副本——
+Ansible 单 tag 部署只加载当前 role 的 defaults，所以必须靠这个聚合块让所有配置可见。
+**改了任一 role defaults 后必须重跑** `python3 scripts/build-role-defaults.py`，否则部署读到的还是旧值。
+站点级覆盖（`*_overrides`）写在 all.yml 标记块之前，或运行时用 `-e` 传入。
+
 ### 0.3 校验离线产物
 
 ```bash

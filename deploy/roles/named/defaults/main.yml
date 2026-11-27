@@ -1,0 +1,40 @@
+---
+# Role-owned defaults (ADR-63). Site overrides live in group_vars/all.yml
+# as <name>_overrides; do not edit defaults here for site-specific values.
+
+named_defaults:
+  enabled: false
+  # package = dnf from host repos; repo = offline RPMs from the internal static repo
+  install_method: package
+  packages: [bind, bind-utils]
+  rpm_subdir: rpm/bind
+  rpm_dir: "{{ playbook_dir }}/artifacts/repo/rpm/bind"
+  rpm_files: []                        # required and non-empty when install_method=repo
+  service: named
+  config_file: /etc/named.conf
+  zone_dir: /var/named
+  listen_port: 53
+  listen_addr: any                     # BIND listen-on address match list
+  forwarders: []                       # upstream resolvers for external names
+  recursion: false
+  dnssec: false
+  domain: "winter.local"
+  ttl: 60
+  admin_mailbox: hostmaster
+  vips: []                             # empty falls back to keepalived.vips, then keepalived.vip
+  master_addresses: []                 # empty derives from [dns_masters] or [named] minus [dns_slaves]
+  slave_addresses: []                  # empty derives from [dns_slaves]
+  tsig_key_name: winter-dns            # secret is vault_dns_tsig_secret in group_vars/all.yml
+  allow_query_cidrs: []                # empty = any
+  allow_transfer_cidrs: []             # empty = TSIG key only on the master
+  manage_firewall: true                # open the DNS port with firewalld; false for an external firewall
+  manage_systemd_resolved: true         # disable the systemd-resolved stub listener to free the DNS port
+  check_interval: 60                   # local resolution check retry window (seconds)
+# ADR-42: operation files set named_overrides (partial dict); extra-vars @file replaces whole dicts,
+# so merge onto defaults to preserve lazy keys such as domain (winter.local).
+
+named: "{{ named_defaults | combine(named_overrides | default({}, true), recursive=True) }}"
+
+# Single-node PostgreSQL -> HA cluster data migration (ADR-40). The source is the system PG
+# instance (postgresql.port); the target is the HA entry point (haproxy.listen_port).
+# Both use the same database / role names, so only one database is moved.
