@@ -45,46 +45,71 @@ Inventory: one file inventory/hosts.ini. One group per SOFTWARE NAME, IPs listed
   Group name = software running there. Use -t to select components. See ADR-48/49.
   NOTE: hosts are raw IPs, so Patroni/etcd node names become IPs on HA rebuild.
 
-Examples (all tags):
-  # --- component tags: deploy one software at a time (order = dependency) ---
-  ./deploy.sh prechecks -t system-checks
-  ./deploy.sh deploy -t os-init
-  ./deploy.sh deploy -t podman
-  ./deploy.sh deploy -t bootstrap
-  ./deploy.sh deploy -t repo-nginx
-  ./deploy.sh deploy -t etcd
-  ./deploy.sh deploy -t postgresql
-  ./deploy.sh deploy -t patroni
-  ./deploy.sh deploy -t haproxy
-  ./deploy.sh deploy -t nginx
-  ./deploy.sh deploy -t victoriametrics
-  ./deploy.sh deploy -t vmalert
-  ./deploy.sh deploy -t victorialogs
-  ./deploy.sh deploy -t alertmanager
-  ./deploy.sh deploy -t grafana
-  ./deploy.sh deploy -t winter-server
-  ./deploy.sh deploy -t harbor
-  ./deploy.sh deploy -t keepalived
-  ./deploy.sh deploy -t named
-  ./deploy.sh deploy -t winter-agent
-  ./deploy.sh deploy -t lvs-director,lvs-realserver
-  ./deploy.sh deploy -t etcd,postgresql,nginx          # multiple components at once
-  ./deploy.sh prechecks -t system-checks.os            # one precheck subtag
-  # --- operation tags: transactional, must be opted in with -t ---
-  ./deploy.sh deploy -t postgresql-ha
+Examples (all tags) — each line says what it checks / deploys:
+  # --- prechecks: read-only checks (what is verified) ---
+  ./deploy.sh prechecks -t system-checks       # OS baseline / resources+disks / time / kernel / network / ports / artifacts
+  ./deploy.sh prechecks -t system-checks.os    # only the OS baseline check (subtags: .resources .time .kernel .network .ports .artifacts)
+  ./deploy.sh prechecks -t os-init             # supported distro / config / NTP entries / chrony parent dir
+  ./deploy.sh prechecks -t podman              # podman binary present + version
+  ./deploy.sh prechecks -t repo-nginx          # artifact dir + SHA256SUMS on control machine / repo port free
+  ./deploy.sh prechecks -t postgresql          # distro / password / repo URL / offline RPMs / 5432 free
+  ./deploy.sh prechecks -t nginx               # 80/443 free / site parent dirs writable
+  ./deploy.sh prechecks -t victoriametrics     # stack enabled / Grafana password / 5 tarballs / component ports
+  ./deploy.sh prechecks -t vmalert             # vmalert health endpoint responds (must already be deployed)
+  ./deploy.sh prechecks -t victorialogs        # victorialogs health endpoint responds
+  ./deploy.sh prechecks -t alertmanager        # alertmanager /-/healthy responds
+  ./deploy.sh prechecks -t grafana             # grafana /api/health responds
+  ./deploy.sh prechecks -t winter-server       # secrets length / DB addr vs replica count / binary / 8081 free
+  ./deploy.sh prechecks -t harbor              # mode / config / credentials / docker-compose / 80 free
+  ./deploy.sh prechecks -t keepalived          # VIP / VRRP password / NIC / ip_vs / L2 reachability
+  ./deploy.sh prechecks -t named               # DNS topology / master-slave / offline RPMs / 53 free
+  ./deploy.sh prechecks -t lvs-director,lvs-realserver  # host is Director / RealServer (role assertion only)
+  ./deploy.sh prechecks -t bootstrap,etcd,patroni,haproxy,winter-agent
+                                               # no role-specific checks; global system-checks covers OS/ports/resources
+  # --- deploy: converge components (listed in dependency order) ---
+  ./deploy.sh deploy -t os-init                # base RPMs (python3/curl/wget/chrony) + chrony config
+  ./deploy.sh deploy -t podman                 # install podman from OS repo (container runtime)
+  ./deploy.sh deploy -t bootstrap              # sysctl profile + br_netfilter + data device
+  ./deploy.sh deploy -t repo-nginx             # Nginx repo site on 8082 + SELinux port label
+  ./deploy.sh deploy -t etcd                   # etcd/etcdctl binary + 3-node cluster + systemd unit
+  ./deploy.sh deploy -t postgresql             # system PG 5432 from offline RPMs (single instance)
+  ./deploy.sh deploy -t patroni                # Patroni binary/wheels + config + data dir (PG HA instance)
+  ./deploy.sh deploy -t haproxy                # HAProxy RPM + config + 5434 primary route
+  ./deploy.sh deploy -t nginx                  # access Nginx 80/443 + self-signed cert + site dirs
+  ./deploy.sh deploy -t victoriametrics        # VictoriaMetrics binary + service account + dirs
+  ./deploy.sh deploy -t vmalert                # vmalert binary + rules + systemd unit
+  ./deploy.sh deploy -t victorialogs           # VictoriaLogs binary + storage + systemd unit
+  ./deploy.sh deploy -t alertmanager           # Alertmanager binary + config + systemd unit
+  ./deploy.sh deploy -t grafana                # Grafana directory + config/datasource + systemd unit
+  ./deploy.sh deploy -t winter-server          # Go binary + server.env + systemd (DB endpoint auto-detected)
+  ./deploy.sh deploy -t harbor                 # Harbor offline installer + docker-compose + builtin/external mode
+  ./deploy.sh deploy -t keepalived             # Keepalived RPM + VRRP config + VIP failover
+  ./deploy.sh deploy -t named                  # BIND 9 RPM + named.conf + zones + firewall
+  ./deploy.sh deploy -t winter-agent           # agent binary + CA + config + systemd
+  ./deploy.sh deploy -t lvs-director           # Director: ipvs rules + VRRP peers from [lvs-director]
+  ./deploy.sh deploy -t lvs-realserver         # RealServer: lo VIP + ARP suppression + sysctl
+  ./deploy.sh deploy -t etcd,postgresql,nginx  # multiple components in one run
+  # --- operations: transactional, must be opted in with -t ---
+  ./deploy.sh deploy -t postgresql-ha          # bootstrap 3-node etcd+Patroni+HAProxy HA cluster
   ./deploy.sh deploy -t postgresql-ha -e '{"postgresql_cluster_overrides":{"allow_single_node_bootstrap":true}}'
+                                               # single-node HA bootstrap (1 -> 3 growth path)
   ./deploy.sh deploy -t postgresql-scale-out -e '{"postgresql_scale_overrides":{"nodes":["192.168.101.197","192.168.101.198"]}}'
+                                               # add Patroni replicas via etcd learner/promote
   ./deploy.sh deploy -t postgresql-scale-in  -e '{"postgresql_scale_overrides":{"removed_nodes":["192.168.101.198"]}}'
-  ./deploy.sh deploy -t postgresql-migrate
+                                               # remove a Patroni replica from the cluster
+  ./deploy.sh deploy -t postgresql-migrate     # dump 5432 -> restore HA 5434 + checksum verify + URL switch
   ./deploy.sh deploy -t victoriametrics-scale-out -e '{"victoriametrics_scale_overrides":{"nodes":["<node>"]}}'
+                                               # add monitoring replicas (vmalert/Alertmanager/Grafana)
   ./deploy.sh deploy -t victoriametrics-scale-in  -e '{"victoriametrics_scale_overrides":{"removed_nodes":["<node>"]}}'
+                                               # remove monitoring replicas
   ./deploy.sh deploy -t application-ha \
       -e '{"keepalived_overrides":{"enabled":true,"vip":"192.168.101.250","interface":"ens34"},"winter_server_ha_overrides":{"database_host":"192.168.101.198","database_endpoint":"haproxy"}}'
+                                               # Server replicas + Keepalived VIP failover
   # --- lifecycle tags ---
-  ./deploy.sh verify
-  ./deploy.sh reconfigure
-  ./deploy.sh upgrade
-  ./deploy.sh destroy                                  # = deploy -t uninstall
+  ./deploy.sh verify                           # acceptance checks + write deployment manifest
+  ./deploy.sh reconfigure                      # validate config (ports/retention) then re-converge
+  ./deploy.sh upgrade                          # verify artifacts + converge pinned versions + re-verify
+  ./deploy.sh destroy                          # uninstall (data preserved by default) = deploy -t uninstall
 
 Per-operation variables (pass via -e; role defaults hold the baseline):
   named                 -e '{"named_overrides":{"enabled":true},"keepalived_overrides":{"vip":"<VIP>","interface":"<NIC>"}}'
