@@ -170,3 +170,4 @@ graph LR
 | 59 | [ADR-57-OS基线改为可配置白名单.md](./02-研发线/04-架构师/ADR-57-OS基线改为可配置白名单.md) | 架构师 ④ | **已确认** · 2026-11-26 | OS 基线检查从写死 CentOS Stream 9 改为可配置白名单 prechecks_supported_os，支持 -e 运行时扩展；默认仍锁定 CentOS Stream 9（ADR-11 不变） |
 | 60 | [ADR-58-podman独立role.md](./02-研发线/04-架构师/ADR-58-podman独立role.md) | 架构师 ④ | **已确认** · 2026-11-26 | podman 从 system-checks 检查+os_init 安装中拆出为独立 role，含 site.yml play / [podman] 组 / tag / podman.* 配置，安装与检查归位 |
 | 61 | [ADR-59-tag-role-inventory三者同名.md](./02-研发线/04-架构师/ADR-59-tag-role-inventory三者同名.md) | 架构师 ④ | **已确认** · 2026-11-27 | 强制 26 role = 26 tag = 26 inventory 组：修 prechecks/LVS 组名不一致，补 haproxy/patroni 等操作入口，监控拆 5 独立 role，删死组 |
+| 62 | [ADR-60-监控组件配置拆到各自软件字典.md](./02-研发线/04-架构师/ADR-60-监控组件配置拆到各自软件字典.md) | 架构师 ④ | **已确认** · 2026-11-27 | vmalert/victorialogs/alertmanager/grafana 各有独立配置字典，components 改为兼容视图；修字典自引用递归与 example 缺键 |

@@ -618,3 +618,4 @@ trim_trailing_whitespace = false
 | 2026-11-26 | OS 基线检查可配置化（ADR-57）：system-checks 的 Verify OS baseline 从写死 CentOS Stream 9 改为 prechecks_supported_os 白名单匹配，支持 -e 覆盖扩展新系统；ADR-11 默认基线不变 | 本次提交 |
 | 2026-11-26 | podman 独立 role（ADR-58）：从 system-checks 的 os.yml 与 os_init.packages 中拆出，新建 roles/podman（安装+检查），site.yml/inventory/deploy.sh/all.yml 同步接入；podman 不再混在基础包里 | 本次提交 |
 | 2026-11-27 | tag/role/inventory 三者强制同名（ADR-59）：26 个 role 各有同名 tag 与同名组；prechecks→system-checks、LVS 组改名、haproxy/patroni 等操作型 role 补入口、监控拆 5 独立 role、删死组 pg-* | 本次提交 |
+| 2026-11-27 | 监控组件配置拆到各自软件字典（ADR-60）：vmalert/victorialogs/alertmanager/grafana 各有 <name>_defaults/<name> 字典，victoriametrics.components 保留为兼容视图；补齐 example 缺键、修字典自引用递归 | 本次提交 |

@@ -125,7 +125,7 @@ ansible postgresql -m shell -a "sudo -u postgres psql -tAc \"select datname from
 ./deploy.sh deploy -t victorialogs       # 日志存储
 ./deploy.sh deploy -t alertmanager       # 告警收敛
 ./deploy.sh deploy -t grafana            # 可视化
-# 组件配置仍集中在 group_vars/all.yml 的 victoriametrics.components.<name>
+# 组件配置在各自的 <name>.* 字典；共享路径/runtime 在 victoriametrics.*（ADR-60）
 
 # 2.5 管理 Server（Go 二进制 + systemd，连 5432）
 ./deploy.sh deploy -t winter-server
